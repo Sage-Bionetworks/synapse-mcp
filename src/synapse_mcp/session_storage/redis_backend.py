@@ -54,7 +54,7 @@ class RedisSessionStorage(SessionStorage):
                 await self._redis.ping()
                 logger.info("Redis connection established")
             except Exception as exc:  # pragma: no cover - connection failure
-                logger.error("Failed to connect to Redis: %s", exc)
+                logger.exception("Failed to connect to Redis")
                 raise
         return self._redis
 
