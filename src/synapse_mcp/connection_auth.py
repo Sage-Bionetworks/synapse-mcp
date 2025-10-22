@@ -3,9 +3,27 @@ Connection-scoped authentication for production multi-user support.
 
 This module provides per-connection synapseclient management to ensure
 user isolation and prevent cross-user data leakage in production deployments.
+
+## Architecture
+
+Authentication middleware (OAuthTokenMiddleware or PATAuthMiddleware) injects
+tokens into the request context. This module retrieves tokens from context
+and authenticates the synapseclient.
+
+## OAuth Flow (Production):
+1. OAuthTokenMiddleware extracts token from Authorization header
+2. Middleware validates JWT (expiration, structure)
+3. Middleware stores token in context: "oauth_access_token"
+4. This module reads token from context
+5. This module authenticates synapseclient with the token
+
+## PAT Flow (Development):
+1. PATAuthMiddleware loads SYNAPSE_PAT from environment at startup
+2. Middleware injects token into context on each request: "synapse_pat_token"
+3. This module reads token from context
+4. This module authenticates synapseclient with the token
 """
 
-import os
 import logging
 from typing import Optional, Dict, Any
 from fastmcp import Context
@@ -17,7 +35,6 @@ logger = logging.getLogger("synapse_mcp.connection_auth")
 SYNAPSE_CLIENT_KEY = "synapse_client"
 USER_AUTH_INFO_KEY = "user_auth_info"
 AUTH_INITIALIZED_KEY = "auth_initialized"
-SESSION_ID_KEY = "session_id"
 
 
 def _get_state(ctx: Context, key: str, default: Optional[Any] = None) -> Optional[Any]:
@@ -54,26 +71,6 @@ def _set_state(ctx: Context, key: str, value: Any) -> None:
             return
 
 
-def _extract_session_proxy(ctx: Context) -> tuple[Optional[str], Any]:
-    session_id = _get_state(ctx, SESSION_ID_KEY)
-
-    fast_ctx = getattr(ctx, "fastmcp_context", None)
-    if fast_ctx is None:
-        fast_ctx = getattr(ctx, "_fastmcp_context", None)
-    if fast_ctx is None and hasattr(ctx, "context"):
-        fast_ctx = getattr(ctx, "context", None)
-
-    if session_id is None and fast_ctx is not None:
-        session_id = getattr(fast_ctx, "session_id", None)
-
-    auth_proxy = None
-    server = getattr(fast_ctx, "fastmcp", None) if fast_ctx else None
-    if server is not None:
-        auth_proxy = getattr(server, "auth", None)
-
-    logger.debug("_extract_session_proxy -> session_id=%s proxy=%s", session_id, type(auth_proxy).__name__ if auth_proxy else None)
-    return session_id, auth_proxy
-
 class ConnectionAuthError(Exception):
     """Raised when connection authentication fails."""
     pass
@@ -107,7 +104,7 @@ def get_synapse_client(ctx: Context) -> synapseclient.Synapse:
 
     # Authenticate the client
     if not _authenticate_client(client, ctx):
-        raise ConnectionAuthError("Failed to authenticate synapseclient for this connection")
+        raise ConnectionAuthError("Authentication for connection needed (or re-authentication for expired sessions).")
 
     # Store client in connection context
     _set_state(ctx, SYNAPSE_CLIENT_KEY, client)
@@ -118,122 +115,90 @@ def get_synapse_client(ctx: Context) -> synapseclient.Synapse:
 
 def _authenticate_client(client: synapseclient.Synapse, ctx: Context) -> bool:
     """
-    Authenticate a synapseclient instance using available credentials.
+    Authenticate a synapseclient instance using token from context.
 
-    Priority order:
-    1. PAT from environment variable (development)
-    2. OAuth access token from FastMCP auth context (production)
-    3. No authentication (public access only)
+    The appropriate middleware (OAuthTokenMiddleware or PATAuthMiddleware)
+    has already injected the authentication token into the context.
+    This function simply retrieves it and authenticates the client.
 
     Args:
         client: synapseclient instance to authenticate
-        ctx: FastMCP context containing auth information
+        ctx: FastMCP context containing auth token
 
     Returns:
         bool: True if authentication succeeded, False otherwise
     """
     try:
-        # Try PAT authentication first (development mode)
-        if _try_pat_authentication(client, ctx):
-            return True
+        # Check for OAuth token (production mode)
+        oauth_token = _get_state(ctx, "oauth_access_token")
+        if oauth_token:
+            return _authenticate_with_oauth(client, ctx, oauth_token)
 
-        # Fall back to OAuth access token (production mode)
-        if _try_oauth_authentication(client, ctx):
-            return True
+        # Check for PAT token (development mode)
+        pat_token = _get_state(ctx, "synapse_pat_token")
+        if pat_token:
+            return _authenticate_with_pat(client, ctx, pat_token)
 
-        # No authentication available - fail securely
-        logger.error("No authentication credentials available - authentication required")
+        # No token found in context - fail securely
+        logger.error("No authentication token found in context - authentication required")
         return False
 
     except Exception as e:
         logger.error(f"Authentication failed: {e}")
         return False
 
-def _try_oauth_authentication(client: synapseclient.Synapse, ctx: Context) -> bool:
+def _authenticate_with_oauth(client: synapseclient.Synapse, ctx: Context, token: str) -> bool:
     """
-    Try to authenticate using OAuth access token from FastMCP auth context.
+    Authenticate synapseclient using OAuth access token.
 
-    In production with OAuth, FastMCP provides access token information
-    through the auth system that we can use for Synapse authentication.
+    The OAuthTokenMiddleware has already validated this token and stored it in context.
+
+    Args:
+        client: synapseclient instance to authenticate
+        ctx: FastMCP context for storing auth info
+        token: Validated OAuth access token
+
+    Returns:
+        bool: True if authentication succeeded
     """
     try:
-        # FastMCP 2.0+ provides access token through context
-        # The JWT verifier in auth.py should have stored the token
-        access_token = _get_state(ctx, "oauth_access_token")
-        logger.debug(f"Retrieved OAuth access token from context: {'***' if access_token else 'None'}")
-
-        # Debug: check all context state keys
-        if hasattr(ctx, '_state'):
-            logger.debug(f"Context state keys: {list(ctx._state.keys()) if ctx._state else 'No state'}")
-        else:
-            logger.debug("Context has no _state attribute")
-
-        # Fallback: try to get from auth context if available
-        if not access_token:
-            # FastMCP might store auth info differently
-            auth_context = getattr(ctx, 'auth_context', None)
-            if auth_context and hasattr(auth_context, 'token'):
-                access_token = auth_context.token
-
-        if not access_token:
-            logger.debug("No OAuth access token found in context")
-            session_id, auth_proxy = _extract_session_proxy(ctx)
-            if session_id and auth_proxy and hasattr(auth_proxy, "get_session_token_info"):
-                info = auth_proxy.get_session_token_info(session_id)
-                if info:
-                    access_token, subject_hint = info
-                    logger.debug("Recovered token %s*** for session %s via proxy", access_token[:20], session_id)
-                    _set_state(ctx, "oauth_access_token", access_token)
-                    if subject_hint:
-                        _set_state(ctx, "user_subject", subject_hint)
-                else:
-                    logger.debug("Proxy had no token for session %s", session_id)
-            if not access_token:
-                logger.debug("OAuth authentication still missing token after proxy lookup")
-                return False
-
         # Authenticate using the access token
-        client.login(authToken=access_token)
+        client.login(authToken=token)
 
         # Get user profile to verify authentication
         profile = client.getUserProfile()
 
         # Store auth info in context
-        scopes = _get_state(ctx, "token_scopes") or []
         _set_state(ctx, USER_AUTH_INFO_KEY, {
             "method": "oauth",
             "user_id": profile.get("ownerId"),
             "username": profile.get("userName"),
-            "scopes": scopes
         })
-        session_id, _ = _extract_session_proxy(ctx)
-        if session_id:
-            _set_state(ctx, SESSION_ID_KEY, session_id)
-        logger.debug(
-            "OAuth auth stored for subject=%s session_id=%s", profile.get("userName"), session_id
-        )
 
         logger.info(f"OAuth authentication successful for user: {profile.get('userName')}")
         return True
 
     except Exception as e:
-        logger.debug(f"OAuth authentication failed: {e}")
+        logger.error(f"OAuth authentication failed: {e}")
         return False
 
-def _try_pat_authentication(client: synapseclient.Synapse, ctx: Context) -> bool:
+def _authenticate_with_pat(client: synapseclient.Synapse, ctx: Context, token: str) -> bool:
     """
-    Try to authenticate using Personal Access Token from environment.
+    Authenticate synapseclient using Personal Access Token.
 
-    This is primarily for development and local testing scenarios.
+    The PATAuthMiddleware has already loaded this token from environment and stored it in context.
+
+    Args:
+        client: synapseclient instance to authenticate
+        ctx: FastMCP context for storing auth info
+        token: PAT token from environment
+
+    Returns:
+        bool: True if authentication succeeded
     """
     try:
-        synapse_pat = os.environ.get("SYNAPSE_PAT")
-        if not synapse_pat:
-            logger.debug("No SYNAPSE_PAT environment variable found")
-            return False
-
         # Authenticate using PAT
-        client.login(authToken=synapse_pat, silent=True)
+        client.login(authToken=token, silent=True)
 
         # Get user profile to verify authentication
         profile = client.getUserProfile()
@@ -250,7 +215,7 @@ def _try_pat_authentication(client: synapseclient.Synapse, ctx: Context) -> bool
         return True
 
     except Exception as e:
-        logger.debug(f"PAT authentication failed: {e}")
+        logger.error(f"PAT authentication failed: {e}")
         return False
 
 def get_user_auth_info(ctx: Context) -> Optional[Dict[str, Any]]:
@@ -289,7 +254,7 @@ def require_authentication(ctx: Context) -> None:
         ConnectionAuthError: If connection is not authenticated
     """
     if not is_authenticated(ctx):
-        raise ConnectionAuthError("This operation requires authentication")
+        raise ConnectionAuthError("Authentication for connection needed (or re-authentication for expired sessions).")
 
 def has_scope(ctx: Context, required_scope: str) -> bool:
     """
