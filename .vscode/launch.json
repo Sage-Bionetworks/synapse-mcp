@@ -1,0 +1,25 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug Synapse MCP Server (HTTP)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "synapse_mcp.__main__",
+            "args": [
+                "--http",
+                "--debug",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                "9000"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "envFile": "${workspaceFolder}/.env",
+            "env": {
+                "MCP_TRANSPORT": "streamable-http"
+            }
+        }
+    ]
+}
