@@ -1,0 +1,42 @@
+[project]
+name = "synapse-mcp"
+version = "0.2.0"
+description = "A Model Context Protocol (MCP) server that exposes Synapse entities and utilities"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "Sage Bionetworks", email = "synapseinfo@sagebase.org"},
+    {name = "Susheel Varma", email = "susheel.varma@sagebase.org"},
+    {name = "Anh Nguyet Vu", email = "anh.nguyet.vu@sagebase.org"}
+]
+keywords = ["synapse", "mcp", "metadata", "bioinformatics"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
+dependencies = [
+    "fastmcp==2.12.3",
+    "requests==2.32.3",
+    "synapseclient==4.9.0",
+    "pandas==1.5.0",
+    "PyJWT==2.8.0",
+    "cryptography==41.0.0",
+    "redis==5.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/Sage-Bionetworks/synapse-mcp"
+Issues = "https://github.com/Sage-Bionetworks/synapse-mcp/issues"
+
+[project.scripts]
+synapse-mcp = "synapse_mcp.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
