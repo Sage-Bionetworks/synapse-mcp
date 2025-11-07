@@ -112,7 +112,7 @@ jobs:
         with:
           push: true
           provenance: false
-          tags: ghcr.io/sage-bionetworks/synapse-mcp:main-${{ github.sha }}
+          tags: ghcr.io/sage-bionetworks/synapse-mcp:edge
           file: ./Dockerfile
           platforms: linux/amd64
           cache-from: type=registry,ref=ghcr.io/sage-bionetworks/synapse-mcp:build-cache
