@@ -90,8 +90,7 @@ jobs:
   ghcr-build-and-push-on-main:
     needs: build-and-test
     runs-on: ubuntu-latest
-    # TODO: Change to `github.head_ref == 'main'` after testing
-    if: github.head_ref == 'dpe-1500-create-ghcr-image'
+    if: github.head_ref == 'main'
     permissions:
       contents: read
       packages: write
