@@ -91,7 +91,7 @@ jobs:
     needs: build-and-test
     runs-on: ubuntu-latest
     # TODO: Revert me
-    if: github.head_ref == 'dpe-1500-update-redis-code-for-cluster-mode'
+    if: github.ref == 'refs/heads/dpe-1500-update-redis-code-for-cluster-mode'
     permissions:
       contents: read
       packages: write
