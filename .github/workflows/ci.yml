@@ -90,7 +90,8 @@ jobs:
   ghcr-build-and-push-on-main:
     needs: build-and-test
     runs-on: ubuntu-latest
-    if: github.head_ref == 'main'
+    # TODO: Revert me
+    if: github.head_ref == 'dpe-1500-update-redis-code-for-cluster-mode'
     permissions:
       contents: read
       packages: write
