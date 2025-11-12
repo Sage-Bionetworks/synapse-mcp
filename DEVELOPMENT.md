@@ -82,6 +82,7 @@ docker build -t synapse-mcp .
 # Run the container with PAT
 docker run -p 9000:9000 \
   -e SYNAPSE_PAT="your_token_here" \
+  -e MCP_TRANSPORT="streamable-http" \
   synapse-mcp
 
 # OR run with OAuth
