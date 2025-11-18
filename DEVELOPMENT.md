@@ -21,6 +21,16 @@ If you have previously installed the package, it is important to use the `--upgr
 
 ## 2. Run the Server
 
+### Environment Configuration
+
+You can configure which Synapse platform instance to connect to by setting the `SYNAPSE_ENV` environment variable:
+
+```bash
+export SYNAPSE_ENV=prod  # Options: prod (default), staging, dev
+```
+
+If not set, the server defaults to `prod` (production Synapse instance at synapse.org).
+
 ### Start server with HTTP transport for web development/testing
 
 Currently, the server default is **stdio transport** for local use. For development, it is better to start server with `--http` flag (transport is streamable-http) and `--debug` to see detailed logs:
@@ -83,6 +93,7 @@ docker build -t synapse-mcp .
 docker run -p 9000:9000 \
   -e SYNAPSE_PAT="your_token_here" \
   -e MCP_TRANSPORT="streamable-http" \
+  -e SYNAPSE_ENV="prod" \
   synapse-mcp
 
 # OR run with OAuth
@@ -92,6 +103,7 @@ docker run -p 9000:9000 \
   -e SYNAPSE_OAUTH_REDIRECT_URI="http://127.0.0.1:9000/oauth/callback" \
   -e MCP_SERVER_URL="http://127.0.0.1:9000/mcp" \
   -e MCP_TRANSPORT="streamable-http" \
+  -e SYNAPSE_ENV="prod" \
   synapse-mcp
 ```
 
