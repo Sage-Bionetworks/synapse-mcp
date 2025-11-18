@@ -49,6 +49,18 @@ Resources provide ready-to-present context that clients can pull without extra p
 
 This guide provides typical user instructions for connecting to the Synapse MCP server. For contributor setup, please see [DEVELOPMENT.md](./DEVELOPMENT.md).
 
+### Configuration
+
+#### Environment Selection
+
+You can configure which Synapse platform instance to connect to by setting the `SYNAPSE_ENV` environment variable:
+
+- `prod` (default) - Production instance at synapse.org
+- `staging` - Staging instance at staging.synapse.org
+- `dev` - Development instance at dev.synapse.org
+
+If not set, the server defaults to `prod`.
+
 ### Authentication
 
 The Synapse MCP server supports two authentication methods:
