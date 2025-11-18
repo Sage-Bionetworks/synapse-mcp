@@ -29,7 +29,7 @@ OAUTH_ENDPOINTS_BY_ENV = {
         "token_endpoint": (
             "https://repo-staging.prod.sagebase.org/auth/v1/oauth2/token"
         ),
-        "authorization_endpoint": "https://signin.synapse.org,
+        "authorization_endpoint": "https://signin.synapse.org",
     },
     "dev": {
         "jwks_uri": (
