@@ -44,7 +44,7 @@ class SynapseJWTVerifier:
             decoded = decode(
                 jwt=token,
                 key=signing_key.key,
-                algorithms=[signing_key.algorithm_name],
+                algorithms=[self.algorithm],
                 audience=self.audience,
                 issuer=self.issuer,
                 options={"verify_aud": True},
@@ -54,7 +54,8 @@ class SynapseJWTVerifier:
             if not self._validate_required_scopes(scopes):
                 return None
 
-            access_token_obj = self._create_fastmcp_access_token(decoded, scopes, token)
+            access_token_obj = self._create_fastmcp_access_token(
+                decoded, scopes, token)
             access_token_obj.raw_token = token
             return access_token_obj
 
@@ -65,10 +66,12 @@ class SynapseJWTVerifier:
     def _extract_synapse_scopes(self, decoded: Dict[str, Any]) -> List[str]:
         if "access" in decoded and "scope" in decoded["access"]:
             scopes = decoded["access"]["scope"]
-            logger.debug("Found scopes in Synapse nested structure: %s", scopes)
+            logger.debug(
+                "Found scopes in Synapse nested structure: %s", scopes)
         elif "scope" in decoded:
             scope_str = decoded["scope"]
-            scopes = scope_str.split(" ") if isinstance(scope_str, str) else scope_str
+            scopes = scope_str.split(" ") if isinstance(
+                scope_str, str) else scope_str
             logger.debug("Found scopes in standard location: %s", scopes)
         else:
             scopes = []
@@ -95,7 +98,8 @@ class SynapseJWTVerifier:
         access_token.scopes = scopes
         access_token.claims = decoded
         access_token.token = token
-        logger.debug("Created FastMCP access token for subject: %s", access_token.sub)
+        logger.debug(
+            "Created FastMCP access token for subject: %s", access_token.sub)
         return access_token
 
     def __del__(self) -> None:  # pragma: no cover - cleanup
