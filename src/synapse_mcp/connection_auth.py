@@ -25,6 +25,7 @@ and authenticates the synapseclient.
 """
 
 import logging
+import os
 from typing import Optional, Dict, Any
 from fastmcp import Context
 import synapseclient
@@ -35,6 +36,39 @@ logger = logging.getLogger("synapse_mcp.connection_auth")
 SYNAPSE_CLIENT_KEY = "synapse_client"
 USER_AUTH_INFO_KEY = "user_auth_info"
 AUTH_INITIALIZED_KEY = "auth_initialized"
+
+ENDPOINTS_BY_ENV = {
+    "prod": {
+        "repoEndpoint": "https://repo-prod.prod.sagebase.org/repo/v1",
+        "authEndpoint": "https://auth-prod.prod.sagebase.org/auth/v1",
+        "fileHandleEndpoint": (
+            "https://file-prod.prod.sagebase.org/file/v1"
+        ),
+        "portalEndpoint": "https://www.synapse.org/",
+    },
+    "staging": {
+        "repoEndpoint": "https://repo-staging.prod.sagebase.org/repo/v1",
+        "authEndpoint": "https://auth-staging.prod.sagebase.org/auth/v1",
+        "fileHandleEndpoint": (
+            "https://file-staging.prod.sagebase.org/file/v1"
+        ),
+        "portalEndpoint": "https://staging.synapse.org/",
+    },
+    "dev": {
+        "repoEndpoint": "https://repo-dev.dev.sagebase.org/repo/v1",
+        "authEndpoint": "https://repo-dev.dev.sagebase.org/auth/v1",
+        "fileHandleEndpoint": "https://repo-dev.dev.sagebase.org/file/v1",
+        "portalEndpoint": "https://dev.synapse.org/",
+    },
+}
+
+ENV = os.environ.get("SYNAPSE_ENV", "prod").lower()
+ENDPOINTS = ENDPOINTS_BY_ENV.get(ENV, ENDPOINTS_BY_ENV["prod"])
+
+repo_endpoint = ENDPOINTS["repoEndpoint"]
+auth_endpoint = ENDPOINTS["authEndpoint"]
+file_handle_endpoint = ENDPOINTS["fileHandleEndpoint"]
+portal_endpoint = ENDPOINTS["portalEndpoint"]
 
 
 def _get_state(ctx: Context, key: str, default: Optional[Any] = None) -> Optional[Any]:
@@ -59,7 +93,8 @@ def _get_state(ctx: Context, key: str, default: Optional[Any] = None) -> Optiona
 def _set_state(ctx: Context, key: str, value: Any) -> None:
     setter = getattr(ctx, "set_state", None)
     if not callable(setter):
-        logger.debug("Context %s lacks set_state; unable to store %s", type(ctx).__name__, key)
+        logger.debug("Context %s lacks set_state; unable to store %s",
+                     type(ctx).__name__, key)
         return
     try:
         setter(key, value)
@@ -67,13 +102,15 @@ def _set_state(ctx: Context, key: str, value: Any) -> None:
         try:
             setter(key, value)  # type: ignore[misc]
         except Exception:  # pragma: no cover - defensive
-            logger.debug("Context %s rejected set_state for %s", type(ctx).__name__, key)
+            logger.debug("Context %s rejected set_state for %s",
+                         type(ctx).__name__, key)
             return
 
 
 class ConnectionAuthError(Exception):
     """Raised when connection authentication fails."""
     pass
+
 
 def get_synapse_client(ctx: Context) -> synapseclient.Synapse:
     """
@@ -92,26 +129,32 @@ def get_synapse_client(ctx: Context) -> synapseclient.Synapse:
         ConnectionAuthError: If authentication fails or is not configured
     """
     # Check if client already exists for this connection
-    logger.debug("get_synapse_client called with context type=%s attrs=%s", type(ctx).__name__, dir(ctx))
+    logger.debug("get_synapse_client called with context type=%s attrs=%s", type(
+        ctx).__name__, dir(ctx))
     client = _get_state(ctx, SYNAPSE_CLIENT_KEY)
     if client:
         logger.debug("Returning existing synapseclient for connection")
         return client
 
     # Create new client for this connection
-    logger.info("Creating new synapseclient for connection")
-    client = synapseclient.Synapse(cache_client=False)
+    logger.info(
+        "Creating new synapseclient for connection for endpoints: %s", ENDPOINTS)
+    client = synapseclient.Synapse(cache_client=False, skip_checks=True, repoEndpoint=repo_endpoint, authEndpoint=auth_endpoint,
+                                   fileHandleEndpoint=file_handle_endpoint, portalEndpoint=portal_endpoint)
 
     # Authenticate the client
     if not _authenticate_client(client, ctx):
-        raise ConnectionAuthError("Authentication for connection needed (or re-authentication for expired sessions).")
+        raise ConnectionAuthError(
+            "Authentication for connection needed (or re-authentication for expired sessions).")
 
     # Store client in connection context
     _set_state(ctx, SYNAPSE_CLIENT_KEY, client)
     _set_state(ctx, AUTH_INITIALIZED_KEY, True)
 
-    logger.info("Successfully created and authenticated synapseclient for connection")
+    logger.info(
+        "Successfully created and authenticated synapseclient for connection")
     return client
+
 
 def _authenticate_client(client: synapseclient.Synapse, ctx: Context) -> bool:
     """
@@ -140,12 +183,14 @@ def _authenticate_client(client: synapseclient.Synapse, ctx: Context) -> bool:
             return _authenticate_with_pat(client, ctx, pat_token)
 
         # No token found in context - fail securely
-        logger.error("No authentication token found in context - authentication required")
+        logger.error(
+            "No authentication token found in context - authentication required")
         return False
 
-    except Exception as e:
-        logger.error(f"Authentication failed: {e}")
+    except Exception:
+        logger.exception("Authentication failed")
         return False
+
 
 def _authenticate_with_oauth(client: synapseclient.Synapse, ctx: Context, token: str) -> bool:
     """
@@ -175,12 +220,14 @@ def _authenticate_with_oauth(client: synapseclient.Synapse, ctx: Context, token:
             "username": profile.get("userName"),
         })
 
-        logger.info(f"OAuth authentication successful for user: {profile.get('userName')}")
+        logger.info(
+            f"OAuth authentication successful for user: {profile.get('userName')}")
         return True
 
-    except Exception as e:
-        logger.error(f"OAuth authentication failed: {e}")
+    except Exception:
+        logger.exception(f"OAuth authentication failed")
         return False
+
 
 def _authenticate_with_pat(client: synapseclient.Synapse, ctx: Context, token: str) -> bool:
     """
@@ -211,12 +258,14 @@ def _authenticate_with_pat(client: synapseclient.Synapse, ctx: Context, token: s
             "scopes": ["full_access"]  # PATs have full access
         })
 
-        logger.info(f"PAT authentication successful for user: {profile.get('userName')}")
+        logger.info(
+            f"PAT authentication successful for user: {profile.get('userName')}")
         return True
 
     except Exception as e:
         logger.error(f"PAT authentication failed: {e}")
         return False
+
 
 def get_user_auth_info(ctx: Context) -> Optional[Dict[str, Any]]:
     """
@@ -229,6 +278,7 @@ def get_user_auth_info(ctx: Context) -> Optional[Dict[str, Any]]:
         Dict containing user authentication information, or None if not authenticated
     """
     return _get_state(ctx, USER_AUTH_INFO_KEY)
+
 
 def is_authenticated(ctx: Context) -> bool:
     """
@@ -243,6 +293,7 @@ def is_authenticated(ctx: Context) -> bool:
     value = _get_state(ctx, AUTH_INITIALIZED_KEY)
     return bool(value)
 
+
 def require_authentication(ctx: Context) -> None:
     """
     Ensure the connection is authenticated, raise error if not.
@@ -254,7 +305,9 @@ def require_authentication(ctx: Context) -> None:
         ConnectionAuthError: If connection is not authenticated
     """
     if not is_authenticated(ctx):
-        raise ConnectionAuthError("Authentication for connection needed (or re-authentication for expired sessions).")
+        raise ConnectionAuthError(
+            "Authentication for connection needed (or re-authentication for expired sessions).")
+
 
 def has_scope(ctx: Context, required_scope: str) -> bool:
     """
