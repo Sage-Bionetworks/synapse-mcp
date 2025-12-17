@@ -31,6 +31,8 @@ venv.bak/
 
 # IDE files
 .idea/
+.vscode/*
+!.vscode/launch.json
 *.swp
 *.swo
 .DS_Store
