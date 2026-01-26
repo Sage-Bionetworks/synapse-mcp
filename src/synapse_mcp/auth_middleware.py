@@ -54,6 +54,7 @@ logger = logging.getLogger("synapse_mcp.auth_middleware")
 
 class AuthenticationError(HTTPException):
     """HTTP 401 Unauthorized - Missing or invalid token."""
+
     def __init__(self, detail: str = "Authentication required"):
         super().__init__(status_code=401, detail=detail)
 
@@ -89,7 +90,8 @@ def validate_jwt_token(token: str) -> None:
             raise AuthenticationError("Token expired")
 
         # Token is valid
-        logger.debug("Token validated: expires_at=%s", datetime.fromtimestamp(exp, timezone.utc).isoformat())
+        logger.debug("Token validated: expires_at=%s",
+                     datetime.fromtimestamp(exp, timezone.utc).isoformat())
 
     except jwt.DecodeError as e:
         logger.warning("Invalid JWT token structure: %s", e)
@@ -170,7 +172,8 @@ class OAuthTokenMiddleware(Middleware):
                         "HTTP Request - URL: %s, Method: %s, Has Auth: %s",
                         getattr(http_request, 'url', None),
                         getattr(http_request, 'method', None),
-                        'authorization' in http_request.headers if hasattr(http_request, 'headers') else False,
+                        'authorization' in http_request.headers if hasattr(
+                            http_request, 'headers') else False,
                     )
             except Exception as exc:
                 logger.debug("Could not inspect HTTP request: %s", exc)
@@ -193,18 +196,16 @@ class OAuthTokenMiddleware(Middleware):
             fast_ctx.set_state("oauth_access_token", token)
             logger.debug("Stored validated OAuth token in context")
         else:
-            logger.warning("FastMCP context does not expose set_state; unable to store token")
+            logger.warning(
+                "FastMCP context does not expose set_state; unable to store token")
 
     async def _resolve_token(self, context: MiddlewareContext, fast_ctx: Any) -> str:
         """
         Resolve and validate OAuth token from the request.
 
-        Per MCP spec: "authorization MUST be included in every HTTP request"
-
-        Validates:
-        - Token is present in Authorization header
-        - Token is a valid JWT structure
-        - Token is not expired
+        Priority:
+        1. Authorization header (stateless OAuth)
+        2. Session-based lookup (browser clients)
 
         Raises:
             AuthenticationError (HTTP 401): If token is missing, invalid, or expired
@@ -212,10 +213,9 @@ class OAuthTokenMiddleware(Middleware):
         Returns:
             str: Validated token
         """
-
         token = None
 
-        # Primary path: Extract from Authorization header
+        # PRIORITY 1: Extract from Authorization header (STANDARD OAUTH)
         if get_http_request:
             try:
                 http_request = get_http_request()
@@ -223,36 +223,52 @@ class OAuthTokenMiddleware(Middleware):
                     auth_header = http_request.headers.get("authorization")
                     if auth_header and auth_header.startswith("Bearer "):
                         token = auth_header[len("Bearer "):]
-                        logger.info("Extracted token from Authorization header: %s", mask_token(token))
+                        logger.info(
+                            "Extracted token from Authorization header: %s", mask_token(token))
+                        # Validate token per OAuth 2.1 / MCP spec
+                        validate_jwt_token(token)
+                        # Token is valid - return it directly!
+                        logger.debug(
+                            "Validated token from Authorization header (stateless OAuth)")
+                        return token
+            except AuthenticationError:
+                raise
             except Exception as exc:
-                logger.debug("Could not extract token from HTTP request: %s", exc)
+                logger.debug(
+                    "Could not extract token from Authorization header: %s", exc)
 
-        # Fallback: Check auth_context (in case FastMCP populates it differently)
-        if not token:
-            auth_ctx = getattr(context, "auth_context", None)
-            if not auth_ctx:
-                auth_ctx = getattr(fast_ctx, "auth_context", None)
+        # PRIORITY 2: Session-based lookup (for browser clients like Inspector)
+        session_id = self._extract_session_id(context)
+        if session_id and hasattr(fast_ctx, 'auth') and hasattr(fast_ctx.auth, 'proxy'):
+            token_info = fast_ctx.auth.proxy.get_session_token_info(session_id)
+            if token_info:
+                token, subject = token_info
+                logger.info(
+                    "Retrieved token from session %s for subject %s", session_id, subject)
+                validate_jwt_token(token)
+                return token
 
-            if auth_ctx:
-                token = getattr(auth_ctx, "token", None)
-                if token:
-                    logger.info("Using token from auth_context: %s", mask_token(token))
-
-        # Last resort: Check for bearer token in context message headers
-        if not token:
-            token = self._extract_token_from_headers(context)
-            if token:
-                logger.info("Extracted token from context headers: %s", mask_token(token))
-
-        if not token:
-            logger.warning("No Authorization header in request - HTTP 401")
+        # No valid authentication found
+        if session_id:
+            logger.warning(
+                "Session ID %s provided but no token found - OAuth flow may be incomplete", session_id)
+            raise AuthenticationError(
+                "Authentication incomplete - please authorize again")
+        else:
+            logger.warning(
+                "No Authorization header or session ID in request - HTTP 401")
             raise AuthenticationError("Missing Authorization header")
 
-        # Validate token per OAuth 2.1 / MCP spec
-        validate_jwt_token(token)
-
-        # Return validated token
-        return token
+    def _extract_session_id(self, context: MiddlewareContext) -> Optional[str]:
+        """Extract session ID from request if present."""
+        try:
+            if get_http_request:
+                http_request = get_http_request()
+                if http_request and hasattr(http_request, 'headers'):
+                    return http_request.headers.get("mcp-session-id")
+        except Exception as exc:
+            logger.debug("Could not extract session ID: %s", exc)
+        return None
 
     def _extract_token_from_headers(self, context: MiddlewareContext) -> Optional[str]:
         """Extract token from context message headers."""
@@ -292,7 +308,8 @@ class PATAuthMiddleware(Middleware):
                 "Set SYNAPSE_PAT for development mode."
             )
         logger.info("PAT authentication enabled (development mode)")
-        logger.debug("PAT token loaded from environment: %s", mask_token(self.synapse_pat))
+        logger.debug("PAT token loaded from environment: %s",
+                     mask_token(self.synapse_pat))
 
     async def on_call_tool(self, context: MiddlewareContext, call_next):
         """
@@ -345,7 +362,8 @@ class PATAuthMiddleware(Middleware):
             fast_ctx.set_state("synapse_pat_token", self.synapse_pat)
             logger.debug("Injected PAT token into context")
         else:
-            logger.warning("FastMCP context does not expose set_state; unable to inject PAT")
+            logger.warning(
+                "FastMCP context does not expose set_state; unable to inject PAT")
 
 
 __all__ = ["OAuthTokenMiddleware", "PATAuthMiddleware"]
