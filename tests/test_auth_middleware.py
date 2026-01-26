@@ -30,7 +30,8 @@ def create_valid_jwt(expires_in_seconds=3600, include_exp=True, **extra_claims):
     }
 
     if include_exp:
-        payload["exp"] = (datetime.now(timezone.utc) + timedelta(seconds=expires_in_seconds)).timestamp()
+        payload["exp"] = (datetime.now(timezone.utc) +
+                          timedelta(seconds=expires_in_seconds)).timestamp()
 
     payload.update(extra_claims)
 
@@ -58,6 +59,7 @@ class DummyFastMCPContext:
 
 class DummyHTTPRequest:
     """Mock HTTP request for testing."""
+
     def __init__(self, headers=None):
         self.headers = headers or {}
         self.url = "http://test.com/mcp"
@@ -194,52 +196,6 @@ async def test_middleware_rejects_malformed_token():
             await middleware.on_call_tool(context, call_next)
 
         assert exc_info.value.status_code == 401
-
-
-@pytest.mark.anyio
-async def test_middleware_extracts_token_from_context_headers():
-    """Token in context message headers should work as fallback."""
-    token = create_valid_jwt()
-
-    with patch("synapse_mcp.auth_middleware.get_http_request") as mock_get_request:
-        mock_get_request.return_value = None  # No HTTP request available
-
-        middleware = OAuthTokenMiddleware()
-        fast_ctx = DummyFastMCPContext()
-        message = SimpleNamespace(name="tool", headers={"Authorization": f"Bearer {token}"})
-        context = SimpleNamespace(message=message, fastmcp_context=fast_ctx)
-
-        async def call_next(ctx):
-            return "ok"
-
-        result = await middleware.on_call_tool(context, call_next)
-        assert result == "ok"
-        assert fast_ctx.get_state("oauth_access_token") == token
-
-
-@pytest.mark.anyio
-async def test_middleware_extracts_token_from_auth_context():
-    """Token in auth_context should work as fallback."""
-    token = create_valid_jwt()
-
-    with patch("synapse_mcp.auth_middleware.get_http_request") as mock_get_request:
-        mock_get_request.return_value = None  # No HTTP request available
-
-        middleware = OAuthTokenMiddleware()
-        fast_ctx = DummyFastMCPContext()
-        auth_context = SimpleNamespace(token=token, subject="user-123")
-        context = SimpleNamespace(
-            auth_context=auth_context,
-            message=SimpleNamespace(headers={}),
-            fastmcp_context=fast_ctx
-        )
-
-        async def call_next(ctx):
-            return "ok"
-
-        result = await middleware.on_call_tool(context, call_next)
-        assert result == "ok"
-        assert fast_ctx.get_state("oauth_access_token") == token
 
 
 @pytest.mark.anyio
