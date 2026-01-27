@@ -38,6 +38,14 @@ class SessionAwareOAuthProxy(OAuthProxy):
             type(self._client_registry).__name__,
         )
 
+    async def load_access_token(self, token: str):
+        """Override to add debugging for load_access_token flow."""
+        logger.info("=== SessionAwareOAuthProxy.load_access_token ===")
+        logger.info("Loading token: %s***", token[:20] if token else "None")
+        result = await super().load_access_token(token)
+        logger.info("load_access_token result: %s", "found" if result else "None")
+        return result
+
     async def verify_token(self, token: str):
         """Override to add debugging for token verification flow."""
         logger.info("=== SessionAwareOAuthProxy.verify_token ===")
@@ -235,6 +243,19 @@ class SessionAwareOAuthProxy(OAuthProxy):
                      t[:8] + "***" for t in existing_tokens])
         token_response = await super().exchange_authorization_code(client, authorization_code)
 
+        # Log what is being returned to the client
+        logger.info("=== Token Response from exchange_authorization_code ===")
+        logger.info("token_response type: %s", type(token_response).__name__)
+        if hasattr(token_response, "access_token"):
+            at = token_response.access_token
+            logger.info("token_response.access_token: %s***", at[:30] if at else None)
+        if hasattr(token_response, "token_type"):
+            logger.info("token_response.token_type: %s", token_response.token_type)
+        if hasattr(token_response, "expires_in"):
+            logger.info("token_response.expires_in: %s", token_response.expires_in)
+        # Log all attributes for debugging
+        logger.debug("token_response attrs: %s", [attr for attr in dir(token_response) if not attr.startswith("_")])
+
         try:
             await self._map_new_tokens_to_users()
         except Exception as exc:  # pragma: no cover - defensive
@@ -278,6 +299,7 @@ class SessionAwareOAuthProxy(OAuthProxy):
                 logger.debug(
                     "No access token recorded for session %s during code exchange", session_id)
 
+        logger.info("=== Returning token_response to client ===")
         return token_response
 
     async def _map_new_tokens_to_users(self) -> None:
