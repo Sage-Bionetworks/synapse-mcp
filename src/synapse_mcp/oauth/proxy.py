@@ -38,6 +38,33 @@ class SessionAwareOAuthProxy(OAuthProxy):
             type(self._client_registry).__name__,
         )
 
+    async def verify_token(self, token: str):
+        """Override to add debugging for token verification flow."""
+        logger.info("=== SessionAwareOAuthProxy.verify_token ===")
+        logger.info("Incoming token: %s***", token[:20] if token else "None")
+
+        # Check if token is in internal cache
+        access_tokens = getattr(self, "_access_tokens", {})
+        logger.info("Tokens in _access_tokens cache: %d", len(access_tokens))
+        for i, cached_token in enumerate(access_tokens.keys()):
+            logger.debug("  Cached token %d: %s***", i, cached_token[:20])
+
+        if token in access_tokens:
+            logger.info("Token FOUND in _access_tokens cache")
+            cached = access_tokens[token]
+            logger.debug(
+                "Cached token info: client_id=%s, scopes=%s, expires_at=%s",
+                getattr(cached, "client_id", None),
+                getattr(cached, "scopes", None),
+                getattr(cached, "expires_at", None),
+            )
+            return cached
+
+        logger.info("Token NOT in cache - calling token_verifier.verify_token()")
+        result = await super().verify_token(token)
+        logger.info("Verifier returned: %s", "valid token" if result else "None (INVALID)")
+        return result
+
     def _restore_registered_clients(self) -> None:
         try:
             registrations = list(self._client_registry.load_all())
@@ -389,14 +416,19 @@ class SessionAwareOAuthProxy(OAuthProxy):
 
 def _extract_session_id(request) -> Optional[str]:
     try:
+        logger.debug("_extract_session_id: checking request headers and state")
         if hasattr(request, "headers"):
             session_id = request.headers.get("mcp-session-id")
+            logger.debug("  mcp-session-id header: %s", session_id)
             if session_id:
                 return session_id
         if hasattr(request, "state"):
             session_context = getattr(request.state, "session_context", None)
+            logger.debug("  session_context: %s", session_context)
             if session_context and hasattr(session_context, "session_id"):
+                logger.debug("  session_context.session_id: %s", session_context.session_id)
                 return session_context.session_id
+        logger.warning("No session_id found in request (checked headers and state)")
     except Exception as exc:  # pragma: no cover - defensive
         logger.debug("Could not extract session ID from callback: %s", exc)
     return None

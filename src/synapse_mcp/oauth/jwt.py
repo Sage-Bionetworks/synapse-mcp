@@ -40,9 +40,27 @@ class SynapseJWTVerifier:
 
     def _verify_token_sync(self, token: str) -> Optional[SimpleNamespace]:
         try:
-            logger.debug(f"Verifying Synapse JWT: {token[:10]}...")
+            logger.info("=== SynapseJWTVerifier.verify_token ===")
+            logger.info("Verifying token: %s***", token[:20] if token else "None")
+
+            # Decode without validation first to see the claims
+            try:
+                unverified = decode(token, options={"verify_signature": False})
+                logger.info(
+                    "Token claims: aud=%s, iss=%s, sub=%s, exp=%s",
+                    unverified.get("aud"),
+                    unverified.get("iss"),
+                    unverified.get("sub"),
+                    unverified.get("exp"),
+                )
+            except Exception as e:
+                logger.warning("Could not decode token for inspection: %s", e)
+
+            logger.info("Expected: aud=%s, iss=%s", self.audience, self.issuer)
 
             signing_key = self.jwks_client.get_signing_key_from_jwt(token)
+            logger.debug("Got signing key from JWKS")
+
             decoded = decode(
                 jwt=token,
                 key=signing_key.key,
@@ -51,18 +69,21 @@ class SynapseJWTVerifier:
                 issuer=self.issuer,
                 options={"verify_aud": True},
             )
+            logger.info("JWT signature and claims verification succeeded")
 
             scopes = self._extract_synapse_scopes(decoded)
             if not self._validate_required_scopes(scopes):
+                logger.warning("Required scopes validation failed")
                 return None
 
             access_token_obj = self._create_fastmcp_access_token(
                 decoded, scopes, token)
             access_token_obj.raw_token = token
+            logger.info("Token verification complete - returning valid access token")
             return access_token_obj
 
         except PyJWTError as exc:
-            logger.error("JWT verification failed: %s", exc)
+            logger.error("JWT verification FAILED: %s (type: %s)", exc, type(exc).__name__)
             return None
 
     def _extract_synapse_scopes(self, decoded: Dict[str, Any]) -> List[str]:

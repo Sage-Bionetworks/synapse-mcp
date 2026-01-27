@@ -161,6 +161,8 @@ class OAuthTokenMiddleware(Middleware):
         Raises:
             AuthenticationError (HTTP 401): If token is missing, invalid, or expired
         """
+        logger.info("=== OAuthTokenMiddleware._store_auth_info REACHED ===")
+
         # Inspect HTTP request to see what auth info is sent (debug mode)
         if get_http_request and logger.isEnabledFor(logging.DEBUG):
             try:
