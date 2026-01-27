@@ -141,18 +141,16 @@ class SessionAwareOAuthProxy(OAuthProxy):
                     )
         if result:
             client_codes = getattr(self, "_client_codes", {})
-            new_codes = [
-                code for code in client_codes if code not in existing_codes]
-            logger.debug("New codes detected in callback: %s",
-                         [c[:8] + "***" for c in new_codes])
-            for code in new_codes:
-                if session_id:
+            logger.debug("Callback: session_id=%s, all client_codes=%s",
+                         session_id, list(client_codes.keys()))
+            if session_id:
+                for code in client_codes:
                     self._code_sessions[code] = session_id
                     logger.debug(
-                        "Mapped code %s to session %s in callback", code[:8], session_id)
-                else:
-                    logger.warning(
-                        "No session_id available to map for code %s", code[:8])
+                        "Mapped code %s to session %s in callback (defensive)", code[:8], session_id)
+            else:
+                logger.warning(
+                    "No session_id available to map for any code in callback")
             try:
                 await self._map_new_tokens_to_users()
             except Exception as exc:  # pragma: no cover - defensive
@@ -209,6 +207,7 @@ class SessionAwareOAuthProxy(OAuthProxy):
         logger.debug("New tokens from exchange: %s", [
                      t[:8] + "***" for t in new_tokens])
 
+        logger.debug("Code sessions before pop: %s", self._code_sessions)
         session_id = self._code_sessions.pop(authorization_code.code, None)
         if session_id:
             logger.debug("Popped session_id %s for code %s in exchange",
