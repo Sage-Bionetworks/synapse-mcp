@@ -40,6 +40,8 @@ class SynapseJWTVerifier:
 
     def _verify_token_sync(self, token: str) -> Optional[SimpleNamespace]:
         try:
+            logger.debug(f"Verifying Synapse JWT: {token[:10]}...")
+
             signing_key = self.jwks_client.get_signing_key_from_jwt(token)
             decoded = decode(
                 jwt=token,

@@ -90,7 +90,7 @@ jobs:
   ghcr-build-and-push-on-main:
     needs: build-and-test
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/dpe-1501-debug'
     permissions:
       contents: read
       packages: write

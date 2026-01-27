@@ -58,7 +58,8 @@ class SessionAwareOAuthProxy(OAuthProxy):
                 continue
             try:
                 adapter = TypeAdapter(List[AnyUrl])
-                redirect_source = record.redirect_uris if record.redirect_uris else ["http://127.0.0.1"]
+                redirect_source = record.redirect_uris if record.redirect_uris else [
+                    "http://127.0.0.1"]
                 redirect_uris = adapter.validate_python(redirect_source)
                 proxy_client = ProxyDCRClient(
                     client_id=record.client_id,
@@ -70,36 +71,50 @@ class SessionAwareOAuthProxy(OAuthProxy):
                     allowed_redirect_uri_patterns=self._allowed_client_redirect_uris,
                 )
                 self._clients[record.client_id] = proxy_client
-                logger.info("Restored registered OAuth client %s", record.client_id)
+                logger.info("Restored registered OAuth client %s",
+                            record.client_id)
+                logger.debug("Client details: id=%s, redirect_uris=%s, grants=%s",
+                             record.client_id, redirect_uris, record.grant_types or default_grants)
             except Exception as exc:  # pragma: no cover - defensive
-                logger.warning("Failed to restore OAuth client %s: %s", record.client_id, exc)
+                logger.warning(
+                    "Failed to restore OAuth client %s: %s", record.client_id, exc)
 
     async def register_client(self, client_info):
+        logger.debug("register_client called with: id=%s, redirect_uris=%s, grants=%s",
+                     client_info.client_id, client_info.redirect_uris, client_info.grant_types)
         await super().register_client(client_info)
 
         try:
             registration = ClientRegistration(
                 client_id=client_info.client_id,
                 client_secret=_extract_secret(client_info.client_secret),
-                redirect_uris=[str(uri) for uri in (client_info.redirect_uris or [])],
-                grant_types=list(client_info.grant_types or ["authorization_code", "refresh_token"]),
+                redirect_uris=[str(uri)
+                               for uri in (client_info.redirect_uris or [])],
+                grant_types=list(client_info.grant_types or [
+                                 "authorization_code", "refresh_token"]),
             )
             self._client_registry.save(registration)
-            logger.debug("Persisted OAuth client %s", client_info.client_id)
+            logger.debug("Persisted OAuth client %s with redirect_uris=%s and grants=%s",
+                         client_info.client_id, registration.redirect_uris, registration.grant_types)
         except Exception as exc:  # pragma: no cover - defensive
-            logger.warning("Unable to persist OAuth client %s: %s", client_info.client_id, exc)
+            logger.warning("Unable to persist OAuth client %s: %s",
+                           client_info.client_id, exc)
 
     async def _handle_idp_callback(self, request, *args, **kwargs):
         session_id = _extract_session_id(request)
-        if session_id:
-            logger.debug("OAuth callback processing for session: %s", session_id)
+        logger.debug("_handle_idp_callback called. session_id=%s", session_id)
 
         existing_tokens = set(getattr(self, "_access_tokens", {}).keys())
         existing_codes = set(getattr(self, "_client_codes", {}).keys())
+        logger.debug("Existing tokens: %s", [
+                     t[:8] + "***" for t in existing_tokens])
+        logger.debug("Existing codes: %s", [
+                     c[:8] + "***" for c in existing_codes])
         result = await super()._handle_idp_callback(request, *args, **kwargs)
 
         if result and hasattr(result, "headers"):
             location = result.headers.get("location")
+            logger.debug("Callback redirect location: %s", location)
             if location:
                 parsed = urlparse(location)
                 query_pairs = parse_qsl(parsed.query, keep_blank_values=True)
@@ -127,10 +142,14 @@ class SessionAwareOAuthProxy(OAuthProxy):
         if result:
             if session_id:
                 client_codes = getattr(self, "_client_codes", {})
-                new_codes = [code for code in client_codes if code not in existing_codes]
+                new_codes = [
+                    code for code in client_codes if code not in existing_codes]
+                logger.debug("New codes for session %s: %s", session_id, [
+                             c[:8] + "***" for c in new_codes])
                 for code in new_codes:
                     self._code_sessions[code] = session_id
-                    logger.debug("Cached authorization code %s for session %s", code[:8], session_id)
+                    logger.debug(
+                        "Cached authorization code %s for session %s", code[:8], session_id)
             try:
                 await self._map_new_tokens_to_users()
             except Exception as exc:  # pragma: no cover - defensive
@@ -138,12 +157,14 @@ class SessionAwareOAuthProxy(OAuthProxy):
 
             if session_id:
                 access_tokens = getattr(self, "_access_tokens", {})
-                new_tokens = [token for token in access_tokens if token not in existing_tokens]
+                new_tokens = [
+                    token for token in access_tokens if token not in existing_tokens]
                 logger.debug(
-                    "Session %s received %d new tokens (existing=%d)",
+                    "Session %s received %d new tokens (existing=%d): %s",
                     session_id,
                     len(new_tokens),
                     len(existing_tokens),
+                    [t[:8] + "***" for t in new_tokens],
                 )
                 for token_key in new_tokens:
                     subject = await self._session_storage.find_user_by_token(token_key)
@@ -154,6 +175,9 @@ class SessionAwareOAuthProxy(OAuthProxy):
                         token_key[:20],
                         subject,
                     )
+        else:
+            logger.debug(
+                "No result returned from super()._handle_idp_callback")
         return result
 
     async def exchange_authorization_code(
@@ -161,24 +185,36 @@ class SessionAwareOAuthProxy(OAuthProxy):
         client: Any,
         authorization_code: Any,
     ):
+        logger.debug("exchange_authorization_code called for client_id=%s, code=%s", getattr(
+            client, 'client_id', None), getattr(authorization_code, 'code', None))
         existing_tokens = set(getattr(self, "_access_tokens", {}).keys())
+        logger.debug("Tokens before exchange: %s", [
+                     t[:8] + "***" for t in existing_tokens])
         token_response = await super().exchange_authorization_code(client, authorization_code)
 
         try:
             await self._map_new_tokens_to_users()
         except Exception as exc:  # pragma: no cover - defensive
-            logger.warning("Failed to map tokens to users after exchange: %s", exc)
+            logger.warning(
+                "Failed to map tokens to users after exchange: %s", exc)
 
         access_tokens = getattr(self, "_access_tokens", {})
-        new_tokens = [token for token in access_tokens if token not in existing_tokens]
+        new_tokens = [
+            token for token in access_tokens if token not in existing_tokens]
+        logger.debug("Tokens after exchange: %s", [
+                     t[:8] + "***" for t in access_tokens])
+        logger.debug("New tokens from exchange: %s", [
+                     t[:8] + "***" for t in new_tokens])
 
         session_id = self._code_sessions.pop(authorization_code.code, None)
+        logger.debug("Session id for code exchange: %s", session_id)
         if session_id:
             token_key: Optional[str] = None
             if new_tokens:
                 token_key = new_tokens[-1]
             else:
-                token_key = next((token for token, data in access_tokens.items() if data.client_id == client.client_id), None)
+                token_key = next((token for token, data in access_tokens.items(
+                ) if data.client_id == client.client_id), None)
 
             if token_key:
                 subject = await self._session_storage.find_user_by_token(token_key)
@@ -190,35 +226,46 @@ class SessionAwareOAuthProxy(OAuthProxy):
                     subject,
                 )
             else:
-                logger.debug("No access token recorded for session %s during code exchange", session_id)
+                logger.debug(
+                    "No access token recorded for session %s during code exchange", session_id)
 
         return token_response
 
     async def _map_new_tokens_to_users(self) -> None:
         existing_users = await self._session_storage.get_all_user_subjects()
         access_tokens = getattr(self, "_access_tokens", {})
-        known_attrs = [attr for attr in dir(self) if "token" in attr.lower() and not attr.startswith("__")]
+        known_attrs = [attr for attr in dir(
+            self) if "token" in attr.lower() and not attr.startswith("__")]
         logger.debug(
             "_map_new_tokens_to_users: existing_users=%s tokens=%s token_attrs=%s",
             existing_users,
             [t[:8] + "***" for t in access_tokens],
-            {attr: _summarize_token_attr(attr, getattr(self, attr, None)) for attr in known_attrs},
+            {attr: _summarize_token_attr(attr, getattr(
+                self, attr, None)) for attr in known_attrs},
         )
         unmapped_tokens = [token for token in access_tokens if await self._session_storage.find_user_by_token(token) is None]
+        logger.debug("Unmapped tokens: %s", [
+                     t[:8] + "***" for t in unmapped_tokens])
 
         for token_key in unmapped_tokens:
             try:
                 import jwt
 
-                decoded = jwt.decode(token_key, options={"verify_signature": False})
+                decoded = jwt.decode(token_key, options={
+                                     "verify_signature": False})
                 user_subject = decoded.get("sub")
+                logger.debug("Decoded token %s***: subject=%s",
+                             token_key[:8], user_subject)
                 if user_subject:
                     await self._session_storage.set_user_token(user_subject, token_key, ttl_seconds=3600)
-                    logger.info("Mapped token %s*** to user %s", token_key[:20], user_subject)
+                    logger.info("Mapped token %s*** to user %s",
+                                token_key[:20], user_subject)
                 else:
-                    logger.warning("Token %s*** has no subject claim", token_key[:20])
+                    logger.warning(
+                        "Token %s*** has no subject claim", token_key[:20])
             except Exception as exc:  # pragma: no cover - decoding failures
-                logger.warning("Failed to decode token %s***: %s", token_key[:20], exc)
+                logger.warning("Failed to decode token %s***: %s",
+                               token_key[:20], exc)
 
     async def get_user_token(self, user_subject: str) -> Optional[str]:
         token_key = await self._session_storage.get_user_token(user_subject)
@@ -248,13 +295,15 @@ class SessionAwareOAuthProxy(OAuthProxy):
             if token
         }
 
-        orphaned = [token for token in list(self._access_tokens.keys()) if token not in mapped_tokens]
+        orphaned = [token for token in list(
+            self._access_tokens.keys()) if token not in mapped_tokens]
         for token in orphaned:
             if self._is_token_old_enough_to_cleanup(token):
                 del self._access_tokens[token]
 
         if orphaned:
-            logger.info("Cleaned up %s orphaned tokens from OAuth proxy", len(orphaned))
+            logger.info(
+                "Cleaned up %s orphaned tokens from OAuth proxy", len(orphaned))
             for session_id, (mapped_token, _) in list(self._session_tokens.items()):
                 if mapped_token in orphaned:
                     self._session_tokens.pop(session_id, None)
@@ -270,11 +319,13 @@ class SessionAwareOAuthProxy(OAuthProxy):
                 return True
             token_age = datetime.now(timezone.utc).timestamp() - issued_at
             if token_age <= min_age_seconds:
-                logger.debug("Token is only %.1fs old, keeping for now", token_age)
+                logger.debug(
+                    "Token is only %.1fs old, keeping for now", token_age)
                 return False
             return True
         except Exception as exc:  # pragma: no cover - decoding failures
-            logger.debug("Error checking token age, assuming old enough: %s", exc)
+            logger.debug(
+                "Error checking token age, assuming old enough: %s", exc)
             return True
 
     async def iter_user_tokens(self) -> list[tuple[str, str]]:
@@ -286,7 +337,8 @@ class SessionAwareOAuthProxy(OAuthProxy):
             token = await self._session_storage.get_user_token(subject)
             if token:
                 tokens.append((subject, token))
-        logger.debug("iter_user_tokens -> %s", [(sub, tok[:8] + "***") for sub, tok in tokens])
+        logger.debug("iter_user_tokens -> %s",
+                     [(sub, tok[:8] + "***") for sub, tok in tokens])
         return tokens
 
     async def get_token_for_current_user(self) -> Optional[tuple[str, Optional[str]]]:
@@ -300,7 +352,8 @@ class SessionAwareOAuthProxy(OAuthProxy):
 
     def get_session_token_info(self, session_id: str) -> Optional[tuple[str, Optional[str]]]:
         info = self._session_tokens.get(session_id)
-        logger.debug("get_session_token_info(%s) -> %s", session_id, (info[0][:8] + "***", info[1]) if info else None)
+        logger.debug("get_session_token_info(%s) -> %s", session_id,
+                     (info[0][:8] + "***", info[1]) if info else None)
         return info
 
     async def get_token_for_session(self, session_id: str) -> Optional[tuple[str, Optional[str]]]:
