@@ -15,27 +15,6 @@ from .auth_middleware import OAuthTokenMiddleware, PATAuthMiddleware
 logger = logging.getLogger("synapse_mcp.app")
 
 
-class RequestLoggingMiddleware(BaseHTTPMiddleware):
-    """Middleware to log all incoming requests for debugging authentication issues."""
-
-    async def dispatch(self, request: Request, call_next):
-        # Log request details before processing
-        auth_header = request.headers.get("authorization", "")
-        masked_auth = f"{auth_header[:40]}***" if auth_header else "None"
-
-        logger.info("=== Incoming Request ===")
-        logger.info("Path: %s %s", request.method, request.url.path)
-        logger.info("Authorization header: %s", masked_auth)
-        logger.info("Headers: %s", dict(request.headers))
-
-        # Process request
-        response = await call_next(request)
-
-        # Log response status
-        logger.info("Response status: %s for %s %s", response.status_code, request.method, request.url.path)
-
-        return response
-
 # Determine authentication mode and configure server accordingly
 auth = create_oauth_proxy()
 has_pat = bool(os.environ.get("SYNAPSE_PAT"))
@@ -63,7 +42,8 @@ if auth and has_oauth:
     # Log FastMCP's internal state for debugging
     logger.info("FastMCP auth type: %s", type(auth).__name__)
     logger.info("FastMCP mcp type: %s", type(mcp).__name__)
-    logger.info("FastMCP mcp dir: %s", [attr for attr in dir(mcp) if not attr.startswith("_")])
+    logger.info("FastMCP mcp dir: %s", [
+                attr for attr in dir(mcp) if not attr.startswith("_")])
 
     if has_pat:
         logger.warning(
