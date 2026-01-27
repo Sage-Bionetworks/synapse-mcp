@@ -173,7 +173,10 @@ class SessionAwareOAuthProxy(OAuthProxy):
             logger.debug("Callback: session_id=%s, all client_codes=%s",
                          session_id, list(client_codes.keys()))
             if session_id:
-                for code in client_codes:
+                client_codes = getattr(self, "_client_codes", {})
+                new_codes = [
+                    code for code in client_codes if code not in existing_codes]
+                for code in new_codes:
                     self._code_sessions[code] = session_id
                     logger.debug(
                         "Mapped code %s to session %s in callback (defensive)", code[:8], session_id)
