@@ -112,6 +112,21 @@ class SessionAwareOAuthProxy(OAuthProxy):
                      c[:8] + "***" for c in existing_codes])
         result = await super()._handle_idp_callback(request, *args, **kwargs)
 
+        # Only map new codes to the session
+        client_codes = getattr(self, "_client_codes", {})
+        new_codes = set(client_codes.keys()) - existing_codes
+        logger.debug("Callback: session_id=%s, new_codes=%s",
+                     session_id, list(new_codes))
+        if session_id:
+            for code in new_codes:
+                self._code_sessions[code] = session_id
+                logger.debug(
+                    "Mapped code %s to session %s in callback (new only)", code[:8], session_id)
+        else:
+            for code in new_codes:
+                logger.warning(
+                    "No session_id available to map for new code %s", code[:8])
+
         if result and hasattr(result, "headers"):
             location = result.headers.get("location")
             logger.debug("Callback redirect location: %s", location)
