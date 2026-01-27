@@ -140,16 +140,19 @@ class SessionAwareOAuthProxy(OAuthProxy):
                         session_id,
                     )
         if result:
-            if session_id:
-                client_codes = getattr(self, "_client_codes", {})
-                new_codes = [
-                    code for code in client_codes if code not in existing_codes]
-                logger.debug("New codes for session %s: %s", session_id, [
-                             c[:8] + "***" for c in new_codes])
-                for code in new_codes:
+            client_codes = getattr(self, "_client_codes", {})
+            new_codes = [
+                code for code in client_codes if code not in existing_codes]
+            logger.debug("New codes detected in callback: %s",
+                         [c[:8] + "***" for c in new_codes])
+            for code in new_codes:
+                if session_id:
                     self._code_sessions[code] = session_id
                     logger.debug(
-                        "Cached authorization code %s for session %s", code[:8], session_id)
+                        "Mapped code %s to session %s in callback", code[:8], session_id)
+                else:
+                    logger.warning(
+                        "No session_id available to map for code %s", code[:8])
             try:
                 await self._map_new_tokens_to_users()
             except Exception as exc:  # pragma: no cover - defensive
@@ -207,7 +210,12 @@ class SessionAwareOAuthProxy(OAuthProxy):
                      t[:8] + "***" for t in new_tokens])
 
         session_id = self._code_sessions.pop(authorization_code.code, None)
-        logger.debug("Session id for code exchange: %s", session_id)
+        if session_id:
+            logger.debug("Popped session_id %s for code %s in exchange",
+                         session_id, getattr(authorization_code, 'code', None))
+        else:
+            logger.warning("No session_id found for code %s during code exchange", getattr(
+                authorization_code, 'code', None))
         if session_id:
             token_key: Optional[str] = None
             if new_tokens:
