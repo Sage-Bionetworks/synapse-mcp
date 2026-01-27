@@ -60,9 +60,11 @@ class SessionAwareOAuthProxy(OAuthProxy):
             )
             return cached
 
-        logger.info("Token NOT in cache - calling token_verifier.verify_token()")
+        logger.info(
+            "Token NOT in cache - calling token_verifier.verify_token()")
         result = await super().verify_token(token)
-        logger.info("Verifier returned: %s", "valid token" if result else "None (INVALID)")
+        logger.info("Verifier returned: %s",
+                    "valid token" if result else "None (INVALID)")
         return result
 
     def _restore_registered_clients(self) -> None:
@@ -138,21 +140,6 @@ class SessionAwareOAuthProxy(OAuthProxy):
         logger.debug("Existing codes: %s", [
                      c[:8] + "***" for c in existing_codes])
         result = await super()._handle_idp_callback(request, *args, **kwargs)
-
-        # Only map new codes to the session
-        client_codes = getattr(self, "_client_codes", {})
-        new_codes = set(client_codes.keys()) - existing_codes
-        logger.debug("Callback: session_id=%s, new_codes=%s",
-                     session_id, list(new_codes))
-        if session_id:
-            for code in new_codes:
-                self._code_sessions[code] = session_id
-                logger.debug(
-                    "Mapped code %s to session %s in callback (new only)", code[:8], session_id)
-        else:
-            for code in new_codes:
-                logger.warning(
-                    "No session_id available to map for new code %s", code[:8])
 
         if result and hasattr(result, "headers"):
             location = result.headers.get("location")
@@ -426,9 +413,11 @@ def _extract_session_id(request) -> Optional[str]:
             session_context = getattr(request.state, "session_context", None)
             logger.debug("  session_context: %s", session_context)
             if session_context and hasattr(session_context, "session_id"):
-                logger.debug("  session_context.session_id: %s", session_context.session_id)
+                logger.debug("  session_context.session_id: %s",
+                             session_context.session_id)
                 return session_context.session_id
-        logger.warning("No session_id found in request (checked headers and state)")
+        logger.warning(
+            "No session_id found in request (checked headers and state)")
     except Exception as exc:  # pragma: no cover - defensive
         logger.debug("Could not extract session ID from callback: %s", exc)
     return None
