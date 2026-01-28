@@ -70,30 +70,41 @@ def main():
 
     # Import after environment is set up
     # Authentication is configured during module import
-    from synapse_mcp import mcp
+    if use_http:
+        # For HTTP transport, import the wrapped ASGI app directly
+        # This ensures our RequestLoggingMiddleware actually runs
+        from synapse_mcp import app
+        import uvicorn
 
-    # Use FastMCP's built-in server runner
-    try:
-        logger.info("Running FastMCP server")
-        # Only set HOST/PORT for HTTP transports
-        if use_http:
-            os.environ["HOST"] = args.host or os.environ.get(
-                "HOST", "127.0.0.1")
-            os.environ["PORT"] = str(args.port or int(
-                os.environ.get("PORT", "9000")))
-
-        if use_http:
+        try:
             host = args.host or os.environ.get("HOST", "127.0.0.1")
             port = args.port or int(os.environ.get("PORT", "9000"))
-            mcp.run(transport=transport, host=host, port=port)
-        else:
+
+            # Convert logging level to uvicorn's string format
+            uvicorn_log_level = logging.getLevelName(log_level).lower()
+
+            logger.info("Running uvicorn server with wrapped ASGI app")
+            logger.info(f"ASGI request logging enabled - will capture ALL /mcp requests")
+            uvicorn.run(app, host=host, port=port, log_level=uvicorn_log_level)
+            logger.info("Server stopped")
+        except KeyboardInterrupt:
+            logger.info("Server stopped by user")
+        except Exception as e:
+            logger.error(f"Error running server: {e}")
+            sys.exit(1)
+    else:
+        # For stdio transport, use FastMCP's built-in runner
+        from synapse_mcp import mcp
+
+        try:
+            logger.info("Running FastMCP server with stdio transport")
             mcp.run(transport=transport)
-        logger.info("Server stopped")
-    except KeyboardInterrupt:
-        logger.info("Server stopped by user")
-    except Exception as e:
-        logger.error(f"Error running server: {e}")
-        sys.exit(1)
+            logger.info("Server stopped")
+        except KeyboardInterrupt:
+            logger.info("Server stopped by user")
+        except Exception as e:
+            logger.error(f"Error running server: {e}")
+            sys.exit(1)
 
 
 if __name__ == "__main__":
