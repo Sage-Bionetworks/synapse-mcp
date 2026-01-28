@@ -39,12 +39,11 @@ from typing import Any, Optional
 
 from fastmcp.server.middleware import Middleware, MiddlewareContext
 try:
-    from fastmcp.server.dependencies import get_access_token, get_http_request
+    from fastmcp.server.dependencies import get_http_request
 except ImportError:
     get_access_token = None
     get_http_request = None
 
-from starlette.responses import JSONResponse
 from starlette.exceptions import HTTPException
 
 from .utils import mask_identifier, mask_token
@@ -54,6 +53,7 @@ logger = logging.getLogger("synapse_mcp.auth_middleware")
 
 class AuthenticationError(HTTPException):
     """HTTP 401 Unauthorized - Missing or invalid token."""
+
     def __init__(self, detail: str = "Authentication required"):
         super().__init__(status_code=401, detail=detail)
 
@@ -89,7 +89,8 @@ def validate_jwt_token(token: str) -> None:
             raise AuthenticationError("Token expired")
 
         # Token is valid
-        logger.debug("Token validated: expires_at=%s", datetime.fromtimestamp(exp, timezone.utc).isoformat())
+        logger.debug("Token validated: expires_at=%s",
+                     datetime.fromtimestamp(exp, timezone.utc).isoformat())
 
     except jwt.DecodeError as e:
         logger.warning("Invalid JWT token structure: %s", e)
@@ -161,8 +162,6 @@ class OAuthTokenMiddleware(Middleware):
         Raises:
             AuthenticationError (HTTP 401): If token is missing, invalid, or expired
         """
-        logger.info("=== OAuthTokenMiddleware._store_auth_info REACHED ===")
-
         # Inspect HTTP request to see what auth info is sent (debug mode)
         if get_http_request and logger.isEnabledFor(logging.DEBUG):
             try:
@@ -172,7 +171,8 @@ class OAuthTokenMiddleware(Middleware):
                         "HTTP Request - URL: %s, Method: %s, Has Auth: %s",
                         getattr(http_request, 'url', None),
                         getattr(http_request, 'method', None),
-                        'authorization' in http_request.headers if hasattr(http_request, 'headers') else False,
+                        'authorization' in http_request.headers if hasattr(
+                            http_request, 'headers') else False,
                     )
             except Exception as exc:
                 logger.debug("Could not inspect HTTP request: %s", exc)
@@ -195,7 +195,8 @@ class OAuthTokenMiddleware(Middleware):
             fast_ctx.set_state("oauth_access_token", token)
             logger.debug("Stored validated OAuth token in context")
         else:
-            logger.warning("FastMCP context does not expose set_state; unable to store token")
+            logger.warning(
+                "FastMCP context does not expose set_state; unable to store token")
 
     async def _resolve_token(self, context: MiddlewareContext, fast_ctx: Any) -> str:
         """
@@ -218,21 +219,18 @@ class OAuthTokenMiddleware(Middleware):
         token = None
 
         # Primary path: Extract from Authorization header
-        logger.info("=== DEBUGGING /mcp REQUEST ===")
         if get_http_request:
             try:
                 http_request = get_http_request()
                 if http_request and hasattr(http_request, 'headers'):
-                    logger.info("All request headers: %s", dict(http_request.headers))
                     auth_header = http_request.headers.get("authorization")
-                    logger.info("Authorization header: %s", auth_header[:50] + "..." if auth_header and len(auth_header) > 50 else auth_header if auth_header else "MISSING")
                     if auth_header and auth_header.startswith("Bearer "):
                         token = auth_header[len("Bearer "):]
-                        logger.info("Extracted token from Authorization header: %s", mask_token(token))
-                else:
-                    logger.warning("HTTP request has no headers attribute")
+                        logger.info(
+                            "Extracted token from Authorization header: %s", mask_token(token))
             except Exception as exc:
-                logger.warning("Could not extract token from HTTP request: %s", exc)
+                logger.warning(
+                    "Could not extract token from HTTP request: %s", exc)
 
         # Fallback: Check auth_context (in case FastMCP populates it differently)
         if not token:
@@ -243,13 +241,15 @@ class OAuthTokenMiddleware(Middleware):
             if auth_ctx:
                 token = getattr(auth_ctx, "token", None)
                 if token:
-                    logger.info("Using token from auth_context: %s", mask_token(token))
+                    logger.info("Using token from auth_context: %s",
+                                mask_token(token))
 
         # Last resort: Check for bearer token in context message headers
         if not token:
             token = self._extract_token_from_headers(context)
             if token:
-                logger.info("Extracted token from context headers: %s", mask_token(token))
+                logger.info(
+                    "Extracted token from context headers: %s", mask_token(token))
 
         if not token:
             logger.warning("No Authorization header in request - HTTP 401")
@@ -299,7 +299,8 @@ class PATAuthMiddleware(Middleware):
                 "Set SYNAPSE_PAT for development mode."
             )
         logger.info("PAT authentication enabled (development mode)")
-        logger.debug("PAT token loaded from environment: %s", mask_token(self.synapse_pat))
+        logger.debug("PAT token loaded from environment: %s",
+                     mask_token(self.synapse_pat))
 
     async def on_call_tool(self, context: MiddlewareContext, call_next):
         """
@@ -352,7 +353,8 @@ class PATAuthMiddleware(Middleware):
             fast_ctx.set_state("synapse_pat_token", self.synapse_pat)
             logger.debug("Injected PAT token into context")
         else:
-            logger.warning("FastMCP context does not expose set_state; unable to inject PAT")
+            logger.warning(
+                "FastMCP context does not expose set_state; unable to inject PAT")
 
 
 __all__ = ["OAuthTokenMiddleware", "PATAuthMiddleware"]
