@@ -13,6 +13,7 @@ from .auth_middleware import OAuthTokenMiddleware, PATAuthMiddleware
 
 logger = logging.getLogger("synapse_mcp.app")
 
+
 # Determine authentication mode and configure server accordingly
 auth = create_oauth_proxy()
 has_pat = bool(os.environ.get("SYNAPSE_PAT"))
@@ -34,6 +35,7 @@ if auth and has_oauth:
     # Production mode: OAuth authentication
     mcp = FastMCP("Synapse MCP Server", instructions=_INSTRUCTIONS, auth=auth)
     mcp.add_middleware(OAuthTokenMiddleware())
+
     logger.info("Server configured for OAuth authentication (production mode)")
     print("🔐 OAuth authentication configured (production mode)")
 
@@ -49,6 +51,7 @@ elif has_pat:
     # Development mode: PAT authentication
     mcp = FastMCP("Synapse MCP Server", instructions=_INSTRUCTIONS, auth=None)
     mcp.add_middleware(PATAuthMiddleware())
+
     logger.info("Server configured for PAT authentication (development mode)")
     print("🔧 PAT authentication configured (development mode)")
 
