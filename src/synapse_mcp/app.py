@@ -5,8 +5,6 @@ import logging
 import os
 
 from fastmcp import FastMCP
-from starlette.middleware import Middleware
-from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
@@ -34,23 +32,8 @@ _INSTRUCTIONS = (
 )
 
 if auth and has_oauth:
-    middleware = [
-        Middleware(
-            CORSMiddleware,
-            allow_origins=["*"],
-            allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
-            allow_headers=[
-                "mcp-protocol-version",
-                "mcp-session-id",
-                "Authorization",
-                "Content-Type",
-            ],
-            expose_headers=["mcp-session-id"],
-        )
-    ]
     # Production mode: OAuth authentication
-    mcp = FastMCP("Synapse MCP Server", instructions=_INSTRUCTIONS,
-                  auth=auth, middleware=middleware)
+    mcp = FastMCP("Synapse MCP Server", instructions=_INSTRUCTIONS, auth=auth)
     mcp.add_middleware(OAuthTokenMiddleware())
 
     logger.info("Server configured for OAuth authentication (production mode)")

@@ -75,6 +75,13 @@ def main():
     # Use FastMCP's built-in server runner
     try:
         logger.info("Running FastMCP server")
+        # Only set HOST/PORT for HTTP transports
+        if use_http:
+            os.environ["HOST"] = args.host or os.environ.get(
+                "HOST", "127.0.0.1")
+            os.environ["PORT"] = str(args.port or int(
+                os.environ.get("PORT", "9000")))
+
         if use_http:
             host = args.host or os.environ.get("HOST", "127.0.0.1")
             port = args.port or int(os.environ.get("PORT", "9000"))
