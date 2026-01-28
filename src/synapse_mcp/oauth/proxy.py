@@ -139,6 +139,12 @@ class SessionAwareOAuthProxy(OAuthProxy):
 
     async def _handle_idp_callback(self, request, *args, **kwargs):
         session_id = _extract_session_id(request)
+        logger.info("=== CALLBACK DEBUG ===")
+        logger.info("session_id extracted: %s", session_id)
+        if hasattr(request, 'headers'):
+            logger.info("request.headers: %s", dict(request.headers))
+        else:
+            logger.info("request has no headers attribute")
         logger.debug("_handle_idp_callback called. session_id=%s", session_id)
 
         existing_tokens = set(getattr(self, "_access_tokens", {}).keys())
@@ -178,19 +184,22 @@ class SessionAwareOAuthProxy(OAuthProxy):
                     )
         if result:
             client_codes = getattr(self, "_client_codes", {})
-            logger.debug("Callback: session_id=%s, all client_codes=%s",
-                         session_id, list(client_codes.keys()))
+            logger.info("Callback result received: session_id=%s, all client_codes=%s",
+                         session_id, [c[:8] + "***" for c in client_codes.keys()])
             if session_id:
                 client_codes = getattr(self, "_client_codes", {})
                 new_codes = [
                     code for code in client_codes if code not in existing_codes]
+                logger.info("New codes to map: %s", [c[:8] + "***" for c in new_codes])
                 for code in new_codes:
                     self._code_sessions[code] = session_id
-                    logger.debug(
-                        "Mapped code %s to session %s in callback (defensive)", code[:8], session_id)
+                    logger.info(
+                        "✓ Mapped code %s*** to session %s in callback", code[:8], session_id)
+                logger.info("Total code_sessions after callback: %s",
+                           {c[:8] + "***": s for c, s in self._code_sessions.items()})
             else:
                 logger.warning(
-                    "No session_id available to map for any code in callback")
+                    "⚠ No session_id available to map for any code in callback - _code_sessions will remain empty!")
             try:
                 await self._map_new_tokens_to_users()
             except Exception as exc:  # pragma: no cover - defensive
@@ -260,14 +269,19 @@ class SessionAwareOAuthProxy(OAuthProxy):
         logger.debug("New tokens from exchange: %s", [
                      t[:8] + "***" for t in new_tokens])
 
-        logger.debug("Code sessions before pop: %s", self._code_sessions)
+        code_str = getattr(authorization_code, 'code', None)
+        logger.info("=== CODE TO SESSION MAPPING ===")
+        logger.info("Looking for code: %s***", code_str[:8] if code_str else None)
+        logger.info("Code sessions before pop: %s", {c[:8] + "***": s for c, s in self._code_sessions.items()})
         session_id = self._code_sessions.pop(authorization_code.code, None)
         if session_id:
-            logger.debug("Popped session_id %s for code %s in exchange",
-                         session_id, getattr(authorization_code, 'code', None))
+            logger.info("✓ Popped session_id %s for code %s*** in exchange",
+                         session_id, code_str[:8] if code_str else None)
         else:
-            logger.warning("No session_id found for code %s during code exchange", getattr(
-                authorization_code, 'code', None))
+            logger.warning("⚠ No session_id found for code %s*** during code exchange - session mapping will not work!",
+                          code_str[:8] if code_str else None)
+            logger.warning("This means _handle_idp_callback did not map this code to a session_id")
+            logger.warning("Possible causes: 1) mcp-session-id header missing, 2) callback not called, 3) different server instance")
         if session_id:
             token_key: Optional[str] = None
             if new_tokens:
@@ -289,7 +303,14 @@ class SessionAwareOAuthProxy(OAuthProxy):
                 logger.debug(
                     "No access token recorded for session %s during code exchange", session_id)
 
-        logger.info("=== Returning token_response to client ===")
+        logger.info("=== TOKEN EXCHANGE COMPLETE ===")
+        if hasattr(token_response, "access_token"):
+            at = token_response.access_token
+            logger.info("✓ Returning access_token: %s***", at[:30] if at else None)
+            logger.info("Client MUST include this token as: Authorization: Bearer <token>")
+            logger.info("Client MUST include this token in ALL subsequent /mcp requests")
+        if hasattr(token_response, "expires_in"):
+            logger.info("Token expires in: %s seconds", token_response.expires_in)
         return token_response
 
     async def _map_new_tokens_to_users(self) -> None:

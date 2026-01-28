@@ -218,16 +218,21 @@ class OAuthTokenMiddleware(Middleware):
         token = None
 
         # Primary path: Extract from Authorization header
+        logger.info("=== DEBUGGING /mcp REQUEST ===")
         if get_http_request:
             try:
                 http_request = get_http_request()
                 if http_request and hasattr(http_request, 'headers'):
+                    logger.info("All request headers: %s", dict(http_request.headers))
                     auth_header = http_request.headers.get("authorization")
+                    logger.info("Authorization header: %s", auth_header[:50] + "..." if auth_header and len(auth_header) > 50 else auth_header if auth_header else "MISSING")
                     if auth_header and auth_header.startswith("Bearer "):
                         token = auth_header[len("Bearer "):]
                         logger.info("Extracted token from Authorization header: %s", mask_token(token))
+                else:
+                    logger.warning("HTTP request has no headers attribute")
             except Exception as exc:
-                logger.debug("Could not extract token from HTTP request: %s", exc)
+                logger.warning("Could not extract token from HTTP request: %s", exc)
 
         # Fallback: Check auth_context (in case FastMCP populates it differently)
         if not token:
