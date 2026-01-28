@@ -97,19 +97,19 @@ if auth and has_oauth:
     mcp.add_middleware(OAuthTokenMiddleware())
 
     # Wrap with ASGI-level request logging to debug auth issues
-    # We need to monkey-patch mcp.get_asgi_app() so that when __main__.py calls mcp.run(),
+    # We need to monkey-patch mcp.http_app() so that when __main__.py calls mcp.run(),
     # it uses our wrapped app with request logging
-    original_get_asgi_app = mcp.get_asgi_app
+    original_http_app = mcp.http_app
 
-    def wrapped_get_asgi_app():
-        asgi_app = original_get_asgi_app()
+    def wrapped_http_app(*args, **kwargs):
+        asgi_app = original_http_app(*args, **kwargs)
         return RequestLoggingMiddleware(asgi_app)
 
-    mcp.get_asgi_app = wrapped_get_asgi_app
-    app = mcp.get_asgi_app()  # Also store for direct ASGI usage
+    mcp.http_app = wrapped_http_app
+    app = mcp.http_app()  # Also store for direct ASGI usage
 
     logger.info("Server configured for OAuth authentication (production mode)")
-    logger.info("ASGI request logging enabled for debugging (wrapped mcp.get_asgi_app)")
+    logger.info("ASGI request logging enabled for debugging (wrapped mcp.http_app)")
     print("🔐 OAuth authentication configured (production mode)")
     print("🔍 ASGI request logging enabled for debugging")
 
@@ -133,18 +133,18 @@ elif has_pat:
     mcp.add_middleware(PATAuthMiddleware())
 
     # Wrap with ASGI-level request logging (also useful for PAT mode debugging)
-    # Monkey-patch mcp.get_asgi_app() so __main__.py uses our wrapped app
-    original_get_asgi_app = mcp.get_asgi_app
+    # Monkey-patch mcp.http_app() so __main__.py uses our wrapped app
+    original_http_app = mcp.http_app
 
-    def wrapped_get_asgi_app():
-        asgi_app = original_get_asgi_app()
+    def wrapped_http_app(*args, **kwargs):
+        asgi_app = original_http_app(*args, **kwargs)
         return RequestLoggingMiddleware(asgi_app)
 
-    mcp.get_asgi_app = wrapped_get_asgi_app
-    app = mcp.get_asgi_app()  # Also store for direct ASGI usage
+    mcp.http_app = wrapped_http_app
+    app = mcp.http_app()  # Also store for direct ASGI usage
 
     logger.info("Server configured for PAT authentication (development mode)")
-    logger.info("ASGI request logging enabled for debugging (wrapped mcp.get_asgi_app)")
+    logger.info("ASGI request logging enabled for debugging (wrapped mcp.http_app)")
     print("🔧 PAT authentication configured (development mode)")
     print("🔍 ASGI request logging enabled for debugging")
 
