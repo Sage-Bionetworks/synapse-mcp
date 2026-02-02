@@ -41,6 +41,7 @@ class SynapseJWTVerifier:
     def _verify_token_sync(self, token: str) -> Optional[SimpleNamespace]:
         try:
             signing_key = self.jwks_client.get_signing_key_from_jwt(token)
+
             decoded = decode(
                 jwt=token,
                 key=signing_key.key,
@@ -52,6 +53,7 @@ class SynapseJWTVerifier:
 
             scopes = self._extract_synapse_scopes(decoded)
             if not self._validate_required_scopes(scopes):
+                logger.warning("Required scopes validation failed")
                 return None
 
             access_token_obj = self._create_fastmcp_access_token(
@@ -60,7 +62,8 @@ class SynapseJWTVerifier:
             return access_token_obj
 
         except PyJWTError as exc:
-            logger.error("JWT verification failed: %s", exc)
+            logger.error("JWT verification FAILED: %s (type: %s)",
+                         exc, type(exc).__name__)
             return None
 
     def _extract_synapse_scopes(self, decoded: Dict[str, Any]) -> List[str]:
