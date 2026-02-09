@@ -58,6 +58,26 @@ class _OAuthFixupMiddleware:
 
     # -- helpers -----------------------------------------------------------
 
+    @staticmethod
+    def _safe_registration_summary(data: dict) -> dict:
+        """Return a log-safe copy of a registration request/response body.
+
+        Strips ``client_secret`` and truncates ``redirect_uris`` values to
+        avoid leaking credentials or flooding logs with long URIs.
+        """
+        safe = {}
+        for key, value in data.items():
+            if "secret" in key.lower():
+                safe[key] = "<redacted>"
+            elif key == "redirect_uris" and isinstance(value, list):
+                safe[key] = [
+                    (u[:80] + "…") if isinstance(u, str) and len(u) > 80 else u
+                    for u in value
+                ]
+            else:
+                safe[key] = value
+        return safe
+
     async def _handle_register(self, scope, receive, send):
         """Ensure ``grant_types`` includes ``refresh_token``."""
         body_parts: list[bytes] = []
@@ -68,15 +88,21 @@ class _OAuthFixupMiddleware:
                 break
 
         raw = b"".join(body_parts)
+        parsed_ok = False
         try:
             data = json.loads(raw)
+            parsed_ok = True
+            logger.info(
+                "OAuth /register request: %s",
+                self._safe_registration_summary(data),
+            )
             grants = data.get("grant_types", [])
             if "authorization_code" in grants and "refresh_token" not in grants:
                 data["grant_types"] = grants + ["refresh_token"]
                 raw = json.dumps(data).encode()
-                logger.debug("Normalised grant_types in /register body")
-        except (json.JSONDecodeError, TypeError):
-            pass
+                logger.info("Normalised grant_types to include refresh_token")
+        except (json.JSONDecodeError, TypeError) as exc:
+            logger.warning("Failed to parse /register body: %s", exc)
 
         body_sent = False
 
@@ -87,7 +113,46 @@ class _OAuthFixupMiddleware:
                 return {"type": "http.request", "body": raw, "more_body": False}
             return {"type": "http.disconnect"}
 
-        await self.app(scope, patched_receive, send)
+        # Capture the response status and body so we can log errors.
+        response_status = None
+        response_body_parts: list[bytes] = []
+
+        async def logging_send(message):
+            nonlocal response_status
+            if message["type"] == "http.response.start":
+                response_status = message.get("status")
+            elif message["type"] == "http.response.body":
+                response_body_parts.append(message.get("body", b""))
+            await send(message)
+
+        await self.app(scope, patched_receive, logging_send)
+
+        # Log the outcome
+        resp_raw = b"".join(response_body_parts)
+        if response_status and response_status >= 400:
+            try:
+                resp_data = json.loads(resp_raw)
+                logger.info(
+                    "OAuth /register FAILED (HTTP %s): %s",
+                    response_status,
+                    resp_data,
+                )
+            except (json.JSONDecodeError, TypeError):
+                logger.info(
+                    "OAuth /register FAILED (HTTP %s): %s",
+                    response_status,
+                    resp_raw[:500],
+                )
+        else:
+            try:
+                resp_data = json.loads(resp_raw)
+                logger.info(
+                    "OAuth /register OK (HTTP %s): client_id=%s",
+                    response_status,
+                    resp_data.get("client_id", "?"),
+                )
+            except (json.JSONDecodeError, TypeError):
+                logger.info("OAuth /register response: HTTP %s", response_status)
 
     async def _handle_metadata(self, scope, receive, send):
         """Add ``"none"`` to ``token_endpoint_auth_methods_supported``."""
