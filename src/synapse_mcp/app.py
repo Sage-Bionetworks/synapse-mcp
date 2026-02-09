@@ -3,6 +3,7 @@
 from datetime import datetime, timezone
 import logging
 import os
+from urllib.parse import urlparse
 
 from fastmcp import FastMCP
 from starlette.requests import Request
@@ -81,4 +82,29 @@ async def health_check(request: Request) -> JSONResponse:
     )
 
 
-__all__ = ["auth", "mcp", "health_check"]
+@mcp.custom_route("/.well-known/oauth-protected-resource", methods=["GET"])
+async def oauth_protected_resource_root(request: Request) -> JSONResponse:
+    """Serve RFC 9728 protected resource metadata at the root path.
+
+    FastMCP serves this at ``/.well-known/oauth-protected-resource/mcp``
+    (path-suffixed per the spec), but the ``WWW-Authenticate`` header in 401
+    responses advertises the root path without the ``/mcp`` suffix.  This
+    route ensures both URLs resolve so that all MCP clients — including
+    Claude Code and claude.ai — can complete OAuth discovery.
+    """
+    raw_server_url = os.environ.get("MCP_SERVER_URL", "http://127.0.0.1:9000")
+    parsed = urlparse(raw_server_url)
+    base_url = f"{parsed.scheme}://{parsed.netloc}"
+    resource_url = raw_server_url.rstrip("/")
+
+    return JSONResponse(
+        {
+            "resource": resource_url,
+            "authorization_servers": [f"{base_url}/"],
+            "scopes_supported": ["openid", "view"],
+            "bearer_methods_supported": ["header"],
+        }
+    )
+
+
+__all__ = ["auth", "mcp", "health_check", "oauth_protected_resource_root"]
