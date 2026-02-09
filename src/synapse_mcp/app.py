@@ -18,64 +18,131 @@ logger = logging.getLogger("synapse_mcp.app")
 
 
 # ---------------------------------------------------------------------------
-# ASGI middleware: normalise grant_types on POST /register
+# ASGI middleware – fix two MCP-library limitations:
+#
+# 1. POST /register:  The MCP library requires grant_types to contain *both*
+#    "authorization_code" and "refresh_token".  Many MCP clients (Claude Code,
+#    claude.ai) only send "authorization_code".  The middleware adds
+#    "refresh_token" so registration succeeds.
+#
+# 2. GET /.well-known/oauth-authorization-server:  The MCP library hardcodes
+#    token_endpoint_auth_methods_supported: ["client_secret_post"].  Public
+#    clients (browsers, Claude.ai) need "none" to be listed.  The middleware
+#    patches the JSON response to include both methods.
 # ---------------------------------------------------------------------------
-# The MCP library validates that grant_types contains *both*
-# "authorization_code" and "refresh_token" before our OAuthProxy override
-# is called.  Many MCP clients (Claude Code, claude.ai) only send
-# "authorization_code".  This middleware rewrites the request body so
-# "refresh_token" is always present, allowing registration to succeed.
-# ---------------------------------------------------------------------------
-class _GrantTypesMiddleware:
-    """Raw ASGI middleware that normalises ``grant_types`` for ``POST /register``."""
+class _OAuthFixupMiddleware:
+    """Raw ASGI middleware that patches MCP library OAuth behaviour."""
 
     def __init__(self, app):
         self.app = app
 
     async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        # --- Fix 1: normalise grant_types on POST /register ---------------
+        if scope["method"] == "POST" and scope["path"] == "/register":
+            await self._handle_register(scope, receive, send)
+            return
+
+        # --- Fix 2: patch token_endpoint_auth_methods on GET metadata -----
         if (
-            scope["type"] == "http"
-            and scope["method"] == "POST"
-            and scope["path"] == "/register"
+            scope["method"] == "GET"
+            and scope["path"] == "/.well-known/oauth-authorization-server"
         ):
-            body_parts: list[bytes] = []
-            # Buffer the entire request body
-            while True:
-                msg = await receive()
-                body_parts.append(msg.get("body", b""))
-                if not msg.get("more_body", False):
-                    break
-
-            raw = b"".join(body_parts)
-            try:
-                data = json.loads(raw)
-                grants = data.get("grant_types", [])
-                if "authorization_code" in grants and "refresh_token" not in grants:
-                    data["grant_types"] = grants + ["refresh_token"]
-                    raw = json.dumps(data).encode()
-                    logger.debug("Normalised grant_types in /register body")
-            except (json.JSONDecodeError, TypeError):
-                pass  # forward the original body unchanged
-
-            # Build a one-shot ``receive`` that replays the (possibly rewritten) body.
-            body_sent = False
-
-            async def patched_receive():
-                nonlocal body_sent
-                if not body_sent:
-                    body_sent = True
-                    return {"type": "http.request", "body": raw, "more_body": False}
-                return {"type": "http.disconnect"}
-
-            await self.app(scope, patched_receive, send)
+            await self._handle_metadata(scope, receive, send)
             return
 
         await self.app(scope, receive, send)
 
+    # -- helpers -----------------------------------------------------------
+
+    async def _handle_register(self, scope, receive, send):
+        """Ensure ``grant_types`` includes ``refresh_token``."""
+        body_parts: list[bytes] = []
+        while True:
+            msg = await receive()
+            body_parts.append(msg.get("body", b""))
+            if not msg.get("more_body", False):
+                break
+
+        raw = b"".join(body_parts)
+        try:
+            data = json.loads(raw)
+            grants = data.get("grant_types", [])
+            if "authorization_code" in grants and "refresh_token" not in grants:
+                data["grant_types"] = grants + ["refresh_token"]
+                raw = json.dumps(data).encode()
+                logger.debug("Normalised grant_types in /register body")
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+        body_sent = False
+
+        async def patched_receive():
+            nonlocal body_sent
+            if not body_sent:
+                body_sent = True
+                return {"type": "http.request", "body": raw, "more_body": False}
+            return {"type": "http.disconnect"}
+
+        await self.app(scope, patched_receive, send)
+
+    async def _handle_metadata(self, scope, receive, send):
+        """Add ``"none"`` to ``token_endpoint_auth_methods_supported``."""
+        response_parts: list[bytes] = []
+        response_start = None
+
+        async def capture_send(message):
+            nonlocal response_start
+            if message["type"] == "http.response.start":
+                response_start = message
+            elif message["type"] == "http.response.body":
+                response_parts.append(message.get("body", b""))
+                if not message.get("more_body", False):
+                    # All body received – patch and forward
+                    body = b"".join(response_parts)
+                    try:
+                        data = json.loads(body)
+                        methods = data.get(
+                            "token_endpoint_auth_methods_supported", []
+                        )
+                        if "none" not in methods:
+                            data["token_endpoint_auth_methods_supported"] = (
+                                methods + ["none"]
+                            )
+                            body = json.dumps(data).encode()
+                            logger.debug(
+                                "Patched token_endpoint_auth_methods_supported"
+                            )
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+
+                    # Fix Content-Length and send
+                    headers = [
+                        (k, v) for k, v in response_start.get("headers", [])
+                        if k.lower() != b"content-length"
+                    ]
+                    headers.append(
+                        (b"content-length", str(len(body)).encode())
+                    )
+                    response_start["headers"] = headers
+                    await send(response_start)
+                    await send({
+                        "type": "http.response.body",
+                        "body": body,
+                        "more_body": False,
+                    })
+            else:
+                await send(message)
+
+        await self.app(scope, receive, capture_send)
+
 
 # Expose as a ``starlette.middleware.Middleware`` instance so it can be
 # passed directly to ``mcp.run(middleware=[...])`` in ``__main__``.
-grant_types_middleware = ASGIMiddleware(_GrantTypesMiddleware)
+grant_types_middleware = ASGIMiddleware(_OAuthFixupMiddleware)
 
 
 # Determine authentication mode and configure server accordingly
