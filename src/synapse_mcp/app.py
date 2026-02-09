@@ -96,11 +96,36 @@ class _OAuthFixupMiddleware:
                 "OAuth /register request: %s",
                 self._safe_registration_summary(data),
             )
+            modified = False
+
+            # Normalise grant_types
             grants = data.get("grant_types", [])
             if "authorization_code" in grants and "refresh_token" not in grants:
                 data["grant_types"] = grants + ["refresh_token"]
-                raw = json.dumps(data).encode()
+                modified = True
                 logger.info("Normalised grant_types to include refresh_token")
+
+            # Strip unsupported scopes – the MCP library rejects any
+            # scope not in scopes_supported.  Claude.ai sends
+            # "offline_access" which Synapse doesn't support.
+            SUPPORTED_SCOPES = {"openid", "view"}
+            raw_scope = data.get("scope")
+            if isinstance(raw_scope, str):
+                requested = raw_scope.split()
+                filtered = [s for s in requested if s in SUPPORTED_SCOPES]
+                removed = set(requested) - set(filtered)
+                if removed:
+                    data["scope"] = " ".join(filtered) if filtered else None
+                    if data["scope"] is None:
+                        del data["scope"]
+                    modified = True
+                    logger.info(
+                        "Stripped unsupported scopes from /register: %s",
+                        removed,
+                    )
+
+            if modified:
+                raw = json.dumps(data).encode()
         except (json.JSONDecodeError, TypeError) as exc:
             logger.warning("Failed to parse /register body: %s", exc)
 
