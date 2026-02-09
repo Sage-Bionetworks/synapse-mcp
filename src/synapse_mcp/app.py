@@ -36,12 +36,14 @@ class _OAuthFixupMiddleware:
     def __init__(self, app):
         self.app = app
 
+    SUPPORTED_SCOPES = {"openid", "view"}
+
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
 
-        # --- Fix 1: normalise grant_types on POST /register ---------------
+        # --- Fix 1: normalise grant_types + scopes on POST /register ------
         if scope["method"] == "POST" and scope["path"] == "/register":
             await self._handle_register(scope, receive, send)
             return
@@ -54,7 +56,38 @@ class _OAuthFixupMiddleware:
             await self._handle_metadata(scope, receive, send)
             return
 
+        # --- Fix 3: strip unsupported scopes from GET /authorize ----------
+        # Claude.ai sends scope=openid+view+offline_access in the
+        # authorization URL.  The server rejects scopes the client wasn't
+        # registered with, so we strip them from the query string.
+        if scope["method"] == "GET" and scope["path"] == "/authorize":
+            self._strip_query_scopes(scope)
+
         await self.app(scope, receive, send)
+
+    def _strip_query_scopes(self, scope):
+        """Remove unsupported scopes from the ``scope`` query parameter."""
+        from urllib.parse import parse_qsl, urlencode
+
+        qs = scope.get("query_string", b"").decode("latin-1")
+        params = parse_qsl(qs, keep_blank_values=True)
+        new_params = []
+        changed = False
+        for key, value in params:
+            if key == "scope":
+                parts = value.split()
+                filtered = [s for s in parts if s in self.SUPPORTED_SCOPES]
+                removed = set(parts) - set(filtered)
+                if removed:
+                    logger.info(
+                        "Stripped unsupported scopes from /authorize: %s",
+                        removed,
+                    )
+                    value = " ".join(filtered)
+                    changed = True
+            new_params.append((key, value))
+        if changed:
+            scope["query_string"] = urlencode(new_params).encode("latin-1")
 
     # -- helpers -----------------------------------------------------------
 
@@ -108,11 +141,10 @@ class _OAuthFixupMiddleware:
             # Strip unsupported scopes – the MCP library rejects any
             # scope not in scopes_supported.  Claude.ai sends
             # "offline_access" which Synapse doesn't support.
-            SUPPORTED_SCOPES = {"openid", "view"}
             raw_scope = data.get("scope")
             if isinstance(raw_scope, str):
                 requested = raw_scope.split()
-                filtered = [s for s in requested if s in SUPPORTED_SCOPES]
+                filtered = [s for s in requested if s in self.SUPPORTED_SCOPES]
                 removed = set(requested) - set(filtered)
                 if removed:
                     data["scope"] = " ".join(filtered) if filtered else None
