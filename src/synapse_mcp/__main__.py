@@ -71,6 +71,7 @@ def main():
     # Import after environment is set up
     # Authentication is configured during module import
     from synapse_mcp import mcp
+    from synapse_mcp.app import grant_types_middleware
 
     # Use FastMCP's built-in server runner
     try:
@@ -85,7 +86,12 @@ def main():
         if use_http:
             host = args.host or os.environ.get("HOST", "127.0.0.1")
             port = args.port or int(os.environ.get("PORT", "9000"))
-            mcp.run(transport=transport, host=host, port=port)
+            mcp.run(
+                transport=transport,
+                host=host,
+                port=port,
+                middleware=[grant_types_middleware],
+            )
         else:
             mcp.run(transport=transport)
         logger.info("Server stopped")

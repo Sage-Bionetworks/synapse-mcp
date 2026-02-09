@@ -1,11 +1,13 @@
 """Core MCP application setup."""
 
 from datetime import datetime, timezone
+import json
 import logging
 import os
 from urllib.parse import urlparse
 
 from fastmcp import FastMCP
+from starlette.middleware import Middleware as ASGIMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
@@ -13,6 +15,67 @@ from .oauth import create_oauth_proxy
 from .auth_middleware import OAuthTokenMiddleware, PATAuthMiddleware
 
 logger = logging.getLogger("synapse_mcp.app")
+
+
+# ---------------------------------------------------------------------------
+# ASGI middleware: normalise grant_types on POST /register
+# ---------------------------------------------------------------------------
+# The MCP library validates that grant_types contains *both*
+# "authorization_code" and "refresh_token" before our OAuthProxy override
+# is called.  Many MCP clients (Claude Code, claude.ai) only send
+# "authorization_code".  This middleware rewrites the request body so
+# "refresh_token" is always present, allowing registration to succeed.
+# ---------------------------------------------------------------------------
+class _GrantTypesMiddleware:
+    """Raw ASGI middleware that normalises ``grant_types`` for ``POST /register``."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if (
+            scope["type"] == "http"
+            and scope["method"] == "POST"
+            and scope["path"] == "/register"
+        ):
+            body_parts: list[bytes] = []
+            # Buffer the entire request body
+            while True:
+                msg = await receive()
+                body_parts.append(msg.get("body", b""))
+                if not msg.get("more_body", False):
+                    break
+
+            raw = b"".join(body_parts)
+            try:
+                data = json.loads(raw)
+                grants = data.get("grant_types", [])
+                if "authorization_code" in grants and "refresh_token" not in grants:
+                    data["grant_types"] = grants + ["refresh_token"]
+                    raw = json.dumps(data).encode()
+                    logger.debug("Normalised grant_types in /register body")
+            except (json.JSONDecodeError, TypeError):
+                pass  # forward the original body unchanged
+
+            # Build a one-shot ``receive`` that replays the (possibly rewritten) body.
+            body_sent = False
+
+            async def patched_receive():
+                nonlocal body_sent
+                if not body_sent:
+                    body_sent = True
+                    return {"type": "http.request", "body": raw, "more_body": False}
+                return {"type": "http.disconnect"}
+
+            await self.app(scope, patched_receive, send)
+            return
+
+        await self.app(scope, receive, send)
+
+
+# Expose as a ``starlette.middleware.Middleware`` instance so it can be
+# passed directly to ``mcp.run(middleware=[...])`` in ``__main__``.
+grant_types_middleware = ASGIMiddleware(_GrantTypesMiddleware)
 
 
 # Determine authentication mode and configure server accordingly
