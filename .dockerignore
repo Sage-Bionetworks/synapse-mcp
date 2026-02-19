@@ -1,4 +1,3 @@
-# flyctl launch added from .gitignore
 # Python build artifacts
 **/__pycache__
 **/*.py[cod]
@@ -49,10 +48,8 @@
 # Croissant metadata output
 **/croissant_metadata.json
 
-# flyctl launch added from .pytest_cache/.gitignore
-# Created by pytest automatically.
+# pytest cache
 .pytest_cache/**/*
 
-# flyctl launch added from .venv/.gitignore
+# Virtual environment
 .venv/**/*
-fly.toml

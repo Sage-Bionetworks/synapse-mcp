@@ -107,62 +107,10 @@ docker run -p 9000:9000 \
   synapse-mcp
 ```
 
-### Fly.io
+### Production Deployment
 
-> [!WARNING]
-> These are placeholder deployment info and actual production deployment may change.
+Production is deployed to AWS ECS via CloudFormation. Infrastructure configuration and deployment instructions are maintained in the separate infrastructure repository:
 
-The project is configured for easy deployment to [Fly.io](https://fly.io), a platform for running full-stack apps and databases close to your users.
+> **https://github.com/Sage-Bionetworks-IT/synapse-mcp-infra**
 
-#### Prerequisites
-
-1.  **Create a Fly.io Account**: If you don't have one, sign up at [fly.io](https://fly.io).
-2.  **Install `flyctl`**: This is the command-line tool for managing Fly.io apps. Follow the installation instructions for your operating system at [fly.io/docs/hands-on/install-flyctl](https://fly.io/docs/hands-on/install-flyctl/).
-
-#### Deployment Steps
-
-1.  **Log in to Fly.io**:
-
-    Open your terminal and run:
-    ```bash
-    flyctl auth login
-    ```
-    This will open a browser window to authenticate your `flyctl` client.
-
-2.  **Launch the App**:
-
-    The `flyctl launch` command detects the `fly.toml` file, builds a new application, and deploys it. It will ask you to choose an app name (defaults to `synapse-mcp`) and a region.
-
-    ```bash
-    flyctl launch
-    ```
-
-3.  **Set OAuth2 Secrets**:
-
-    For the server to authenticate with Synapse via OAuth2 using FastMCP's OAuth proxy, provide it with a client ID, a client secret, and the correct redirect URI.
-
-    Run the following commands, replacing the placeholder values with your actual credentials:
-    ```bash
-    flyctl secrets set SYNAPSE_OAUTH_CLIENT_ID="your_client_id"
-    flyctl secrets set SYNAPSE_OAUTH_CLIENT_SECRET="your_client_secret"
-    flyctl secrets set SYNAPSE_OAUTH_REDIRECT_URI="https://your-app-name.fly.dev/oauth/callback"
-    flyctl secrets set REDIS_URL="redis://:password@your-redis-host:6379/0"
-    ```
-    *Note: The `fly.toml` already sets `MCP_TRANSPORT=streamable-http` and `MCP_SERVER_URL` as environment variables, so you don't need to set them as secrets.*
-
-4.  **Deploy Your Application**:
-
-    After setting the secrets, you can deploy the application.
-    ```bash
-    flyctl deploy
-    ```
-    This command uploads your code, builds it into a Docker image on Fly.io's builders, and deploys it to the platform.
-
-5.  **Check the Status**:
-
-    Once the deployment is complete, you can check the status of your app:
-    ```bash
-    flyctl status
-    ```
-
-Your Synapse MCP server is now live on Fly.io. You can access it at `https://your-app-name.fly.dev`.
+The Docker image from this repo is the deployment artifact. See the Docker section above for build instructions.

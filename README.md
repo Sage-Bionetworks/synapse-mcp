@@ -45,9 +45,191 @@ Resources provide ready-to-present context that clients can pull without extra p
 
 **You are responsible for ensuring your usage complies with the [Synapse Terms of Service](https://www.synapse.org/TrustCenter:TermsOfService).**
 
-## Usage
+## Getting Started
 
-This guide provides typical user instructions for connecting to the Synapse MCP server. For contributor setup, please see [DEVELOPMENT.md](./DEVELOPMENT.md).
+The Synapse MCP server can be used as a **remote hosted server** (recommended) or installed **locally from source**. Choose the approach that fits your needs.
+
+### Remote Server (Recommended)
+
+The hosted server is available at:
+
+> **https://mcp.synapse.org/mcp**
+
+Authentication uses **OAuth2** -- your MCP client will open a browser window for you to log in to Synapse. No API keys or tokens to manage.
+
+Below are setup instructions for popular AI clients. If your client is not listed, use the generic JSON config.
+
+#### Generic MCP JSON Config
+
+Most MCP-compatible clients accept a JSON configuration block. Add the following to your client's MCP config file:
+
+```json
+{
+  "mcpServers": {
+    "synapse": {
+      "url": "https://mcp.synapse.org/mcp",
+      "type": "http"
+    }
+  }
+}
+```
+
+#### Claude Desktop
+
+Go to **Settings > Connectors > Add custom connector** and enter the URL `https://mcp.synapse.org/mcp`.
+
+<img width="664" height="146" alt="Claude Desktop connector setup" src="https://github.com/user-attachments/assets/fcfe54ba-1c1c-4fa8-9bae-c198cffff6ce" />
+
+#### Claude Code (CLI)
+
+```bash
+claude mcp add --transport http synapse -- https://mcp.synapse.org/mcp
+```
+
+#### VS Code / GitHub Copilot
+
+VS Code's MCP client does not yet fully support OAuth Dynamic Client Registration (DCR). To connect to the remote server, follow these steps:
+
+**Step 1: Register a client**
+
+Run this command once to register an OAuth client with the MCP server:
+
+```bash
+curl -X POST https://mcp.synapse.org/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "client_name": "vscode-synapse",
+    "redirect_uris": ["http://127.0.0.1"],
+    "grant_types": ["authorization_code", "refresh_token"],
+    "response_types": ["code"],
+    "token_endpoint_auth_method": "none"
+  }'
+```
+
+Save the `client_id` from the response (e.g., `c3dfaf80-126c-4f46-80ab-114747fcc3b3`).
+
+**Step 2: Configure VS Code**
+
+Create or edit `.vscode/mcp.json` in your workspace:
+
+```json
+{
+  "servers": {
+    "synapse": {
+      "url": "https://mcp.synapse.org/mcp",
+      "type": "http"
+    }
+  }
+}
+```
+
+**Step 3: Complete the OAuth flow**
+
+When you start the server, VS Code will open a browser to an authorization URL. Replace the `client_id` value in the URL with your registered client_id from Step 1, then press Enter to continue the Synapse login flow.
+
+For example, change `client_id=100441` to `client_id=YOUR_CLIENT_ID` in the browser address bar.
+
+Alternatively, you can use the [Local Server](#local-server) setup with a Personal Access Token, which does not require OAuth.
+
+#### Cursor
+
+Add to **Cursor Settings > MCP > + Add new global MCP server**, or add to your project's `.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "synapse": {
+      "url": "https://mcp.synapse.org/mcp",
+      "type": "http"
+    }
+  }
+}
+```
+
+### Local Server
+
+Run the server locally for development, self-hosting, or offline use. The local server uses **stdio** transport by default, which is what most MCP clients expect for command-based servers.
+
+> **Note:** `synapse-mcp` is not currently published on PyPI. You must install from source.
+
+#### Install
+
+```bash
+git clone https://github.com/Sage-Bionetworks/synapse-mcp.git
+cd synapse-mcp
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+pip install -e .
+```
+
+After installation, the `synapse-mcp` command is available in your virtual environment.
+
+#### Authentication for Local Server
+
+For local use, authenticate with a **Synapse Personal Access Token (PAT)** by setting the `SYNAPSE_PAT` environment variable:
+
+```bash
+export SYNAPSE_PAT="your_synapse_pat_here"
+```
+
+To create a PAT, visit your [Synapse Personal Access Tokens page](https://www.synapse.org/#!PersonalAccessTokens:).
+
+#### MCP Client Configuration (Local)
+
+> **Important:** The `synapse-mcp` command must be on your PATH. If you installed in a virtual environment, either activate it first or use the full path to the binary (e.g., `/path/to/.venv/bin/synapse-mcp`).
+
+**Generic JSON config (stdio):**
+
+```json
+{
+  "mcpServers": {
+    "synapse": {
+      "command": "/path/to/.venv/bin/synapse-mcp",
+      "env": {
+        "SYNAPSE_PAT": "your_synapse_pat_here"
+      }
+    }
+  }
+}
+```
+
+**Claude Code (local):**
+
+```bash
+claude mcp add synapse -e SYNAPSE_PAT=your_synapse_pat_here -- /path/to/.venv/bin/synapse-mcp
+```
+
+**VS Code / GitHub Copilot (local):**
+
+In `.vscode/mcp.json`:
+
+```json
+{
+  "servers": {
+    "synapse": {
+      "command": "/path/to/.venv/bin/synapse-mcp",
+      "env": {
+        "SYNAPSE_PAT": "your_synapse_pat_here"
+      }
+    }
+  }
+}
+```
+
+**Cursor (local):**
+
+```json
+{
+  "mcpServers": {
+    "synapse": {
+      "command": "/path/to/.venv/bin/synapse-mcp",
+      "env": {
+        "SYNAPSE_PAT": "your_synapse_pat_here"
+      }
+    }
+  }
+}
+```
 
 ### Configuration
 
@@ -55,40 +237,20 @@ This guide provides typical user instructions for connecting to the Synapse MCP 
 
 You can configure which Synapse platform instance to connect to by setting the `SYNAPSE_ENV` environment variable:
 
-- `prod` (default) - Production instance at synapse.org
-- `staging` - Staging instance at staging.synapse.org
-- `dev` - Development instance at dev.synapse.org
+- `prod` (default) -- Production instance at synapse.org
+- `staging` -- Staging instance at staging.synapse.org
+- `dev` -- Development instance at dev.synapse.org
 
 If not set, the server defaults to `prod`.
 
 ### Authentication
 
-The Synapse MCP server supports two authentication methods:
+| Method | When to Use | How |
+| --- | --- | --- |
+| **OAuth2** (default) | Remote server, production use | Browser-based login -- no setup needed |
+| **Personal Access Token** | Local development, CI/CD, headless environments | Set `SYNAPSE_PAT` environment variable |
 
-1.  **OAuth2 (Default):** This is the primary and recommended authentication method. It provides a secure, browser-based login flow. When your AI agent needs to access protected resources, it will prompt you to log in to Synapse in your browser. This method is used by default for both local and remote servers.
-
-2.  **Personal Access Token (PAT):** This method is available for local development or in environments where a browser-based login is not feasible. It requires you to provide a Synapse Personal Access Token to the server.
-
-### MCP Server setup
-
-#### Remote Server
-
-Use this URL in your client:
-🔌 https://mcp.synapse.org/mcp
-
-##### Claude Desktop Instructions
-
-Go to Settings > Connectors > Add custom connector
-
-<img width="664" height="146" alt="image" src="https://github.com/user-attachments/assets/fcfe54ba-1c1c-4fa8-9bae-c198cffff6ce" />
-
-##### Claude Code
-
-`claude mcp add --transport http synapse -- https://mcp.synapse.org/mcp`
-
-#### Local Server
-
-For running local server, see [DEVELOPMENT.md](./DEVELOPMENT.md)
+For contributor/development setup details, see [DEVELOPMENT.md](./DEVELOPMENT.md).
 
 ### Example Prompts
 
