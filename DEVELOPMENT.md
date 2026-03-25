@@ -1,5 +1,79 @@
 # Local Development Guide
 
+## Architecture: Controller / Service / Manager Pattern
+
+New tools follow a three-layer architecture. Each layer has a distinct responsibility and lives in a predictably named file.
+
+```
+src/synapse_mcp/
+├── tools.py                              # Controller layer
+├── services/
+│   └── <domain>_service.py              # Service layer
+└── managers/
+    └── <domain>_manager.py              # Manager layer
+```
+
+### Controller (`tools.py`)
+
+The controller is the MCP tool registration file. Each tool function should be **thin**: validate input, resolve the authenticated `synapse_client` from context, instantiate the appropriate service, and delegate. Error handling at this layer covers only auth errors and unexpected exceptions — it does **not** contain business logic or Synapse API calls.
+
+```python
+@mcp.tool(...)
+def list_curation_tasks(project_id: str, ctx: Context) -> List[Dict[str, Any]]:
+    if not validate_synapse_id(project_id):
+        return [{"error": f"Invalid Synapse ID: {project_id}"}]
+    try:
+        synapse_client = get_synapse_client(ctx)
+    except ConnectionAuthError as exc:
+        return [{"error": f"Authentication required: {exc}"}]
+    try:
+        return CurationTaskService(synapse_client).list_tasks(project_id)
+    except ConnectionAuthError as exc:
+        return [{"error": f"Authentication required: {exc}"}]
+    except Exception as exc:
+        return [{"error": str(exc), "error_type": type(exc).__name__}]
+```
+
+### Service (`services/<domain>_service.py`)
+
+The service layer **orchestrates** manager calls and **shapes responses**. It owns:
+- Calling one or more manager methods and combining their results
+- Serializing model objects into the dicts that tools return
+- Shared formatting helpers (e.g. `_format_task`, `_format_task_properties`)
+- Graceful handling of partial failures (e.g. one resource fetch fails, others succeed)
+
+Services accept a `synapseclient.Synapse` instance and instantiate the manager internally. They have no knowledge of FastMCP or the `Context` object.
+
+### Manager (`managers/<domain>_manager.py`)
+
+The manager layer contains **all direct synapseclient API calls** for a domain. It owns:
+- Calling `Model.list()`, `Model.get()`, and related Synapse SDK methods
+- Returning raw model objects (not dicts) to the service layer
+- No response shaping, no business logic
+
+Managers accept a `synapseclient.Synapse` instance and are easily stubbed in tests.
+
+### File naming convention
+
+Both the service and manager file names include their layer suffix to avoid ambiguity in stack traces, import paths, and editor tabs:
+
+| Layer | File | Class |
+|---|---|---|
+| Manager | `managers/curation_task_manager.py` | `CurationTaskManager` |
+| Service | `services/curation_task_service.py` | `CurationTaskService` |
+
+### Testing convention
+
+Each layer is tested in isolation:
+
+- **Manager tests** — monkeypatch the `synapseclient` models (e.g. `CurationTask`, `Folder`)
+- **Service tests** — inject a `_StubManager` that returns pre-built objects; no Synapse needed
+- **Controller tests** — monkeypatch the service method to verify delegation and error paths
+
+See `tests/test_curation_tasks.py` as the reference implementation.
+
+---
+
 This guide provides instructions for setting up and running the Synapse MCP server in a local development environment. The server is built using FastMCP framework and is meant to support both PAT authentication (local server) and OAuth2 (remote server).
 
 ## 1. Local Setup

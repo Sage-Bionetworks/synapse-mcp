@@ -14,6 +14,9 @@ from .tools import (
     get_entity,
     get_entity_annotations,
     get_entity_children,
+    get_curation_task,
+    get_curation_task_resources,
+    list_curation_tasks,
     search_synapse,
 )
 
@@ -21,6 +24,8 @@ __all__ = [
     "auth",
     "ConnectionAuthError",
     "first_successful_result",
+    "get_curation_task",
+    "get_curation_task_resources",
     "get_entity",
     "get_entity_annotations",
     "get_entity_children",
@@ -28,6 +33,7 @@ __all__ = [
     "get_synapse_client",
     "get_request_context",
     "health_check",
+    "list_curation_tasks",
     "mcp",
     "require_request_context",
     "search_synapse",

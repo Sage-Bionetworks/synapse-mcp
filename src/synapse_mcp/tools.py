@@ -9,6 +9,7 @@ from synapseclient.core.exceptions import SynapseHTTPError
 from .app import mcp
 from .connection_auth import get_synapse_client
 from .context_helpers import ConnectionAuthError, get_entity_operations
+from .services.curation_task_service import CurationTaskService
 from .utils import format_annotations, validate_synapse_id
 
 
@@ -309,10 +310,131 @@ def search_synapse(
     return result
 
 
+@mcp.tool(
+    title="List Curation Tasks",
+    description=(
+        "List all curation tasks within a specific Synapse project. "
+        "Returns task metadata including task IDs, data types, "
+        "instructions, and task properties."
+    ),
+    annotations={
+        "readOnlyHint": True,
+        "idempotentHint": True,
+        "destructiveHint": False,
+        "openWorldHint": True,
+    },
+)
+def list_curation_tasks(project_id: str, ctx: Context) -> List[Dict[str, Any]]:
+    """List all curation tasks for a given project.
+
+    Args:
+        project_id: The Synapse ID of the project to list tasks for
+        ctx: The FastMCP context
+
+    Returns:
+        A list of curation task dictionaries
+    """
+    if not validate_synapse_id(project_id):
+        return [{"error": f"Invalid Synapse ID: {project_id}"}]
+
+    try:
+        synapse_client = get_synapse_client(ctx)
+    except ConnectionAuthError as exc:
+        return [{"error": f"Authentication required: {exc}", "project_id": project_id}]
+
+    try:
+        return CurationTaskService(synapse_client).list_tasks(project_id)
+    except ConnectionAuthError as exc:
+        return [{"error": f"Authentication required: {exc}", "project_id": project_id}]
+    except Exception as exc:
+        return [{"error": str(exc), "error_type": type(exc).__name__, "project_id": project_id}]
+
+
+@mcp.tool(
+    title="Get Curation Task",
+    description=(
+        "Retrieve detailed information about a specific curation task "
+        "by its task ID."
+    ),
+    annotations={
+        "readOnlyHint": True,
+        "idempotentHint": True,
+        "destructiveHint": False,
+        "openWorldHint": True,
+    },
+)
+def get_curation_task(task_id: int, ctx: Context) -> Dict[str, Any]:
+    """Get a specific curation task by its task ID.
+
+    Args:
+        task_id: The numeric ID of the curation task
+        ctx: The FastMCP context
+
+    Returns:
+        The curation task details as a dictionary
+    """
+    try:
+        synapse_client = get_synapse_client(ctx)
+    except ConnectionAuthError as exc:
+        return {"error": f"Authentication required: {exc}", "task_id": task_id}
+
+    try:
+        return CurationTaskService(synapse_client).get_task(task_id)
+    except ConnectionAuthError as exc:
+        return {"error": f"Authentication required: {exc}", "task_id": task_id}
+    except Exception as exc:
+        return {"error": str(exc), "error_type": type(exc).__name__, "task_id": task_id}
+
+
+@mcp.tool(
+    title="Get Curation Task Resources",
+    description=(
+        "Explore and retrieve resources associated with a curation task, "
+        "including RecordSets, Folders, and EntityViews based on the task "
+        "type (file-based or record-based)."
+    ),
+    annotations={
+        "readOnlyHint": True,
+        "idempotentHint": True,
+        "destructiveHint": False,
+        "openWorldHint": True,
+    },
+)
+def get_curation_task_resources(task_id: int, ctx: Context) -> Dict[str, Any]:
+    """Get resources associated with a curation task.
+
+    Fetches the task and its associated Synapse resources based on task type:
+    - For file-based tasks: upload folder and file view
+    - For record-based tasks: record set
+
+    Args:
+        task_id: The numeric ID of the curation task
+        ctx: The FastMCP context
+
+    Returns:
+        A dictionary containing the task details and associated resource
+        information
+    """
+    try:
+        synapse_client = get_synapse_client(ctx)
+    except ConnectionAuthError as exc:
+        return {"error": f"Authentication required: {exc}", "task_id": task_id}
+
+    try:
+        return CurationTaskService(synapse_client).get_task_resources(task_id)
+    except ConnectionAuthError as exc:
+        return {"error": f"Authentication required: {exc}", "task_id": task_id}
+    except Exception as exc:
+        return {"error": str(exc), "error_type": type(exc).__name__, "task_id": task_id}
+
+
 __all__ = [
     "get_entity",
     "get_entity_annotations",
     "get_entity_provenance",
     "get_entity_children",
     "search_synapse",
+    "list_curation_tasks",
+    "get_curation_task",
+    "get_curation_task_resources",
 ]
