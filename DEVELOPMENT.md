@@ -81,7 +81,83 @@ python scripts/smoke_redis_session_storage.py
 
 The script exercises token creation, replacement, expiration, and cleanup. It exits non-zero if anything fails.
 
-## Deployment 
+## Code Architecture
+
+### Layered design (controller → service → manager)
+
+```
+src/synapse_mcp/
+├── tools.py              Controller — @mcp.tool registrations + input validation only
+├── services/
+│   ├── tool_service.py   Internal helper (with_synapse_client) used by services, not by tools
+│   └── <resource>_service.py  One per resource domain, called by tools.py
+├── managers/
+│   └── <resource>_manager.py  One per resource domain, called by services
+├── entities/             Legacy entity operations (predates service/manager pattern)
+```
+
+**Layer rules:**
+
+- **tools.py** imports services, never managers directly. Contains no business logic, no Synapse API calls, no error handling beyond input validation.
+- **Services** orchestrate one or more managers. They acquire the Synapse client (via `with_synapse_client`), instantiate the appropriate manager, call it, and handle error-to-dict wrapping. A service method receives a `Context` and domain arguments.
+- **Managers** take a `synapseclient.Synapse` in `__init__`. They contain all Synapse API calls and model-to-dict conversion. They raise exceptions naturally — never return error dicts, never catch `ConnectionAuthError`, never touch `Context`.
+- `with_synapse_client` in `tool_service.py` is internal infrastructure for services. Tools should not call it directly.
+
+### Adding a new tool (step by step)
+
+**1. Manager** — `managers/<resource>_manager.py`:
+
+```python
+class WidgetManager:
+    def __init__(self, synapse_client):
+        self.synapse_client = synapse_client
+
+    def get_widget(self, widget_id):
+        widget = Widget(id=widget_id).get(synapse_client=self.synapse_client)
+        return {"id": widget.id, "name": widget.name}
+```
+
+**2. Service** — `services/<resource>_service.py`:
+
+```python
+from ..managers import WidgetManager
+from .tool_service import with_synapse_client
+
+class WidgetService:
+    def get_widget(self, ctx, widget_id):
+        return with_synapse_client(
+            ctx,
+            lambda client: WidgetManager(client).get_widget(widget_id),
+            error_context={"widget_id": widget_id},
+        )
+```
+
+**3. Tool** — `tools.py`:
+
+```python
+@mcp.tool(title="Get Widget", ...)
+def get_widget(widget_id: str, ctx: Context) -> Dict[str, Any]:
+    return WidgetService().get_widget(ctx, widget_id)
+```
+
+### Error response conventions
+
+- Auth failures: `{"error": "Authentication required: ...", **context}`
+- Other failures: `{"error": "...", "error_type": "ExceptionClassName", **context}`
+- Tools returning `List[Dict]` wrap error dicts in a list: `[{"error": ...}]` — the service handles this, not the tool.
+- `error_context` keys should identify the input (e.g. `project_id`, `task_id`, `entity_id`)
+
+### Testing conventions
+
+- **Manager tests** mock `synapseclient.models` classes at the manager module level. Test data conversion and API call delegation only.
+- **Service tests** mock `get_synapse_client` at the `tool_service` module level and mock the manager class at the service module level. Test orchestration: auth errors become error dicts, manager results pass through, list-returning services wrap errors in lists.
+- **tool_service tests** test `with_synapse_client` in isolation — success passthrough, auth errors, generic errors, error_context merging.
+
+### `entities/` vs `managers/`
+
+`entities/` is the older pattern (pre-existing). New resource-specific logic goes in `managers/` with a corresponding service in `services/`. Both manager styles take a synapse client in `__init__` and own API calls + formatting. The `entities/` tools have not yet been migrated to the service/manager pattern.
+
+## Deployment
 
 ### Docker build and run
 
