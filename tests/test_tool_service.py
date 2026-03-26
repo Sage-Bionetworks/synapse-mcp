@@ -1,4 +1,4 @@
-"""Tests for synapse_client and @error_boundary."""
+"""Tests for synapse_client context manager and @error_boundary decorator."""
 
 from unittest.mock import MagicMock, patch
 
@@ -12,92 +12,135 @@ from synapse_mcp.services.tool_service import (
 
 
 # -------------------------------------------------------------------
-# synapse_client
+# synapse_client context manager
 # -------------------------------------------------------------------
 
+
 @patch("synapse_mcp.services.tool_service.get_synapse_client")
-class TestSynapseClientFrom:
-    def test_yields_client(self, mock_get_client):
-        mock_get_client.return_value = MagicMock()
+class TestSynapseClient:
+    def test_given_valid_ctx_when_entering_context_then_yields_authenticated_client(
+        self, mock_get_client
+    ):
+        # GIVEN a request context that resolves to a valid Synapse client
+        expected_client = MagicMock()
+        mock_get_client.return_value = expected_client
         ctx = MagicMock()
+
+        # WHEN we enter the synapse_client context
         with synapse_client(ctx) as client:
-            assert client is mock_get_client.return_value
+            # THEN it yields the authenticated client
+            assert client is expected_client
         mock_get_client.assert_called_once_with(ctx)
 
-    def test_raises_on_auth_failure(self, mock_get_client):
+    def test_given_expired_credentials_when_entering_context_then_raises_auth_error(
+        self, mock_get_client
+    ):
+        # GIVEN a request context with expired credentials
         mock_get_client.side_effect = ConnectionAuthError("expired")
         ctx = MagicMock()
+
+        # WHEN we enter the synapse_client context
+        # THEN it raises ConnectionAuthError
         with pytest.raises(ConnectionAuthError):
             with synapse_client(ctx):
                 pass
 
 
 # -------------------------------------------------------------------
-# @error_boundary
+# @error_boundary decorator
 # -------------------------------------------------------------------
 
+
 class TestErrorBoundary:
-    def test_passes_through_success(self):
+    def test_given_successful_method_when_called_then_returns_result_unchanged(self):
+        # GIVEN a service method that succeeds
         class Svc:
             @error_boundary()
             def do_thing(self, ctx):
                 return {"data": 42}
 
-        assert Svc().do_thing(MagicMock()) == {"data": 42}
+        # WHEN the method is called
+        result = Svc().do_thing(MagicMock())
 
-    def test_catches_auth_error(self):
+        # THEN the original return value passes through
+        assert result == {"data": 42}
+
+    def test_given_auth_error_when_called_then_returns_error_dict(self):
+        # GIVEN a service method that raises ConnectionAuthError
         class Svc:
             @error_boundary()
             def do_thing(self, ctx):
                 raise ConnectionAuthError("expired")
 
+        # WHEN the method is called
         result = Svc().do_thing(MagicMock())
+
+        # THEN it returns an error dict with "Authentication required" message
         assert "Authentication required" in result["error"]
 
-    def test_catches_generic_error_with_type(self):
+    def test_given_generic_exception_when_called_then_returns_error_with_type(self):
+        # GIVEN a service method that raises a ValueError
         class Svc:
             @error_boundary()
             def do_thing(self, ctx):
                 raise ValueError("bad input")
 
+        # WHEN the method is called
         result = Svc().do_thing(MagicMock())
+
+        # THEN it returns an error dict that includes the exception type
         assert result["error"] == "bad input"
         assert result["error_type"] == "ValueError"
 
-    def test_error_context_keys_from_positional(self):
+    def test_given_context_key_passed_positionally_when_error_then_includes_key_in_response(
+        self,
+    ):
+        # GIVEN a service method decorated with error_context_keys=("project_id",)
         class Svc:
-            @error_boundary(
-                error_context_keys=("project_id",),
-            )
+            @error_boundary(error_context_keys=("project_id",))
             def do_thing(self, ctx, project_id):
                 raise RuntimeError("boom")
 
+        # WHEN it raises and project_id was passed as a positional arg
         result = Svc().do_thing(MagicMock(), "syn123")
+
+        # THEN the error response includes the project_id for debugging
         assert result["project_id"] == "syn123"
         assert result["error"] == "boom"
 
-    def test_error_context_keys_from_keyword(self):
+    def test_given_context_key_passed_as_kwarg_when_error_then_includes_key_in_response(
+        self,
+    ):
+        # GIVEN a service method decorated with error_context_keys=("task_id",)
         class Svc:
-            @error_boundary(
-                error_context_keys=("task_id",),
-            )
+            @error_boundary(error_context_keys=("task_id",))
             def do_thing(self, ctx, task_id):
                 raise RuntimeError("boom")
 
+        # WHEN it raises and task_id was passed as a keyword arg
         result = Svc().do_thing(MagicMock(), task_id=7)
+
+        # THEN the error response includes the task_id for debugging
         assert result["task_id"] == 7
 
-    def test_wrap_errors_list(self):
+    def test_given_wrap_errors_list_when_error_then_wraps_error_dict_in_list(self):
+        # GIVEN a service method decorated with wrap_errors=list
         class Svc:
             @error_boundary(wrap_errors=list)
             def do_thing(self, ctx):
                 raise RuntimeError("boom")
 
+        # WHEN the method raises
         result = Svc().do_thing(MagicMock())
+
+        # THEN the error dict is wrapped in a list
         assert isinstance(result, list)
         assert result[0]["error"] == "boom"
 
-    def test_wrap_errors_list_with_context(self):
+    def test_given_wrap_errors_list_and_context_keys_when_auth_error_then_wraps_with_context(
+        self,
+    ):
+        # GIVEN a list-returning service method with context keys
         class Svc:
             @error_boundary(
                 error_context_keys=("project_id",),
@@ -106,16 +149,23 @@ class TestErrorBoundary:
             def do_thing(self, ctx, project_id):
                 raise ConnectionAuthError("expired")
 
+        # WHEN it raises a ConnectionAuthError
         result = Svc().do_thing(MagicMock(), "syn123")
+
+        # THEN the error is wrapped in a list and includes context
         assert isinstance(result, list)
         assert "Authentication required" in result[0]["error"]
         assert result[0]["project_id"] == "syn123"
 
-    def test_success_not_wrapped_in_list(self):
+    def test_given_wrap_errors_list_when_success_then_returns_list_unwrapped(self):
+        # GIVEN a service method that returns a list successfully
         class Svc:
             @error_boundary(wrap_errors=list)
             def do_thing(self, ctx):
                 return [{"data": 1}, {"data": 2}]
 
+        # WHEN the method succeeds
         result = Svc().do_thing(MagicMock())
+
+        # THEN the original list is returned as-is (not double-wrapped)
         assert result == [{"data": 1}, {"data": 2}]
