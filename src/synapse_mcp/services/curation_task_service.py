@@ -11,7 +11,7 @@ from fastmcp import Context
 from synapseclient.models import CurationTask
 
 from ..managers.curation_task_manager import CurationTaskManager
-from .tool_service import error_boundary, synapse_client_from
+from .tool_service import error_boundary, synapse_client
 
 
 def _format_task_properties(task_properties: Any) -> Dict[str, Any]:
@@ -67,7 +67,7 @@ class CurationTaskService:
         self, ctx: Context, project_id: str
     ) -> List[Dict[str, Any]]:
         """List all curation tasks for a project."""
-        with synapse_client_from(ctx) as client:
+        with synapse_client(ctx) as client:
             return [
                 _format_task(task)
                 for task in CurationTask.list(
@@ -81,7 +81,7 @@ class CurationTaskService:
         self, ctx: Context, task_id: int
     ) -> Dict[str, Any]:
         """Retrieve a single curation task by ID."""
-        with synapse_client_from(ctx) as client:
+        with synapse_client(ctx) as client:
             task = CurationTask(task_id=task_id).get(
                 synapse_client=client,
             )
@@ -92,7 +92,7 @@ class CurationTaskService:
         self, ctx: Context, task_id: int
     ) -> Dict[str, Any]:
         """Retrieve a curation task and its associated resources."""
-        with synapse_client_from(ctx) as client:
+        with synapse_client(ctx) as client:
             mgr = CurationTaskManager(client)
             task, resources = mgr.get_task_with_resources(
                 task_id,

@@ -89,7 +89,7 @@ The script exercises token creation, replacement, expiration, and cleanup. It ex
 src/synapse_mcp/
 ├── tools.py              Controller — @mcp.tool registrations + input validation
 ├── services/
-│   ├── tool_service.py   synapse_client_from context manager + @error_boundary
+│   ├── tool_service.py   synapse_client context manager + @error_boundary
 │   └── <resource>_service.py  One per resource domain, called by tools.py
 ├── managers/
 │   └── <resource>_manager.py  Multi-step API orchestration, called by services
@@ -101,7 +101,7 @@ src/synapse_mcp/
 | Layer | Owns | Does NOT own |
 |---|---|---|
 | **Controller** (`tools.py`) | `@mcp.tool` registration, input validation, delegation to service | Business logic, Synapse API calls, serialization |
-| **Service** (`services/`) | Serialization (model → dict), error boundary (`@error_boundary`), simple SDK calls via `synapse_client_from` context manager | Multi-step API orchestration |
+| **Service** (`services/`) | Serialization (model → dict), error boundary (`@error_boundary`), simple SDK calls via `synapse_client` context manager | Multi-step API orchestration |
 | **Manager** (`managers/`) | Multi-step operations that compose several API calls with partial-failure handling. Returns raw model objects. | Serialization, error-to-dict conversion |
 
 **When to use a manager:** Only when an operation requires composing multiple API calls or handling partial failures across sub-operations. Simple one-liner SDK calls (`Model.list(...)`, `Model(...).get(...)`) belong in the service.
@@ -114,7 +114,7 @@ src/synapse_mcp/
 class WidgetService:
     @error_boundary(error_context_keys=("widget_id",))
     def get_widget(self, ctx: Context, widget_id: str) -> Dict[str, Any]:
-        with synapse_client_from(ctx) as client:
+        with synapse_client(ctx) as client:
             widget = Widget(id=widget_id).get(synapse_client=client)
             return _format_widget(widget)
 ```
@@ -152,7 +152,7 @@ class WidgetManager:
 
 - **Manager tests** mock `synapseclient.models` classes at the manager module level. Test multi-step orchestration and partial-failure handling.
 - **Service tests** mock `get_synapse_client` at the `tool_service` module level. For simple operations, mock SDK models at the service module level. For complex operations, mock the manager class. Test serialization and error boundary behavior.
-- **tool_service tests** test `synapse_client_from` and `@error_boundary` in isolation.
+- **tool_service tests** test `synapse_client` and `@error_boundary` in isolation.
 
 ### `entities/` vs `managers/`
 

@@ -1,4 +1,4 @@
-"""Tests for synapse_client_from and @error_boundary."""
+"""Tests for synapse_client and @error_boundary."""
 
 from unittest.mock import MagicMock, patch
 
@@ -7,12 +7,12 @@ import pytest
 from synapse_mcp.connection_auth import ConnectionAuthError
 from synapse_mcp.services.tool_service import (
     error_boundary,
-    synapse_client_from,
+    synapse_client,
 )
 
 
 # -------------------------------------------------------------------
-# synapse_client_from
+# synapse_client
 # -------------------------------------------------------------------
 
 @patch("synapse_mcp.services.tool_service.get_synapse_client")
@@ -20,7 +20,7 @@ class TestSynapseClientFrom:
     def test_yields_client(self, mock_get_client):
         mock_get_client.return_value = MagicMock()
         ctx = MagicMock()
-        with synapse_client_from(ctx) as client:
+        with synapse_client(ctx) as client:
             assert client is mock_get_client.return_value
         mock_get_client.assert_called_once_with(ctx)
 
@@ -28,7 +28,7 @@ class TestSynapseClientFrom:
         mock_get_client.side_effect = ConnectionAuthError("expired")
         ctx = MagicMock()
         with pytest.raises(ConnectionAuthError):
-            with synapse_client_from(ctx):
+            with synapse_client(ctx):
                 pass
 
 

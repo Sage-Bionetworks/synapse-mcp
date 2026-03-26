@@ -11,7 +11,7 @@ from ..connection_auth import ConnectionAuthError, get_synapse_client
 
 
 @contextmanager
-def synapse_client_from(ctx: Context):
+def synapse_client(ctx: Context):
     """Yield an authenticated Synapse client for the given request context.
 
     Raises ConnectionAuthError if the client cannot be obtained.
