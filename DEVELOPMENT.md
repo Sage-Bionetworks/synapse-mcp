@@ -87,12 +87,12 @@ The script exercises token creation, replacement, expiration, and cleanup. It ex
 
 ```
 src/synapse_mcp/
-├── tools.py              Controller — @mcp.tool registrations + input validation only
+├── tools.py              Controller — @mcp.tool registrations + input validation
 ├── services/
-│   ├── tool_service.py   Internal helper (with_synapse_client) used by services
+│   ├── tool_service.py   synapse_client_from context manager + @error_boundary
 │   └── <resource>_service.py  One per resource domain, called by tools.py
 ├── managers/
-│   └── <resource>_manager.py  One per resource domain, called by services
+│   └── <resource>_manager.py  Multi-step API orchestration, called by services
 ├── entities/             Legacy entity operations (predates service/manager pattern)
 ```
 
@@ -101,35 +101,25 @@ src/synapse_mcp/
 | Layer | Owns | Does NOT own |
 |---|---|---|
 | **Controller** (`tools.py`) | `@mcp.tool` registration, input validation, delegation to service | Business logic, Synapse API calls, serialization |
-| **Service** (`services/`) | Orchestration, serialization (model → dict), partial-failure handling, error wrapping via `with_synapse_client` | Direct Synapse API calls, FastMCP `Context` beyond passing to `with_synapse_client` |
-| **Manager** (`managers/`) | All `synapseclient` API calls, returns raw model objects | Response shaping, error-to-dict conversion |
+| **Service** (`services/`) | Serialization (model → dict), error boundary (`@error_boundary`), simple SDK calls via `synapse_client_from` context manager | Multi-step API orchestration |
+| **Manager** (`managers/`) | Multi-step operations that compose several API calls with partial-failure handling. Returns raw model objects. | Serialization, error-to-dict conversion |
 
-**Adding a new resource domain — follow this template:**
+**When to use a manager:** Only when an operation requires composing multiple API calls or handling partial failures across sub-operations. Simple one-liner SDK calls (`Model.list(...)`, `Model(...).get(...)`) belong in the service.
 
-**1. Manager** — `managers/<resource>_manager.py`:
+**Adding a new tool — follow this template:**
 
-```python
-class WidgetManager:
-    def __init__(self, synapse_client: synapseclient.Synapse) -> None:
-        self.synapse_client = synapse_client
-
-    def get_widget(self, widget_id: str) -> Widget:
-        return Widget(id=widget_id).get(synapse_client=self.synapse_client)
-```
-
-**2. Service** — `services/<resource>_service.py`:
+**1. Service** — `services/<resource>_service.py`:
 
 ```python
 class WidgetService:
+    @error_boundary(error_context_keys=("widget_id",))
     def get_widget(self, ctx: Context, widget_id: str) -> Dict[str, Any]:
-        return with_synapse_client(
-            ctx,
-            lambda client: _format_widget(WidgetManager(client).get_widget(widget_id)),
-            error_context={"widget_id": widget_id},
-        )
+        with synapse_client_from(ctx) as client:
+            widget = Widget(id=widget_id).get(synapse_client=client)
+            return _format_widget(widget)
 ```
 
-**3. Tool** — `tools.py`:
+**2. Tool** — `tools.py`:
 
 ```python
 @mcp.tool(title="Get Widget", ...)
@@ -137,22 +127,36 @@ def get_widget(widget_id: str, ctx: Context) -> Dict[str, Any]:
     return WidgetService().get_widget(ctx, widget_id)
 ```
 
+**3. Manager** (only if needed) — `managers/<resource>_manager.py`:
+
+```python
+class WidgetManager:
+    def __init__(self, synapse_client: synapseclient.Synapse) -> None:
+        self.synapse_client = synapse_client
+
+    def get_widget_with_parts(self, widget_id: str) -> Tuple[Widget, Dict]:
+        widget = Widget(id=widget_id).get(synapse_client=self.synapse_client)
+        parts = {}
+        # fetch related resources, handle partial failures
+        return widget, parts
+```
+
 ### Error response conventions
 
 - Auth failures: `{"error": "Authentication required: ...", **context}`
 - Other failures: `{"error": "...", "error_type": "ExceptionClassName", **context}`
-- Tools returning `List[Dict]` wrap error dicts in a list: `[{"error": ...}]` — the service handles this, not the tool.
-- `error_context` keys should identify the input (e.g. `project_id`, `task_id`, `entity_id`)
+- Tools returning `List[Dict]` wrap error dicts in a list: `[{"error": ...}]` — the `@error_boundary(wrap_errors=list)` decorator handles this.
+- `error_context_keys` should identify the input (e.g. `project_id`, `task_id`, `entity_id`)
 
 ### Testing conventions
 
-- **Manager tests** mock `synapseclient.models` classes at the manager module level. Test API call delegation only — managers return raw model objects.
-- **Service tests** mock `get_synapse_client` at the `tool_service` module level and mock the manager class at the service module level. Test orchestration: serialization, auth errors become error dicts, partial-failure handling, list-returning services wrap errors in lists.
-- **tool_service tests** test `with_synapse_client` in isolation — success passthrough, auth errors, generic errors, error_context merging.
+- **Manager tests** mock `synapseclient.models` classes at the manager module level. Test multi-step orchestration and partial-failure handling.
+- **Service tests** mock `get_synapse_client` at the `tool_service` module level. For simple operations, mock SDK models at the service module level. For complex operations, mock the manager class. Test serialization and error boundary behavior.
+- **tool_service tests** test `synapse_client_from` and `@error_boundary` in isolation.
 
 ### `entities/` vs `managers/`
 
-`entities/` is the older pattern (pre-existing). New resource-specific logic goes in `managers/` with a corresponding service in `services/`. Both patterns take a synapse client in `__init__` and own API calls. The `entities/` tools have not yet been migrated to the service/manager pattern.
+`entities/` is the older pattern (pre-existing). New resource-specific logic goes in `managers/` (for complex operations) or directly in `services/` (for simple SDK calls). The `entities/` tools have not yet been migrated to the service/manager pattern.
 
 ## Deployment
 

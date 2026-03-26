@@ -1,64 +1,121 @@
-"""Tests for the with_synapse_client helper."""
+"""Tests for synapse_client_from and @error_boundary."""
 
 from unittest.mock import MagicMock, patch
 
-from synapse_mcp.connection_auth import ConnectionAuthError
-from synapse_mcp.services.tool_service import with_synapse_client
+import pytest
 
+from synapse_mcp.connection_auth import ConnectionAuthError
+from synapse_mcp.services.tool_service import (
+    error_boundary,
+    synapse_client_from,
+)
+
+
+# -------------------------------------------------------------------
+# synapse_client_from
+# -------------------------------------------------------------------
 
 @patch("synapse_mcp.services.tool_service.get_synapse_client")
-class TestWithSynapseClient:
-    def test_returns_callback_result_on_success(self, mock_get_client):
+class TestSynapseClientFrom:
+    def test_yields_client(self, mock_get_client):
         mock_get_client.return_value = MagicMock()
         ctx = MagicMock()
-        result = with_synapse_client(ctx, lambda client: {"data": 42})
-        assert result == {"data": 42}
+        with synapse_client_from(ctx) as client:
+            assert client is mock_get_client.return_value
+        mock_get_client.assert_called_once_with(ctx)
 
-    def test_auth_error_on_client_creation(self, mock_get_client):
+    def test_raises_on_auth_failure(self, mock_get_client):
         mock_get_client.side_effect = ConnectionAuthError("expired")
         ctx = MagicMock()
-        result = with_synapse_client(ctx, lambda client: None)
+        with pytest.raises(ConnectionAuthError):
+            with synapse_client_from(ctx):
+                pass
+
+
+# -------------------------------------------------------------------
+# @error_boundary
+# -------------------------------------------------------------------
+
+class TestErrorBoundary:
+    def test_passes_through_success(self):
+        class Svc:
+            @error_boundary()
+            def do_thing(self, ctx):
+                return {"data": 42}
+
+        assert Svc().do_thing(MagicMock()) == {"data": 42}
+
+    def test_catches_auth_error(self):
+        class Svc:
+            @error_boundary()
+            def do_thing(self, ctx):
+                raise ConnectionAuthError("expired")
+
+        result = Svc().do_thing(MagicMock())
         assert "Authentication required" in result["error"]
 
-    def test_auth_error_during_callback(self, mock_get_client):
-        mock_get_client.return_value = MagicMock()
-        ctx = MagicMock()
+    def test_catches_generic_error_with_type(self):
+        class Svc:
+            @error_boundary()
+            def do_thing(self, ctx):
+                raise ValueError("bad input")
 
-        def boom(client):
-            raise ConnectionAuthError("revoked")
-
-        result = with_synapse_client(ctx, boom)
-        assert "Authentication required" in result["error"]
-
-    def test_generic_exception_includes_error_type(self, mock_get_client):
-        mock_get_client.return_value = MagicMock()
-        ctx = MagicMock()
-
-        def boom(client):
-            raise ValueError("bad input")
-
-        result = with_synapse_client(ctx, boom)
+        result = Svc().do_thing(MagicMock())
         assert result["error"] == "bad input"
         assert result["error_type"] == "ValueError"
 
-    def test_error_context_merged_into_auth_error(self, mock_get_client):
-        mock_get_client.side_effect = ConnectionAuthError("expired")
-        ctx = MagicMock()
-        result = with_synapse_client(
-            ctx, lambda c: None, error_context={"project_id": "syn123"}
-        )
+    def test_error_context_keys_from_positional(self):
+        class Svc:
+            @error_boundary(
+                error_context_keys=("project_id",),
+            )
+            def do_thing(self, ctx, project_id):
+                raise RuntimeError("boom")
+
+        result = Svc().do_thing(MagicMock(), "syn123")
         assert result["project_id"] == "syn123"
-        assert "Authentication required" in result["error"]
+        assert result["error"] == "boom"
 
-    def test_error_context_merged_into_generic_error(self, mock_get_client):
-        mock_get_client.return_value = MagicMock()
-        ctx = MagicMock()
+    def test_error_context_keys_from_keyword(self):
+        class Svc:
+            @error_boundary(
+                error_context_keys=("task_id",),
+            )
+            def do_thing(self, ctx, task_id):
+                raise RuntimeError("boom")
 
-        def boom(client):
-            raise RuntimeError("oops")
-
-        result = with_synapse_client(
-            ctx, boom, error_context={"task_id": 7}
-        )
+        result = Svc().do_thing(MagicMock(), task_id=7)
         assert result["task_id"] == 7
-        assert result["error_type"] == "RuntimeError"
+
+    def test_wrap_errors_list(self):
+        class Svc:
+            @error_boundary(wrap_errors=list)
+            def do_thing(self, ctx):
+                raise RuntimeError("boom")
+
+        result = Svc().do_thing(MagicMock())
+        assert isinstance(result, list)
+        assert result[0]["error"] == "boom"
+
+    def test_wrap_errors_list_with_context(self):
+        class Svc:
+            @error_boundary(
+                error_context_keys=("project_id",),
+                wrap_errors=list,
+            )
+            def do_thing(self, ctx, project_id):
+                raise ConnectionAuthError("expired")
+
+        result = Svc().do_thing(MagicMock(), "syn123")
+        assert isinstance(result, list)
+        assert "Authentication required" in result[0]["error"]
+        assert result[0]["project_id"] == "syn123"
+
+    def test_success_not_wrapped_in_list(self):
+        class Svc:
+            @error_boundary(wrap_errors=list)
+            def do_thing(self, ctx):
+                return [{"data": 1}, {"data": 2}]
+
+        result = Svc().do_thing(MagicMock())
+        assert result == [{"data": 1}, {"data": 2}]
