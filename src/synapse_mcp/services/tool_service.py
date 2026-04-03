@@ -14,22 +14,30 @@ from ..connection_auth import ConnectionAuthError, get_synapse_client
 def dataclass_to_dict(obj: Any) -> Any:
     """Recursively serialize a dataclass into a plain dict.
 
-    Includes all fields where ``repr=True``. Nested dataclasses are
-    recursively serialized. Non-dataclass values pass through unchanged.
+    Includes all public fields where ``repr=True``. Fields starting with
+    ``_`` are considered internal and excluded. Nested dataclasses, dicts,
+    and lists are recursively serialized. Non-dataclass values pass through
+    unchanged.
     """
-    if obj is None or not is_dataclass(obj) or isinstance(obj, type):
+    if obj is None or isinstance(obj, (str, int, float, bool)):
         return obj
 
-    result: Dict[str, Any] = {}
-    for f in dataclass_fields(obj):
-        if not f.repr:
-            continue
-        value = getattr(obj, f.name)
-        if is_dataclass(value) and not isinstance(value, type):
+    if isinstance(obj, dict):
+        return {k: dataclass_to_dict(v) for k, v in obj.items()}
+
+    if isinstance(obj, (list, tuple)):
+        return [dataclass_to_dict(item) for item in obj]
+
+    if is_dataclass(obj) and not isinstance(obj, type):
+        result: Dict[str, Any] = {}
+        for f in dataclass_fields(obj):
+            if not f.repr or f.name.startswith("_"):
+                continue
+            value = getattr(obj, f.name)
             result[f.name] = dataclass_to_dict(value)
-        else:
-            result[f.name] = value
-    return result
+        return result
+
+    return obj
 
 
 @contextmanager

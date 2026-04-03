@@ -210,7 +210,7 @@ class TestGetTaskResources:
         assert result["task_id"] == 1
         assert result["etag"] == "abc123"
         assert result["created_by"] == "user1"
-        assert result["resources"] is resources
+        assert result["resources"] == resources
 
     @patch(f"{TS}.get_synapse_client")
     def test_given_expired_auth_when_fetching_resources_then_returns_error_with_task_id(

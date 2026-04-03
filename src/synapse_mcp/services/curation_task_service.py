@@ -97,5 +97,5 @@ class CurationTaskService:
                 task_id,
             )
             result = _format_task(task)
-            result["resources"] = resources
+            result["resources"] = dataclass_to_dict(resources)
             return result

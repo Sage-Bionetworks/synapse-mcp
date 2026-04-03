@@ -273,3 +273,47 @@ class TestDataclassToDict:
 
         # THEN the None field is preserved
         assert result == {"child": None, "name": "parent"}
+
+    def test_given_underscore_field_then_field_is_excluded(self):
+        # GIVEN a dataclass with a field starting with _
+        @dataclass
+        class WithInternal:
+            name: str = "visible"
+            _cache: str = "hidden"
+
+        obj = WithInternal()
+
+        # WHEN converted
+        result = dataclass_to_dict(obj)
+
+        # THEN the _ field is excluded
+        assert result == {"name": "visible"}
+        assert "_cache" not in result
+
+    def test_given_dict_with_dataclass_values_then_recursively_serializes(self):
+        # GIVEN a dict containing a dataclass value
+        @dataclass
+        class Item:
+            x: int = 1
+
+        obj = {"key": Item(x=42), "plain": "text"}
+
+        # WHEN converted
+        result = dataclass_to_dict(obj)
+
+        # THEN the dict values are recursively serialized
+        assert result == {"key": {"x": 42}, "plain": "text"}
+
+    def test_given_list_with_dataclass_items_then_recursively_serializes(self):
+        # GIVEN a list containing dataclass items
+        @dataclass
+        class Item:
+            x: int = 1
+
+        obj = [Item(x=1), Item(x=2)]
+
+        # WHEN converted
+        result = dataclass_to_dict(obj)
+
+        # THEN each item is serialized
+        assert result == [{"x": 1}, {"x": 2}]
