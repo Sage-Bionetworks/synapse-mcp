@@ -3,11 +3,33 @@
 import functools
 import inspect
 from contextlib import contextmanager
-from typing import Any, Callable, Dict, Optional, Tuple, Type
+from dataclasses import fields as dataclass_fields, is_dataclass
+from typing import Any, Callable, Dict, Tuple
 
 from fastmcp import Context
 
 from ..connection_auth import ConnectionAuthError, get_synapse_client
+
+
+def dataclass_to_dict(obj: Any) -> Any:
+    """Recursively serialize a dataclass into a plain dict.
+
+    Includes all fields where ``repr=True``. Nested dataclasses are
+    recursively serialized. Non-dataclass values pass through unchanged.
+    """
+    if obj is None or not is_dataclass(obj) or isinstance(obj, type):
+        return obj
+
+    result: Dict[str, Any] = {}
+    for f in dataclass_fields(obj):
+        if not f.repr:
+            continue
+        value = getattr(obj, f.name)
+        if is_dataclass(value) and not isinstance(value, type):
+            result[f.name] = dataclass_to_dict(value)
+        else:
+            result[f.name] = value
+    return result
 
 
 @contextmanager
@@ -22,20 +44,23 @@ def synapse_client(ctx: Context):
 def error_boundary(
     *,
     error_context_keys: Tuple[str, ...] = (),
-    wrap_errors: Optional[Type] = None,
+    wrap_errors: bool = False,
 ) -> Callable:
     """Decorator that catches exceptions in service methods and returns error dicts.
 
     Args:
         error_context_keys: Parameter names whose values should be included in
             error responses for debugging context (e.g. ``("project_id",)``).
-        wrap_errors: If set to ``list``, wraps error dicts in a list so the
+        wrap_errors: If ``True``, wraps error dicts in a list so the
             return type stays consistent for list-returning service methods.
     """
     def decorator(method: Callable) -> Callable:
         # Pre-compute parameter positions at decoration time.
+        # Slice past ``self`` and ``ctx`` (the first two params) to get
+        # only the business-logic parameters whose values may be included
+        # in error responses via ``error_context_keys``.
         sig = inspect.signature(method)
-        param_names = list(sig.parameters.keys())[2:]  # skip self, ctx
+        param_names = list(sig.parameters.keys())[2:]
         context_positions = {
             name: i for i, name in enumerate(param_names)
             if name in error_context_keys
@@ -53,15 +78,19 @@ def error_boundary(
             try:
                 return method(self, ctx, *args, **kwargs)
             except ConnectionAuthError as exc:
-                err = {"error": f"Authentication required: {exc}", **extra}
-                return [err] if wrap_errors is list else err
+                err = {
+                    "error": f"Authentication required: {exc}",
+                    "error_type": type(exc).__name__,
+                    **extra,
+                }
+                return [err] if wrap_errors else err
             except Exception as exc:
                 err = {
                     "error": str(exc),
                     "error_type": type(exc).__name__,
                     **extra,
                 }
-                return [err] if wrap_errors is list else err
+                return [err] if wrap_errors else err
 
         return wrapper
     return decorator

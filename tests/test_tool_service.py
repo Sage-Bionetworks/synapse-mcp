@@ -1,11 +1,14 @@
-"""Tests for synapse_client context manager and @error_boundary decorator."""
+"""Tests for synapse_client context manager, @error_boundary decorator,
+and dataclass_to_dict utility."""
 
+from dataclasses import dataclass, field
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from synapse_mcp.connection_auth import ConnectionAuthError
 from synapse_mcp.services.tool_service import (
+    dataclass_to_dict,
     error_boundary,
     synapse_client,
 )
@@ -124,9 +127,9 @@ class TestErrorBoundary:
         assert result["task_id"] == 7
 
     def test_given_wrap_errors_list_when_error_then_wraps_error_dict_in_list(self):
-        # GIVEN a service method decorated with wrap_errors=list
+        # GIVEN a service method decorated with wrap_errors=True
         class Svc:
-            @error_boundary(wrap_errors=list)
+            @error_boundary(wrap_errors=True)
             def do_thing(self, ctx):
                 raise RuntimeError("boom")
 
@@ -144,7 +147,7 @@ class TestErrorBoundary:
         class Svc:
             @error_boundary(
                 error_context_keys=("project_id",),
-                wrap_errors=list,
+                wrap_errors=True,
             )
             def do_thing(self, ctx, project_id):
                 raise ConnectionAuthError("expired")
@@ -160,7 +163,7 @@ class TestErrorBoundary:
     def test_given_wrap_errors_list_when_success_then_returns_list_unwrapped(self):
         # GIVEN a service method that returns a list successfully
         class Svc:
-            @error_boundary(wrap_errors=list)
+            @error_boundary(wrap_errors=True)
             def do_thing(self, ctx):
                 return [{"data": 1}, {"data": 2}]
 
@@ -169,3 +172,104 @@ class TestErrorBoundary:
 
         # THEN the original list is returned as-is (not double-wrapped)
         assert result == [{"data": 1}, {"data": 2}]
+
+    def test_given_auth_error_when_called_then_error_dict_includes_error_type(self):
+        # GIVEN a service method that raises ConnectionAuthError
+        class Svc:
+            @error_boundary()
+            def do_thing(self, ctx):
+                raise ConnectionAuthError("expired")
+
+        # WHEN the method is called
+        result = Svc().do_thing(MagicMock())
+
+        # THEN the error dict includes the error_type key
+        assert result["error_type"] == "ConnectionAuthError"
+
+
+# -------------------------------------------------------------------
+# dataclass_to_dict
+# -------------------------------------------------------------------
+
+
+class TestDataclassToDict:
+    def test_given_simple_dataclass_then_returns_dict_with_all_fields(self):
+        # GIVEN a simple dataclass instance
+        @dataclass
+        class Item:
+            name: str = "test"
+            value: int = 42
+
+        obj = Item()
+
+        # WHEN converted
+        result = dataclass_to_dict(obj)
+
+        # THEN all fields are included
+        assert result == {"name": "test", "value": 42}
+
+    def test_given_nested_dataclass_then_recursively_serializes(self):
+        # GIVEN a dataclass with a nested dataclass field
+        @dataclass
+        class Inner:
+            x: int = 1
+
+        @dataclass
+        class Outer:
+            inner: Inner = None
+            label: str = "outer"
+
+        obj = Outer(inner=Inner(x=99), label="test")
+
+        # WHEN converted
+        result = dataclass_to_dict(obj)
+
+        # THEN the nested dataclass is also serialized to a dict
+        assert result == {"inner": {"x": 99}, "label": "test"}
+
+    def test_given_field_with_repr_false_then_field_is_excluded(self):
+        # GIVEN a dataclass with a repr=False field
+        @dataclass
+        class WithHidden:
+            visible: str = "yes"
+            _internal: str = field(default="hidden", repr=False)
+
+        obj = WithHidden()
+
+        # WHEN converted
+        result = dataclass_to_dict(obj)
+
+        # THEN the repr=False field is excluded
+        assert result == {"visible": "yes"}
+        assert "_internal" not in result
+
+    def test_given_none_then_returns_none(self):
+        # GIVEN None
+        # WHEN converted
+        result = dataclass_to_dict(None)
+
+        # THEN None is returned
+        assert result is None
+
+    def test_given_non_dataclass_then_returns_object_unchanged(self):
+        # GIVEN a plain string
+        # WHEN converted
+        result = dataclass_to_dict("hello")
+
+        # THEN the string is returned as-is
+        assert result == "hello"
+
+    def test_given_nested_none_field_then_none_is_preserved(self):
+        # GIVEN a dataclass with a None field that could be a nested dataclass
+        @dataclass
+        class Parent:
+            child: object = None
+            name: str = "parent"
+
+        obj = Parent()
+
+        # WHEN converted
+        result = dataclass_to_dict(obj)
+
+        # THEN the None field is preserved
+        assert result == {"child": None, "name": "parent"}

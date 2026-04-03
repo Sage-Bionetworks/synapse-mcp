@@ -8,52 +8,36 @@ Complex multi-step operations delegate to CurationTaskManager.
 from typing import Any, Dict, List
 
 from fastmcp import Context
-from synapseclient.models import CurationTask
+from synapseclient.models import (
+    CurationTask,
+    FileBasedMetadataTaskProperties,
+    RecordBasedMetadataTaskProperties,
+)
 
 from ..managers.curation_task_manager import CurationTaskManager
-from .tool_service import error_boundary, synapse_client
+from .tool_service import dataclass_to_dict, error_boundary, synapse_client
 
-
-def _format_task_properties(task_properties: Any) -> Dict[str, Any]:
-    """Serialize task_properties into a typed dictionary."""
-    if task_properties is None:
-        return {}
-
-    if hasattr(task_properties, "record_set_id"):
-        return {
-            "type": "record-based",
-            "record_set_id": task_properties.record_set_id,
-        }
-
-    if hasattr(task_properties, "upload_folder_id"):
-        return {
-            "type": "file-based",
-            "upload_folder_id": task_properties.upload_folder_id,
-            "file_view_id": task_properties.file_view_id,
-        }
-
-    return {}
+_TASK_PROPERTY_TYPE_LABELS: Dict[type, str] = {
+    RecordBasedMetadataTaskProperties: "record-based",
+    FileBasedMetadataTaskProperties: "file-based",
+}
 
 
 def _format_task(task: CurationTask) -> Dict[str, Any]:
-    """Serialize a CurationTask model object into a response dict."""
-    task_dict: Dict[str, Any] = {
-        "task_id": task.task_id,
-        "data_type": task.data_type,
-        "project_id": task.project_id,
-        "instructions": task.instructions,
-        "etag": task.etag,
-        "created_on": task.created_on,
-        "modified_on": task.modified_on,
-        "created_by": task.created_by,
-        "modified_by": task.modified_by,
-    }
+    """Serialize a CurationTask model into a response dict.
 
-    props = _format_task_properties(task.task_properties)
-    if props:
-        task_dict["task_properties"] = props
+    Uses ``dataclass_to_dict`` to auto-include all dataclass fields where
+    ``repr=True``. Adds a ``type`` discriminator to ``task_properties``.
+    """
+    result = dataclass_to_dict(task)
 
-    return task_dict
+    props = task.task_properties
+    if result.get("task_properties") and props is not None:
+        label = _TASK_PROPERTY_TYPE_LABELS.get(type(props))
+        if label:
+            result["task_properties"]["type"] = label
+
+    return result
 
 
 class CurationTaskService:
@@ -61,12 +45,17 @@ class CurationTaskService:
 
     @error_boundary(
         error_context_keys=("project_id",),
-        wrap_errors=list,
+        wrap_errors=True,
     )
     def list_tasks(
         self, ctx: Context, project_id: str
     ) -> List[Dict[str, Any]]:
-        """List all curation tasks for a project."""
+        """List all curation tasks for a project.
+
+        Args:
+            ctx: MCP request context for authentication.
+            project_id: Synapse project ID (e.g. ``"syn123"``).
+        """
         with synapse_client(ctx) as client:
             return [
                 _format_task(task)
@@ -80,7 +69,12 @@ class CurationTaskService:
     def get_task(
         self, ctx: Context, task_id: int
     ) -> Dict[str, Any]:
-        """Retrieve a single curation task by ID."""
+        """Retrieve a single curation task by ID.
+
+        Args:
+            ctx: MCP request context for authentication.
+            task_id: Numeric curation task identifier.
+        """
         with synapse_client(ctx) as client:
             task = CurationTask(task_id=task_id).get(
                 synapse_client=client,
@@ -91,16 +85,17 @@ class CurationTaskService:
     def get_task_resources(
         self, ctx: Context, task_id: int
     ) -> Dict[str, Any]:
-        """Retrieve a curation task and its associated resources."""
+        """Retrieve a curation task and its associated resources.
+
+        Args:
+            ctx: MCP request context for authentication.
+            task_id: Numeric curation task identifier.
+        """
         with synapse_client(ctx) as client:
             mgr = CurationTaskManager(client)
             task, resources = mgr.get_task_with_resources(
                 task_id,
             )
-            return {
-                "task_id": task.task_id,
-                "data_type": task.data_type,
-                "project_id": task.project_id,
-                "instructions": task.instructions,
-                "resources": resources,
-            }
+            result = _format_task(task)
+            result["resources"] = resources
+            return result

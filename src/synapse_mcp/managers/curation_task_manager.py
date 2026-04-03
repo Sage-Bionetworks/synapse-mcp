@@ -3,7 +3,14 @@
 from typing import Any, Dict, Tuple
 
 import synapseclient
-from synapseclient.models import CurationTask, EntityView, Folder, RecordSet
+from synapseclient.models import (
+    CurationTask,
+    EntityView,
+    FileBasedMetadataTaskProperties,
+    Folder,
+    RecordBasedMetadataTaskProperties,
+    RecordSet,
+)
 
 
 class CurationTaskManager:
@@ -17,6 +24,9 @@ class CurationTaskManager:
     ) -> Tuple[CurationTask, Dict[str, Any]]:
         """Fetch a curation task and its associated Synapse resources.
 
+        Args:
+            task_id: Numeric curation task identifier.
+
         Returns a (task, resources) tuple. The resources dict contains raw
         model objects on success or error dicts for individual fetch failures.
         Partial failures are captured — one resource failing does not prevent
@@ -28,9 +38,9 @@ class CurationTaskManager:
 
         resources: Dict[str, Any] = {}
 
-        if hasattr(task.task_properties, "record_set_id"):
+        if isinstance(task.task_properties, RecordBasedMetadataTaskProperties):
             self._fetch_record_based_resources(task, resources)
-        elif hasattr(task.task_properties, "upload_folder_id"):
+        elif isinstance(task.task_properties, FileBasedMetadataTaskProperties):
             self._fetch_file_based_resources(task, resources)
 
         return task, resources

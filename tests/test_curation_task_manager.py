@@ -7,42 +7,10 @@ fetch related Synapse resources, and handle partial failures gracefully.
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+from conftest import file_based_properties, make_task, record_based_properties
 from synapse_mcp.managers.curation_task_manager import CurationTaskManager
 
 MGR = "synapse_mcp.managers.curation_task_manager"
-
-
-def _file_based_properties(upload_folder_id="syn100", file_view_id="syn200"):
-    """Simulate a file-based CurationTask's task_properties."""
-    return SimpleNamespace(
-        upload_folder_id=upload_folder_id,
-        file_view_id=file_view_id,
-    )
-
-
-def _record_based_properties(record_set_id="syn300"):
-    """Simulate a record-based CurationTask's task_properties."""
-    return SimpleNamespace(record_set_id=record_set_id)
-
-
-def _make_task(*, task_id=1, task_properties=None, **overrides):
-    """Build a fake CurationTask model object."""
-    defaults = dict(
-        data_type="biospecimen",
-        project_id="syn123",
-        instructions="Fill in",
-        etag="abc",
-        created_on="2025-01-01",
-        modified_on="2025-01-02",
-        created_by="user1",
-        modified_by="user2",
-    )
-    defaults.update(overrides)
-    return SimpleNamespace(
-        task_id=task_id,
-        task_properties=task_properties,
-        **defaults,
-    )
 
 
 class TestFileBasedTasks:
@@ -53,9 +21,9 @@ class TestFileBasedTasks:
         self, mock_ct, mock_folder, mock_ev
     ):
         # GIVEN a file-based curation task with an upload folder and file view
-        task = _make_task(
+        task = make_task(
             task_id=1,
-            task_properties=_file_based_properties("syn100", "syn200"),
+            task_properties=file_based_properties("syn100", "syn200"),
         )
         mock_ct.return_value.get.return_value = task
         mock_folder.return_value.get.return_value = SimpleNamespace(
@@ -82,9 +50,9 @@ class TestFileBasedTasks:
         self, mock_ct, mock_folder
     ):
         # GIVEN a file-based task whose upload folder cannot be fetched
-        task = _make_task(
+        task = make_task(
             task_id=2,
-            task_properties=_file_based_properties("syn100", None),
+            task_properties=file_based_properties("syn100", None),
         )
         mock_ct.return_value.get.return_value = task
         mock_folder.return_value.get.side_effect = RuntimeError("not found")
@@ -105,9 +73,9 @@ class TestFileBasedTasks:
         self, mock_ct, mock_folder, mock_ev
     ):
         # GIVEN a file-based task where the folder succeeds but the view fails
-        task = _make_task(
+        task = make_task(
             task_id=3,
-            task_properties=_file_based_properties("syn100", "syn200"),
+            task_properties=file_based_properties("syn100", "syn200"),
         )
         mock_ct.return_value.get.return_value = task
         mock_folder.return_value.get.return_value = SimpleNamespace(
@@ -133,9 +101,9 @@ class TestRecordBasedTasks:
         self, mock_ct, mock_rs
     ):
         # GIVEN a record-based curation task with a valid record set
-        task = _make_task(
+        task = make_task(
             task_id=4,
-            task_properties=_record_based_properties("syn300"),
+            task_properties=record_based_properties("syn300"),
         )
         mock_ct.return_value.get.return_value = task
         mock_rs.return_value.get.return_value = SimpleNamespace(
@@ -157,9 +125,9 @@ class TestRecordBasedTasks:
         self, mock_ct, mock_rs
     ):
         # GIVEN a record-based task whose record set cannot be fetched
-        task = _make_task(
+        task = make_task(
             task_id=5,
-            task_properties=_record_based_properties("syn300"),
+            task_properties=record_based_properties("syn300"),
         )
         mock_ct.return_value.get.return_value = task
         mock_rs.return_value.get.side_effect = RuntimeError("unavailable")
@@ -180,7 +148,7 @@ class TestTaskWithNoProperties:
         self, mock_ct
     ):
         # GIVEN a curation task with task_properties=None
-        task = _make_task(task_id=6, task_properties=None)
+        task = make_task(task_id=6, task_properties=None)
         mock_ct.return_value.get.return_value = task
 
         # WHEN we fetch the task with resources
