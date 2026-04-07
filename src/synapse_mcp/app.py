@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 from fastmcp import FastMCP
 from starlette.middleware import Middleware as ASGIMiddleware
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, PlainTextResponse
 
 from .oauth import create_oauth_proxy
 from .auth_middleware import OAuthTokenMiddleware, PATAuthMiddleware
@@ -359,4 +359,19 @@ async def oauth_protected_resource_root(request: Request) -> JSONResponse:
     )
 
 
-__all__ = ["auth", "mcp", "health_check", "oauth_protected_resource_root"]
+@mcp.custom_route("/.well-known/openai-apps-challenge", methods=["GET"])
+async def serve_openai_apps_challenge(request: Request) -> PlainTextResponse:
+    """Expose the OpenAI Apps verification challenge."""
+    return PlainTextResponse(
+        "kyVzLqWw2pZii6ZqrqAt3uG9NKKK-DF8fEiGMl1lLUI",
+        media_type="text/plain",
+    )
+
+
+__all__ = [
+    "auth",
+    "mcp",
+    "health_check",
+    "oauth_protected_resource_root",
+    "serve_openai_apps_challenge",
+]
