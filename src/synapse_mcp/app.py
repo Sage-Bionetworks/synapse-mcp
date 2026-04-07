@@ -1,6 +1,7 @@
 """Core MCP application setup."""
 
 from datetime import datetime, timezone
+from importlib import resources
 import json
 import logging
 import os
@@ -9,12 +10,23 @@ from urllib.parse import urlparse
 from fastmcp import FastMCP
 from starlette.middleware import Middleware as ASGIMiddleware
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, PlainTextResponse
 
 from .oauth import create_oauth_proxy
 from .auth_middleware import OAuthTokenMiddleware, PATAuthMiddleware
 
 logger = logging.getLogger("synapse_mcp.app")
+
+try:
+    _OPENAI_APPS_CHALLENGE = (
+        resources.files("synapse_mcp.static")
+        .joinpath("openai-apps-challenge")
+        .read_text(encoding="utf-8")
+        .strip()
+    )
+except FileNotFoundError:  # pragma: no cover - defensive
+    logger.warning("OpenAI apps challenge file missing; responding with empty payload")
+    _OPENAI_APPS_CHALLENGE = ""
 
 
 # ---------------------------------------------------------------------------
@@ -359,4 +371,16 @@ async def oauth_protected_resource_root(request: Request) -> JSONResponse:
     )
 
 
-__all__ = ["auth", "mcp", "health_check", "oauth_protected_resource_root"]
+@mcp.custom_route("/.well-known/openai-apps-challenge", methods=["GET"])
+async def serve_openai_apps_challenge(request: Request) -> PlainTextResponse:
+    """Expose the OpenAI Apps verification challenge."""
+    return PlainTextResponse(_OPENAI_APPS_CHALLENGE or "", media_type="text/plain")
+
+
+__all__ = [
+    "auth",
+    "mcp",
+    "health_check",
+    "oauth_protected_resource_root",
+    "serve_openai_apps_challenge",
+]

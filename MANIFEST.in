@@ -5,3 +5,4 @@ include pytest.ini
 
 recursive-include examples *.py
 recursive-include src *.py
+recursive-include src/synapse_mcp/static *
