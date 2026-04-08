@@ -208,28 +208,16 @@ async def test_static_clients_loaded_from_env(monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_verify_token_allows_connection_auth(monkeypatch):
-    class DummyVerifier:
-        required_scopes = ["view"]
+async def test_connection_auth_with_oauth_token(monkeypatch):
+    """Test that connection_auth.get_synapse_client works when an OAuth
+    access token has been placed into the context by middleware.
 
-        async def verify_token(self, token):
-            return SimpleNamespace(
-                token=token,
-                raw_token=token,
-                client_id="client-123",
-                scopes=["view"],
-                expires_at=999999999,
-                sub="user-123",
-            )
-
-    storage = FakeStorage()
-    proxy = build_proxy(monkeypatch, storage, FakeRegistry(),
-                        token_verifier=DummyVerifier())
-
-    token = "oauth-token-123"
-    access_token = await proxy.verify_token(token)
-    assert access_token is not None
-    assert access_token.scopes == ["view"]
+    In fastmcp >=2.14.6 the OAuthProxy.verify_token() path requires tokens
+    that were minted by the proxy's own JWT issuer (via the full
+    exchange_authorization_code flow).  We therefore test the
+    connection_auth layer independently — the middleware is responsible for
+    placing the token in context, and connection_auth simply consumes it.
+    """
 
     class DummySynapse:
         def __init__(self, *_, **__):
@@ -257,6 +245,7 @@ async def test_verify_token_allows_connection_auth(monkeypatch):
         def set_state(self, key, value):
             self._state[key] = value
 
+    token = "oauth-token-123"
     ctx = DummyContext()
     ctx.set_state("oauth_access_token", token)
 
