@@ -217,41 +217,63 @@ class OAuthTokenMiddleware(Middleware):
         """
 
         token = None
+        http_request = None
 
-        # Primary path: Get upstream Synapse token from FastMCP's authenticated user.
-        # In fastmcp >=2.14.6, OAuthProxy resolves its proxy JWT to the upstream
-        # Synapse token via SynapseJWTVerifier.  The result is stored in
-        # request.scope["user"].access_token by BearerAuthBackend.
         if get_http_request:
             try:
                 http_request = get_http_request()
-                if http_request:
-                    user = http_request.scope.get("user")
-                    if user and hasattr(user, "access_token"):
-                        access_token = user.access_token
-                        raw = getattr(access_token, "raw_token", None)
-                        if raw:
-                            token = raw
-                            logger.info(
-                                "Extracted upstream token from authenticated user: %s",
-                                mask_token(token))
             except Exception as exc:
                 logger.debug(
-                    "Could not extract upstream token from user: %s", exc)
+                    "Could not get HTTP request: %s", exc)
 
-        # Fallback: Extract from Authorization header (pre-2.14.6 or non-proxy modes)
-        if not token and get_http_request:
+        # Primary path: Get upstream Synapse token from FastMCP's
+        # authenticated user.  In fastmcp >=2.14.6, OAuthProxy resolves
+        # its proxy JWT to the upstream Synapse token via
+        # SynapseJWTVerifier.  The result is stored in
+        # request.scope["user"].access_token by BearerAuthBackend.
+        if http_request:
             try:
-                http_request = get_http_request()
-                if http_request and hasattr(http_request, 'headers'):
-                    auth_header = http_request.headers.get("authorization")
-                    if auth_header and auth_header.startswith("Bearer "):
+                user = http_request.scope.get("user")
+                if user and hasattr(user, "access_token"):
+                    access_token = user.access_token
+                    if isinstance(access_token, str):
+                        token = access_token
+                    else:
+                        token = getattr(
+                            access_token, "raw_token", None
+                        )
+                        if not token:
+                            token = getattr(
+                                access_token, "token", None
+                            )
+                    if token:
+                        logger.debug(
+                            "Extracted upstream token from "
+                            "authenticated user: %s",
+                            mask_token(token))
+            except Exception as exc:
+                logger.debug(
+                    "Could not extract upstream token "
+                    "from user: %s", exc)
+
+        # Fallback: Extract from Authorization header
+        # (pre-2.14.6 or non-proxy modes)
+        if not token and http_request:
+            try:
+                if hasattr(http_request, 'headers'):
+                    auth_header = http_request.headers.get(
+                        "authorization")
+                    if (auth_header
+                            and auth_header.startswith("Bearer ")):
                         token = auth_header[len("Bearer "):]
                         logger.info(
-                            "Extracted token from Authorization header: %s", mask_token(token))
+                            "Extracted token from Authorization "
+                            "header: %s",
+                            mask_token(token))
             except Exception as exc:
                 logger.warning(
-                    "Could not extract token from HTTP request: %s", exc)
+                    "Could not extract token from HTTP "
+                    "request: %s", exc)
 
         # Fallback: Check auth_context (in case FastMCP populates it differently)
         if not token:
