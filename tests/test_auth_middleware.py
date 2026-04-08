@@ -326,6 +326,33 @@ async def test_middleware_handles_string_access_token():
 
 
 @pytest.mark.anyio
+async def test_middleware_falls_back_to_token_attr():
+    """When access_token exposes .token but not .raw_token,
+    the middleware should use .token."""
+    upstream_token = create_valid_jwt()
+
+    user = SimpleNamespace(
+        access_token=SimpleNamespace(token=upstream_token)
+    )
+    request = DummyHTTPRequest(headers={})
+    request.scope = {"user": user}
+
+    with patch("synapse_mcp.auth_middleware.get_http_request") as mock_get_request:
+        mock_get_request.return_value = request
+
+        middleware = OAuthTokenMiddleware()
+        fast_ctx = DummyFastMCPContext()
+        context = SimpleNamespace(fastmcp_context=fast_ctx)
+
+        async def call_next(ctx):
+            return "ok"
+
+        result = await middleware.on_call_tool(context, call_next)
+        assert result == "ok"
+        assert fast_ctx.get_state("oauth_access_token") == upstream_token
+
+
+@pytest.mark.anyio
 async def test_middleware_works_for_resource_calls():
     """Middleware should validate tokens for resource calls too."""
     token = create_valid_jwt()
