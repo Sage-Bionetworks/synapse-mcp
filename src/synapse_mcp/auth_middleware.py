@@ -218,8 +218,29 @@ class OAuthTokenMiddleware(Middleware):
 
         token = None
 
-        # Primary path: Extract from Authorization header
+        # Primary path: Get upstream Synapse token from FastMCP's authenticated user.
+        # In fastmcp >=2.14.6, OAuthProxy resolves its proxy JWT to the upstream
+        # Synapse token via SynapseJWTVerifier.  The result is stored in
+        # request.scope["user"].access_token by BearerAuthBackend.
         if get_http_request:
+            try:
+                http_request = get_http_request()
+                if http_request:
+                    user = http_request.scope.get("user")
+                    if user and hasattr(user, "access_token"):
+                        access_token = user.access_token
+                        raw = getattr(access_token, "raw_token", None)
+                        if raw:
+                            token = raw
+                            logger.info(
+                                "Extracted upstream token from authenticated user: %s",
+                                mask_token(token))
+            except Exception as exc:
+                logger.debug(
+                    "Could not extract upstream token from user: %s", exc)
+
+        # Fallback: Extract from Authorization header (pre-2.14.6 or non-proxy modes)
+        if not token and get_http_request:
             try:
                 http_request = get_http_request()
                 if http_request and hasattr(http_request, 'headers'):
