@@ -10,6 +10,8 @@ from .services import (
     CurationTaskService,
     EntityService,
     EvaluationService,
+    FormService,
+    SchemaOrganizationService,
     SearchService,
     SubmissionService,
     TeamService,
@@ -869,4 +871,144 @@ def get_curation_task_resources(
     """Get resources associated with a curation task."""
     return CurationTaskService().get_task_resources(
         ctx, task_id
+    )
+
+
+# ---------------------------------------------------------------------------
+# Domain 12: JSON Schema Organizations
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(
+    title="Get Schema Organization",
+    description=(
+        "Get a Synapse JSON Schema Organization "
+        "by name or ID."
+    ),
+    annotations=_RO,
+)
+def get_schema_organization(
+    ctx: Context,
+    organization_name: Optional[str] = None,
+    organization_id: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Get a Schema Organization by name or ID."""
+    return SchemaOrganizationService().get_schema_organization(
+        ctx, organization_name, organization_id
+    )
+
+
+@mcp.tool(
+    title="Get Schema Organization ACL",
+    description=(
+        "Get the ACL for a Synapse JSON Schema "
+        "Organization."
+    ),
+    annotations=_RO,
+)
+def get_schema_organization_acl(
+    organization_name: str, ctx: Context
+) -> Dict[str, Any]:
+    """Get ACL for a Schema Organization."""
+    return SchemaOrganizationService().get_schema_organization_acl(
+        ctx, organization_name
+    )
+
+
+@mcp.tool(
+    title="List JSON Schemas",
+    description=(
+        "List all JSON Schemas in a Synapse "
+        "Schema Organization."
+    ),
+    annotations=_RO,
+)
+def list_json_schemas(
+    organization_name: str, ctx: Context
+) -> List[Dict[str, Any]]:
+    """List schemas in an organization."""
+    return SchemaOrganizationService().list_json_schemas(
+        ctx, organization_name
+    )
+
+
+@mcp.tool(
+    title="Get JSON Schema",
+    description=(
+        "Get metadata for a specific Synapse "
+        "JSON Schema."
+    ),
+    annotations=_RO,
+)
+def get_json_schema(
+    organization_name: str,
+    schema_name: str,
+    ctx: Context,
+) -> Dict[str, Any]:
+    """Get metadata for a JSON Schema."""
+    return SchemaOrganizationService().get_json_schema(
+        ctx, organization_name, schema_name
+    )
+
+
+@mcp.tool(
+    title="Get JSON Schema Body",
+    description=(
+        "Get the actual JSON document of a Synapse "
+        "JSON Schema."
+    ),
+    annotations=_RO,
+)
+def get_json_schema_body(
+    organization_name: str,
+    schema_name: str,
+    ctx: Context,
+    version: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Get the raw JSON schema document."""
+    return SchemaOrganizationService().get_json_schema_body(
+        ctx, organization_name, schema_name, version
+    )
+
+
+@mcp.tool(
+    title="List JSON Schema Versions",
+    description=(
+        "List all versions of a Synapse JSON Schema."
+    ),
+    annotations=_RO,
+)
+def list_json_schema_versions(
+    organization_name: str,
+    schema_name: str,
+    ctx: Context,
+) -> List[Dict[str, Any]]:
+    """List versions of a JSON Schema."""
+    return SchemaOrganizationService().list_json_schema_versions(
+        ctx, organization_name, schema_name
+    )
+
+
+# ---------------------------------------------------------------------------
+# Domain 14: Forms
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(
+    title="List Form Data",
+    description=(
+        "List form submissions for a Synapse FormGroup, "
+        "optionally filtered by state."
+    ),
+    annotations=_RO,
+)
+def list_form_data(
+    group_id: str,
+    ctx: Context,
+    filter_by_state: Optional[List[str]] = None,
+    as_reviewer: bool = False,
+) -> List[Dict[str, Any]]:
+    """List form submissions for a FormGroup."""
+    return FormService().list_form_data(
+        ctx, group_id, filter_by_state, as_reviewer
     )
