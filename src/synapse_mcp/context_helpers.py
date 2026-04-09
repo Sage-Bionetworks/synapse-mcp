@@ -1,19 +1,11 @@
-"""Helpers for accessing request-scoped context and Synapse operations."""
+"""Helpers for accessing request-scoped context."""
 
 from typing import Any, Dict, List, Optional
 
 from fastmcp import Context
 from fastmcp.server.context import request_ctx
 
-from .connection_auth import ConnectionAuthError, get_synapse_client
-from .entities import (
-    BaseEntityOperations,
-    DatasetOperations,
-    FileOperations,
-    FolderOperations,
-    ProjectOperations,
-    TableOperations,
-)
+from .connection_auth import ConnectionAuthError
 
 
 def get_request_context() -> Optional[Context]:
@@ -29,12 +21,15 @@ def require_request_context() -> Context:
     ctx = get_request_context()
     if ctx is None:
         raise ConnectionAuthError(
-            "No active request context; ensure the request is routed through an authenticated MCP connection."
+            "No active request context; ensure the request is routed "
+            "through an authenticated MCP connection."
         )
     return ctx
 
 
-def first_successful_result(results: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+def first_successful_result(
+    results: List[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
     """Return the first non-error result from a list of entity responses."""
     for item in results:
         if not isinstance(item, dict):
@@ -44,31 +39,9 @@ def first_successful_result(results: List[Dict[str, Any]]) -> Optional[Dict[str,
     return None
 
 
-def get_entity_operations(ctx: Context) -> Dict[str, Any]:
-    """Get entity operations for this connection's synapseclient."""
-    synapse_client = get_synapse_client(ctx)
-
-    entity_ops = ctx.get_state("entity_ops")
-    if entity_ops:
-        return entity_ops
-
-    entity_ops = {
-        "base": BaseEntityOperations(synapse_client),
-        "project": ProjectOperations(synapse_client),
-        "folder": FolderOperations(synapse_client),
-        "file": FileOperations(synapse_client),
-        "table": TableOperations(synapse_client),
-        "dataset": DatasetOperations(synapse_client),
-    }
-
-    ctx.set_state("entity_ops", entity_ops)
-    return entity_ops
-
-
 __all__ = [
     "ConnectionAuthError",
     "first_successful_result",
-    "get_entity_operations",
     "get_request_context",
     "require_request_context",
 ]

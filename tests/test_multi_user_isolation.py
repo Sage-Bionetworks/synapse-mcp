@@ -89,22 +89,37 @@ def test_get_synapse_client_requires_credentials(monkeypatch):
         connection_auth.get_synapse_client(ctx)
 
 
-def test_get_entity_operations_are_per_connection(monkeypatch):
+def test_given_two_connections_when_service_called_then_each_gets_own_client(
+    monkeypatch,
+):
+    """Verify that the service layer yields connection-scoped clients.
+
+    Two separate contexts (simulating two authenticated users) should each
+    receive their own Synapse client instance via synapse_client().
+    """
+    # GIVEN two contexts with PAT tokens (simulating two users)
     ctx1 = DummyContext()
     ctx2 = DummyContext()
+    ctx1.set_state("synapse_pat_token", "fake-pat")
+    ctx2.set_state("synapse_pat_token", "fake-pat")
 
     client1 = _make_client("user1")
     client2 = _make_client("user2")
+    clients = [client1, client2]
+    monkeypatch.setattr(
+        connection_auth.synapseclient,
+        "Synapse",
+        lambda *args, **kwargs: clients.pop(0),
+    )
 
-    import synapse_mcp.context_helpers as context_helpers
+    # WHEN the service context manager is used for each context
+    from synapse_mcp.services.tool_service import synapse_client
 
-    monkeypatch.setattr(context_helpers, "get_synapse_client", lambda ctx: client1 if ctx is ctx1 else client2)
-
-    ops1 = synapse_mcp.get_entity_operations(ctx1)
-    ops2 = synapse_mcp.get_entity_operations(ctx2)
-
-    assert ops1 is not ops2
-    assert ops1["base"].synapse_client is client1
-    assert ops2["base"].synapse_client is client2
+    with synapse_client(ctx1) as c1:
+        with synapse_client(ctx2) as c2:
+            # THEN each context receives a distinct client
+            assert c1 is not c2
+            assert c1._user == "user1"
+            assert c2._user == "user2"
 
 

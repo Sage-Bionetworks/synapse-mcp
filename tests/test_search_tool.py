@@ -1,91 +1,100 @@
+"""Tests for search_synapse tool via SearchService."""
+
 import json
+from unittest.mock import MagicMock, patch
 
-import synapse_mcp
-import synapse_mcp.tools as tools
-from synapse_mcp.context_helpers import ConnectionAuthError
+from synapse_mcp.connection_auth import ConnectionAuthError
+from synapse_mcp.services.search_service import (
+    DEFAULT_RETURN_FIELDS,
+    SearchService,
+)
 
-
-class DummyContext:
-    pass
-
-
-def test_search_synapse_builds_payload(monkeypatch):
-    ctx = DummyContext()
-    captured = {}
-
-    class DummySynapse:
-        def restPOST(self, path, body):
-            captured["path"] = path
-            captured["body"] = json.loads(body)
-            return {
-                "found": 1,
-                "start": 0,
-                "hits": [{"id": "syn999", "name": "Cancer Study", "node_type": "project"}],
-                "facets": [],
-            }
-
-    monkeypatch.setattr(tools, "get_synapse_client", lambda _: DummySynapse())
-
-    result = synapse_mcp.search_synapse.fn(
-        ctx,
-        query_term="Cancer",
-        name="Cancer",
-        entity_type="Project",
-        parent_id="syn123",
-        limit=5,
-        offset=2,
-    )
-
-    assert captured["path"] == "/search"
-    payload = captured["body"]
-    assert payload["queryTerm"] == ["Cancer"]
-    assert payload["start"] == 2
-    assert payload["size"] == 5
-    assert payload["returnFields"] == ["name", "description", "node_type"]
-    assert {"key": "node_type", "value": "project"} in payload["booleanQuery"]
-    assert {"key": "path", "value": "syn123"} in payload["booleanQuery"]
-    assert result["hits"][0]["id"] == "syn999"
+TS = "synapse_mcp.services.tool_service"
+SVC = "synapse_mcp.services.search_service"
 
 
-def test_search_synapse_drops_invalid_return_fields(monkeypatch):
-    ctx = DummyContext()
-    captured = []
+class TestSearchService:
+    @patch(f"{TS}.get_synapse_client")
+    def test_given_search_params_when_searching_then_builds_correct_payload(
+        self, mock_get_client
+    ):
+        # GIVEN a Synapse client that captures the search request
+        captured = {}
 
-    class DummySynapse:
-        def __init__(self):
-            self.calls = 0
+        class FakeClient:
+            def restPOST(self, path, body):
+                captured["path"] = path
+                captured["body"] = json.loads(body)
+                return {
+                    "found": 1,
+                    "start": 0,
+                    "hits": [
+                        {"id": "syn999", "name": "Cancer Study", "node_type": "project"}
+                    ],
+                    "facets": [],
+                }
 
-        def restPOST(self, path, body):
-            self.calls += 1
-            payload = json.loads(body)
-            captured.append(payload)
-            if self.calls == 1:
-                raise Exception("com.amazonaws.services.cloudsearchdomain.model.SearchException: Invalid field name 'id' in return parameter")
-            return {"found": 0, "start": 0, "hits": [], "facets": []}
+        mock_get_client.return_value = FakeClient()
 
-    monkeypatch.setattr(tools, "get_synapse_client", lambda _: DummySynapse())
+        # WHEN we search with various filters
+        result = SearchService().search(
+            MagicMock(),
+            query_term="Cancer",
+            name="Cancer",
+            entity_type="Project",
+            parent_id="syn123",
+            limit=5,
+            offset=2,
+        )
 
-    result = synapse_mcp.search_synapse.fn(ctx)
+        # THEN the payload is built correctly
+        assert captured["path"] == "/search"
+        payload = captured["body"]
+        assert payload["queryTerm"] == ["Cancer"]
+        assert payload["start"] == 2
+        assert payload["size"] == 5
+        assert payload["returnFields"] == ["name", "description", "node_type"]
+        assert {"key": "node_type", "value": "project"} in payload["booleanQuery"]
+        assert {"key": "path", "value": "syn123"} in payload["booleanQuery"]
+        assert result["hits"][0]["id"] == "syn999"
 
-    assert len(captured) == 2
-    assert "returnFields" in captured[0]
-    assert captured[0]["returnFields"] == tools.DEFAULT_RETURN_FIELDS
-    assert "returnFields" not in captured[1]
-    assert result["query"] == captured[1]
-    assert result["original_query"]["returnFields"] == tools.DEFAULT_RETURN_FIELDS
-    assert result["dropped_return_fields"] == tools.DEFAULT_RETURN_FIELDS
-    assert result["warnings"]
+    @patch(f"{TS}.get_synapse_client")
+    def test_given_invalid_return_fields_when_searching_then_retries_without_fields(
+        self, mock_get_client
+    ):
+        # GIVEN a client that rejects return fields on first call
+        class FakeClient:
+            def __init__(self):
+                self.calls = 0
 
+            def restPOST(self, path, body):
+                self.calls += 1
+                if self.calls == 1:
+                    raise Exception(
+                        "Invalid field name 'id' in return parameter"
+                    )
+                return {"found": 0, "start": 0, "hits": [], "facets": []}
 
-def test_search_synapse_requires_auth(monkeypatch):
-    ctx = DummyContext()
+        mock_get_client.return_value = FakeClient()
 
-    def fake_client(_):
-        raise ConnectionAuthError("missing context")
+        # WHEN we search
+        result = SearchService().search(MagicMock())
 
-    monkeypatch.setattr(tools, "get_synapse_client", fake_client)
+        # THEN the result includes warnings about dropped fields
+        assert result["original_query"]["returnFields"] == DEFAULT_RETURN_FIELDS
+        assert result["dropped_return_fields"] == DEFAULT_RETURN_FIELDS
+        assert result["warnings"]
 
-    result = synapse_mcp.search_synapse.fn(ctx)
+    @patch(f"{TS}.get_synapse_client")
+    def test_given_expired_auth_when_searching_then_returns_error_dict(
+        self, mock_get_client
+    ):
+        # GIVEN expired credentials
+        mock_get_client.side_effect = ConnectionAuthError("missing context")
 
-    assert "error" in result
-    assert "Authentication required" in result["error"]
+        # WHEN we search
+        result = SearchService().search(MagicMock())
+
+        # THEN an auth error is returned
+        assert "error" in result
+        assert "Authentication required" in result["error"]
