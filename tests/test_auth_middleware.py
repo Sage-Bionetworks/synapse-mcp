@@ -62,6 +62,7 @@ class DummyHTTPRequest:
         self.headers = headers or {}
         self.url = "http://test.com/mcp"
         self.method = "POST"
+        self.scope = {}
 
 
 # ============================================================================
@@ -240,6 +241,115 @@ async def test_middleware_extracts_token_from_auth_context():
         result = await middleware.on_call_tool(context, call_next)
         assert result == "ok"
         assert fast_ctx.get_state("oauth_access_token") == token
+
+
+@pytest.mark.anyio
+async def test_middleware_prefers_upstream_token_from_authenticated_user():
+    """When request.scope['user'].access_token exposes raw_token,
+    the middleware should use it instead of the Authorization header."""
+    upstream_token = create_valid_jwt()
+    proxy_token = create_valid_jwt()  # different JWT in header
+
+    user = SimpleNamespace(
+        access_token=SimpleNamespace(raw_token=upstream_token)
+    )
+
+    request = DummyHTTPRequest(
+        headers={"authorization": f"Bearer {proxy_token}"}
+    )
+    request.scope = {"user": user}
+
+    with patch("synapse_mcp.auth_middleware.get_http_request") as mock_get_request:
+        mock_get_request.return_value = request
+
+        middleware = OAuthTokenMiddleware()
+        fast_ctx = DummyFastMCPContext()
+        context = SimpleNamespace(fastmcp_context=fast_ctx)
+
+        async def call_next(ctx):
+            return "ok"
+
+        result = await middleware.on_call_tool(context, call_next)
+        assert result == "ok"
+        # Should use the upstream token, not the proxy token
+        assert fast_ctx.get_state("oauth_access_token") == upstream_token
+
+
+@pytest.mark.anyio
+async def test_middleware_falls_back_to_header_when_no_user_in_scope():
+    """When no authenticated user in scope, fall back to
+    Authorization header."""
+    token = create_valid_jwt()
+
+    request = DummyHTTPRequest(
+        headers={"authorization": f"Bearer {token}"}
+    )
+    request.scope = {}  # No user
+
+    with patch("synapse_mcp.auth_middleware.get_http_request") as mock_get_request:
+        mock_get_request.return_value = request
+
+        middleware = OAuthTokenMiddleware()
+        fast_ctx = DummyFastMCPContext()
+        context = SimpleNamespace(fastmcp_context=fast_ctx)
+
+        async def call_next(ctx):
+            return "ok"
+
+        result = await middleware.on_call_tool(context, call_next)
+        assert result == "ok"
+        assert fast_ctx.get_state("oauth_access_token") == token
+
+
+@pytest.mark.anyio
+async def test_middleware_handles_string_access_token():
+    """When access_token is a plain string, use it directly."""
+    upstream_token = create_valid_jwt()
+
+    user = SimpleNamespace(access_token=upstream_token)
+    request = DummyHTTPRequest(headers={})
+    request.scope = {"user": user}
+
+    with patch("synapse_mcp.auth_middleware.get_http_request") as mock_get_request:
+        mock_get_request.return_value = request
+
+        middleware = OAuthTokenMiddleware()
+        fast_ctx = DummyFastMCPContext()
+        context = SimpleNamespace(fastmcp_context=fast_ctx)
+
+        async def call_next(ctx):
+            return "ok"
+
+        result = await middleware.on_call_tool(context, call_next)
+        assert result == "ok"
+        assert fast_ctx.get_state("oauth_access_token") == upstream_token
+
+
+@pytest.mark.anyio
+async def test_middleware_falls_back_to_token_attr():
+    """When access_token exposes .token but not .raw_token,
+    the middleware should use .token."""
+    upstream_token = create_valid_jwt()
+
+    user = SimpleNamespace(
+        access_token=SimpleNamespace(token=upstream_token)
+    )
+    request = DummyHTTPRequest(headers={})
+    request.scope = {"user": user}
+
+    with patch("synapse_mcp.auth_middleware.get_http_request") as mock_get_request:
+        mock_get_request.return_value = request
+
+        middleware = OAuthTokenMiddleware()
+        fast_ctx = DummyFastMCPContext()
+        context = SimpleNamespace(fastmcp_context=fast_ctx)
+
+        async def call_next(ctx):
+            return "ok"
+
+        result = await middleware.on_call_tool(context, call_next)
+        assert result == "ok"
+        assert fast_ctx.get_state("oauth_access_token") == upstream_token
 
 
 @pytest.mark.anyio
