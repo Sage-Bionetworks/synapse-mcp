@@ -49,10 +49,17 @@ class _OAuthFixupMiddleware:
             return
 
         # --- Fix 2: patch token_endpoint_auth_methods on GET metadata -----
-        if (
-            scope["method"] == "GET"
-            and scope["path"] == "/.well-known/oauth-authorization-server"
+        # Match both the root and path-scoped (RFC 8414) metadata URLs.
+        # Some clients (e.g. Codex CLI) probe the path-scoped variant
+        # ``/.well-known/oauth-authorization-server/mcp`` derived from
+        # the MCP endpoint path.
+        if scope["method"] == "GET" and scope["path"] in (
+            "/.well-known/oauth-authorization-server",
+            "/.well-known/oauth-authorization-server/mcp",
         ):
+            # Rewrite the path-scoped URL to the root so the downstream
+            # FastMCP OAuth handler serves the metadata for both paths.
+            scope["path"] = "/.well-known/oauth-authorization-server"
             await self._handle_metadata(scope, receive, send)
             return
 
@@ -209,7 +216,8 @@ class _OAuthFixupMiddleware:
                     resp_data.get("client_id", "?"),
                 )
             except (json.JSONDecodeError, TypeError):
-                logger.info("OAuth /register response: HTTP %s", response_status)
+                logger.info("OAuth /register response: HTTP %s",
+                            response_status)
 
     async def _handle_metadata(self, scope, receive, send):
         """Patch authorization-server metadata for client compatibility."""

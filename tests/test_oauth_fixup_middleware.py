@@ -160,3 +160,59 @@ class TestHandleMetadata:
             if k == b"content-length":
                 content_length = int(v)
         assert content_length == len(body_received)
+
+
+class TestPathScopedMetadataAlias:
+    """Tests for /.well-known/oauth-authorization-server/mcp alias."""
+
+    async def test_mcp_path_returns_metadata(self):
+        """Path-scoped URL serves the same metadata as the root."""
+        upstream = {
+            "issuer": "https://auth.example.com",
+            "token_endpoint_auth_methods_supported": [
+                "client_secret_basic",
+            ],
+        }
+        middleware = _OAuthFixupMiddleware(_make_asgi_app(upstream))
+
+        _, data = await _invoke_metadata(
+            middleware,
+            path="/.well-known/oauth-authorization-server/mcp",
+        )
+
+        assert data["issuer"] == "https://auth.example.com"
+        assert data["scopes_supported"] == ["openid", "view"]
+        assert "none" in data[
+            "token_endpoint_auth_methods_supported"
+        ]
+
+    async def test_mcp_path_rewrites_to_root(self):
+        """The /mcp path is rewritten so the downstream app sees the root."""
+        captured_paths = []
+
+        async def tracking_app(scope, receive, send):
+            captured_paths.append(scope["path"])
+            body = json.dumps({"issuer": "x"}).encode()
+            await send({
+                "type": "http.response.start",
+                "status": 200,
+                "headers": [
+                    (b"content-type", b"application/json"),
+                    (b"content-length", str(len(body)).encode()),
+                ],
+            })
+            await send({
+                "type": "http.response.body",
+                "body": body,
+                "more_body": False,
+            })
+
+        middleware = _OAuthFixupMiddleware(tracking_app)
+        await _invoke_metadata(
+            middleware,
+            path="/.well-known/oauth-authorization-server/mcp",
+        )
+
+        assert captured_paths == [
+            "/.well-known/oauth-authorization-server"
+        ]
