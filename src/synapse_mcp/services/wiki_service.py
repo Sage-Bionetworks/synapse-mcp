@@ -67,7 +67,7 @@ class WikiService:
 
     @error_boundary(
         error_context_keys=("owner_id",),
-        wrap_errors=list,
+        wrap_errors=True,
     )
     def get_wiki_headers(
         self,
@@ -102,7 +102,7 @@ class WikiService:
 
     @error_boundary(
         error_context_keys=("owner_id",),
-        wrap_errors=list,
+        wrap_errors=True,
     )
     def get_wiki_history(
         self,
