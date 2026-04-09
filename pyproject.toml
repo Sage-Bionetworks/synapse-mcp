@@ -28,6 +28,10 @@ dependencies = [
     "PyJWT>=2.10.1",
     "cryptography>=41.0.0",
     "redis==5.0.0",
+    # Pin fakeredis below 2.35.0: that release removed FakeConnection from
+    # fakeredis.aioredis, which pydocket (via fastmcp) still imports.
+    # Remove this pin once pydocket ships a compatible release.
+    "fakeredis[lua]<2.35.0",
 ]
 
 [project.urls]
