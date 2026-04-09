@@ -106,6 +106,11 @@ src/synapse_mcp/
 
 **When to use a manager:** Only when an operation requires composing multiple API calls or handling partial failures across sub-operations. Simple one-liner SDK calls (`Model.list(...)`, `Model(...).get(...)`) belong in the service.
 
+**New tool vs. extending an existing tool:**
+
+- **Add a new tool** when the operation targets a different resource type (e.g., curation tasks vs. entities), serves a distinct user intent (e.g., "search" vs. "get by ID"), or requires a fundamentally different set of parameters.
+- **Extend an existing tool** (add optional parameters) when the new behavior is a natural variation of what the tool already does — same resource, same intent, just a narrower or broader filter. For example, adding an optional `name_filter` parameter to a "list" tool is better than creating a separate "search" tool that duplicates most of the logic.
+
 **Adding a new tool — follow this template:**
 
 **1. Service** — `services/<resource>_service.py`:
