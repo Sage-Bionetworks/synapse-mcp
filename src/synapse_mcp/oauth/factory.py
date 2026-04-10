@@ -4,6 +4,10 @@ import logging
 import os
 from typing import Optional
 
+from cryptography.fernet import Fernet
+from fastmcp.server.auth.jwt_issuer import derive_jwt_key
+from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
+
 from .config import load_oauth_settings, should_skip_oauth
 from .jwt import SynapseJWTVerifier
 from .proxy import SessionAwareOAuthProxy
@@ -75,6 +79,8 @@ def create_oauth_proxy(env: Optional[dict[str, str]] = None):
         required_scopes=["openid", "view"],
     )
 
+    client_storage = _create_redis_storage(env_dict, settings.client_secret)
+
     auth = SessionAwareOAuthProxy(
         upstream_authorization_endpoint=endpoints["authorization_endpoint"],
         upstream_token_endpoint=endpoints["token_endpoint"],
@@ -83,9 +89,42 @@ def create_oauth_proxy(env: Optional[dict[str, str]] = None):
         redirect_path="/oauth/callback",
         token_verifier=jwt_verifier,
         base_url=settings.server_url,
+        client_storage=client_storage,
     )
 
     return auth
+
+
+def _create_redis_storage(env: dict[str, str], client_secret: str):
+    """Create a Redis-backed encrypted storage for OAuth state.
+
+    When REDIS_URL is available, returns a FernetEncryptionWrapper around
+    a RedisStore so that upstream tokens, JTI mappings, and refresh tokens
+    survive container restarts. Falls back to None (FastMCP's default
+    ephemeral DiskStore) when Redis is not configured.
+    """
+    redis_url = env.get("REDIS_URL")
+    if not redis_url:
+        logger.info("No REDIS_URL configured — using default ephemeral DiskStore for OAuth state")
+        return None
+
+    try:
+        from key_value.aio.stores.redis import RedisStore
+    except ImportError:
+        logger.warning("RedisStore not available — using default ephemeral DiskStore for OAuth state")
+        return None
+
+    encryption_key = derive_jwt_key(
+        high_entropy_material=client_secret,
+        salt="fastmcp-storage-encryption-key",
+    )
+    redis_store = RedisStore(url=redis_url, default_collection="synapse-mcp-oauth")
+    storage = FernetEncryptionWrapper(
+        key_value=redis_store,
+        fernet=Fernet(key=encryption_key),
+    )
+    logger.info("Using Redis-backed encrypted storage for OAuth state")
+    return storage
 
 
 __all__ = ["create_oauth_proxy"]
