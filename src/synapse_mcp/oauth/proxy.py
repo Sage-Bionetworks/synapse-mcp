@@ -25,6 +25,7 @@ class SessionAwareOAuthProxy(OAuthProxy):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self._client_registry = create_client_registry(os.environ)
+        self._static_registrations = load_static_registrations()
         logger.debug(
             "SessionAwareOAuthProxy initialized with client registry %s",
             type(self._client_registry).__name__,
@@ -61,11 +62,13 @@ class SessionAwareOAuthProxy(OAuthProxy):
 
         # Persistent registry lookup (Redis hget or file read)
         registration = self._client_registry.load_one(client_id)
+        source = "persistent registry"
         if registration is None:
-            # Also check static registrations
-            for static in load_static_registrations():
+            # Also check static registrations (cached at init)
+            for static in self._static_registrations:
                 if static.client_id == client_id:
                     registration = static
+                    source = "static registrations"
                     break
         if registration is None:
             return None
@@ -80,7 +83,7 @@ class SessionAwareOAuthProxy(OAuthProxy):
         except Exception as exc:  # pragma: no cover - defensive
             logger.debug("Failed to cache client %s in local store: %s", client_id, exc)
 
-        logger.info("Resolved client %s from persistent registry", client_id)
+        logger.info("Resolved client %s from %s", client_id, source)
         return proxy_client
 
     async def register_client(self, client_info):

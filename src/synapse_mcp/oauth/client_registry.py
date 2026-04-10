@@ -85,18 +85,23 @@ class FileClientRegistry(ClientRegistry):
                 return None
             try:
                 data = json.loads(self._path.read_text())
-            except json.JSONDecodeError:  # pragma: no cover - defensive
+            except json.JSONDecodeError as exc:  # pragma: no cover - defensive
+                logger.warning("Failed to parse client registry file %s: %s", self._path, exc)
                 return None
 
         item = data.get(client_id)
         if item is None:
             return None
-        return ClientRegistration(
-            client_id=item["client_id"],
-            client_secret=item.get("client_secret"),
-            redirect_uris=list(item.get("redirect_uris", [])),
-            grant_types=list(item.get("grant_types", [])),
-        )
+        try:
+            return ClientRegistration(
+                client_id=item["client_id"],
+                client_secret=item.get("client_secret"),
+                redirect_uris=list(item.get("redirect_uris", [])),
+                grant_types=list(item.get("grant_types", [])),
+            )
+        except (KeyError, TypeError) as exc:  # pragma: no cover - defensive
+            logger.warning("Malformed file client record for %s: %s", client_id, exc)
+            return None
 
     def save(self, registration: ClientRegistration) -> None:
         with self._lock:
