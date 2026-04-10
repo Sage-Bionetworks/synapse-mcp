@@ -114,8 +114,15 @@ def _create_redis_storage(env: dict[str, str], client_secret: str):
         logger.warning("RedisStore not available — using default ephemeral DiskStore for OAuth state")
         return None
 
-    encryption_key = derive_jwt_key(
+    # Match FastMCP's two-step key derivation:
+    # 1) client_secret -> jwt_signing_key (same as OAuthProxy.__init__)
+    # 2) jwt_signing_key -> storage_encryption_key
+    jwt_signing_key = derive_jwt_key(
         high_entropy_material=client_secret,
+        salt="fastmcp-jwt-signing-key",
+    )
+    encryption_key = derive_jwt_key(
+        high_entropy_material=jwt_signing_key.decode(),
         salt="fastmcp-storage-encryption-key",
     )
     redis_store = RedisStore(url=redis_url, default_collection="synapse-mcp-oauth")
