@@ -7,6 +7,7 @@ from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from fastmcp.server.auth import OAuthProxy
 from fastmcp.server.auth.oauth_proxy import ProxyDCRClient
+from mcp.server.auth.provider import OAuthClientInformationFull
 from pydantic import AnyUrl, TypeAdapter
 
 from ..session_storage import create_session_storage
@@ -26,54 +27,54 @@ class SessionAwareOAuthProxy(OAuthProxy):
         super().__init__(*args, **kwargs)
         self._session_storage = create_session_storage()
         self._client_registry = create_client_registry(os.environ)
-        if not hasattr(self, "_clients"):
-            # Guard against older fastmcp versions where OAuthProxy skipped initialization.
-            self._clients = {}
-        self._restore_registered_clients()
         logger.debug(
             "SessionAwareOAuthProxy initialized with session storage %s and client registry %s",
             type(self._session_storage).__name__,
             type(self._client_registry).__name__,
         )
 
-    def _restore_registered_clients(self) -> None:
-        try:
-            registrations = list(self._client_registry.load_all())
-        except Exception as exc:  # pragma: no cover - defensive
-            logger.warning("Failed to load persisted OAuth clients: %s", exc)
-            return
-
-        # Merge statically configured clients (highest priority)
-        try:
-            registrations.extend(load_static_registrations())
-        except Exception as exc:  # pragma: no cover - defensive
-            logger.warning("Failed to load static OAuth clients: %s", exc)
-
+    def _registration_to_proxy_client(self, record: ClientRegistration) -> ProxyDCRClient:
+        """Build a ProxyDCRClient from a persisted ClientRegistration."""
         default_grants = ["authorization_code", "refresh_token"]
+        adapter = TypeAdapter(List[AnyUrl])
+        redirect_source = record.redirect_uris if record.redirect_uris else [
+            "http://127.0.0.1"]
+        redirect_uris = adapter.validate_python(redirect_source)
+        return ProxyDCRClient(
+            client_id=record.client_id,
+            client_secret=record.client_secret,
+            redirect_uris=redirect_uris,
+            grant_types=record.grant_types or default_grants,
+            scope=self._default_scope_str,
+            token_endpoint_auth_method="none",
+            allowed_redirect_uri_patterns=self._allowed_client_redirect_uris,
+        )
 
-        for record in registrations:
-            if record.client_id in self._clients:
-                continue
-            try:
-                adapter = TypeAdapter(List[AnyUrl])
-                redirect_source = record.redirect_uris if record.redirect_uris else [
-                    "http://127.0.0.1"]
-                redirect_uris = adapter.validate_python(redirect_source)
-                proxy_client = ProxyDCRClient(
-                    client_id=record.client_id,
-                    client_secret=record.client_secret,
-                    redirect_uris=redirect_uris,
-                    grant_types=record.grant_types or default_grants,
-                    scope=self._default_scope_str,
-                    token_endpoint_auth_method="none",
-                    allowed_redirect_uri_patterns=self._allowed_client_redirect_uris,
-                )
-                self._clients[record.client_id] = proxy_client
-                logger.info("Restored registered OAuth client %s",
-                            record.client_id)
-            except Exception as exc:  # pragma: no cover - defensive
-                logger.warning(
-                    "Failed to restore OAuth client %s: %s", record.client_id, exc)
+    async def get_client(self, client_id: str) -> Optional[OAuthClientInformationFull]:
+        """Look up a registered client.
+
+        Checks FastMCP's in-process ``_client_store`` first (covers
+        clients registered during *this* process lifetime), then falls
+        back to the persistent registry (Redis / file) so that clients
+        survive container restarts without bulk-loading into memory.
+        """
+        client = await super().get_client(client_id)
+        if client is not None:
+            return client
+
+        # Persistent registry lookup (Redis hget or file read)
+        registration = self._client_registry.load_one(client_id)
+        if registration is None:
+            # Also check static registrations
+            for static in load_static_registrations():
+                if static.client_id == client_id:
+                    registration = static
+                    break
+        if registration is None:
+            return None
+
+        logger.info("Resolved client %s from persistent registry", client_id)
+        return self._registration_to_proxy_client(registration)
 
     async def register_client(self, client_info):
         # Ensure grant_types includes refresh_token — many MCP clients

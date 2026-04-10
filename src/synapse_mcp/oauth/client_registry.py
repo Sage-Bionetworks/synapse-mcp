@@ -39,6 +39,9 @@ class ClientRegistry:
     def load_all(self) -> Iterable[ClientRegistration]:  # pragma: no cover - interface only
         raise NotImplementedError
 
+    def load_one(self, client_id: str) -> Optional[ClientRegistration]:  # pragma: no cover - interface only
+        raise NotImplementedError
+
     def save(self, registration: ClientRegistration) -> None:  # pragma: no cover - interface only
         raise NotImplementedError
 
@@ -75,6 +78,25 @@ class FileClientRegistry(ClientRegistry):
                 )
             )
         return registrations
+
+    def load_one(self, client_id: str) -> Optional[ClientRegistration]:
+        with self._lock:
+            if not self._path.exists():
+                return None
+            try:
+                data = json.loads(self._path.read_text())
+            except json.JSONDecodeError:  # pragma: no cover - defensive
+                return None
+
+        item = data.get(client_id)
+        if item is None:
+            return None
+        return ClientRegistration(
+            client_id=item["client_id"],
+            client_secret=item.get("client_secret"),
+            redirect_uris=list(item.get("redirect_uris", [])),
+            grant_types=list(item.get("grant_types", [])),
+        )
 
     def save(self, registration: ClientRegistration) -> None:
         with self._lock:
@@ -131,6 +153,27 @@ class RedisClientRegistry(ClientRegistry):
             except (KeyError, json.JSONDecodeError) as exc:  # pragma: no cover - defensive
                 logger.warning("Skipping malformed Redis client record: %s", exc)
         return registrations
+
+    def load_one(self, client_id: str) -> Optional[ClientRegistration]:
+        try:
+            raw = self._redis.hget(self._namespace, client_id)
+        except RedisError as exc:  # pragma: no cover - network failures
+            logger.warning("Failed to load client %s from Redis: %s", client_id, exc)
+            return None
+
+        if raw is None:
+            return None
+        try:
+            item = json.loads(raw)
+            return ClientRegistration(
+                client_id=item["client_id"],
+                client_secret=item.get("client_secret"),
+                redirect_uris=list(item.get("redirect_uris", [])),
+                grant_types=list(item.get("grant_types", [])),
+            )
+        except (KeyError, json.JSONDecodeError) as exc:  # pragma: no cover - defensive
+            logger.warning("Malformed Redis client record for %s: %s", client_id, exc)
+            return None
 
     def save(self, registration: ClientRegistration) -> None:
         try:

@@ -27,6 +27,9 @@ class FakeRegistry:
     def load_all(self):
         return list(self.records.values())
 
+    def load_one(self, client_id):
+        return self.records.get(client_id)
+
     def save(self, registration):
         self.records[registration.client_id] = registration
 
@@ -186,7 +189,7 @@ async def test_client_registry_persists_across_instances(monkeypatch, tmp_path):
     new_storage = FakeStorage()
     new_proxy = build_proxy(monkeypatch, new_storage)
 
-    assert "client-xyz" in new_proxy._clients
+    assert await new_proxy.get_client("client-xyz") is not None
 
 
 @pytest.mark.anyio
@@ -204,7 +207,7 @@ async def test_static_clients_loaded_from_env(monkeypatch):
     storage = FakeStorage()
     proxy = build_proxy(monkeypatch, storage, FakeRegistry())
 
-    assert "static-client" in proxy._clients
+    assert await proxy.get_client("static-client") is not None
 
 
 @pytest.mark.anyio
@@ -252,3 +255,28 @@ async def test_connection_auth_with_oauth_token(monkeypatch):
     client = connection_auth.get_synapse_client(ctx)
     assert isinstance(client, DummySynapse)
     assert client.logged_in == token
+
+
+@pytest.mark.anyio
+async def test_get_client_falls_back_to_registry(monkeypatch):
+    """A fresh proxy (empty _client_store) should resolve clients
+    that exist only in the persistent registry — simulates a
+    container restart where the DiskStore is wiped but Redis persists."""
+    from synapse_mcp.oauth.client_registry import ClientRegistration
+
+    registry = FakeRegistry()
+    registry.records["persisted-client"] = ClientRegistration(
+        client_id="persisted-client",
+        client_secret=None,
+        redirect_uris=["http://127.0.0.1:5000/callback"],
+        grant_types=["authorization_code", "refresh_token"],
+    )
+
+    storage = FakeStorage()
+    proxy = build_proxy(monkeypatch, storage, registry)
+
+    result = await proxy.get_client("persisted-client")
+    assert result is not None
+    assert result.client_id == "persisted-client"
+
+    assert await proxy.get_client("nonexistent") is None
