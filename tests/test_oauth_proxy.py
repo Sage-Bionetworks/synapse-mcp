@@ -1,8 +1,7 @@
-"""Tests for the OAuth proxy with user-based token storage."""
+"""Tests for the OAuth proxy with persistent client registry."""
 
 import json
 from types import SimpleNamespace
-import sys
 
 import pytest
 from fastmcp.server.auth.oauth_proxy import OAuthClientInformationFull, OAuthProxy
@@ -27,6 +26,9 @@ class FakeRegistry:
     def load_all(self):
         return list(self.records.values())
 
+    def load_one(self, client_id):
+        return self.records.get(client_id)
+
     def save(self, registration):
         self.records[registration.client_id] = registration
 
@@ -34,39 +36,7 @@ class FakeRegistry:
         self.records.pop(client_id, None)
 
 
-class FakeStorage:
-    def __init__(self):
-        self.tokens = {}
-        self.set_calls = []
-        self.removed = []
-
-    async def get_all_user_subjects(self):
-        return set(self.tokens.keys())
-
-    async def find_user_by_token(self, token):
-        for subject, stored in self.tokens.items():
-            if stored == token:
-                return subject
-        return None
-
-    async def set_user_token(self, user_subject, access_token, ttl_seconds=3600):
-        self.tokens[user_subject] = access_token
-        self.set_calls.append((user_subject, access_token))
-
-    async def get_user_token(self, user_subject):
-        return self.tokens.get(user_subject)
-
-    async def remove_user_token(self, user_subject):
-        self.tokens.pop(user_subject, None)
-        self.removed.append(user_subject)
-
-    async def cleanup_expired_tokens(self):
-        return None
-
-
-def build_proxy(monkeypatch, storage, registry: FakeRegistry | None = None, token_verifier=None):
-    monkeypatch.setattr(
-        "synapse_mcp.oauth.proxy.create_session_storage", lambda: storage)
+def build_proxy(monkeypatch, registry: FakeRegistry | None = None, token_verifier=None):
     if registry is not None:
         monkeypatch.setattr(
             "synapse_mcp.oauth.proxy.create_client_registry", lambda *_, **__: registry)
@@ -84,51 +54,8 @@ def build_proxy(monkeypatch, storage, registry: FakeRegistry | None = None, toke
 
 
 @pytest.mark.anyio
-async def test_map_new_tokens_populates_storage(monkeypatch):
-    storage = FakeStorage()
-    proxy = build_proxy(monkeypatch, storage, FakeRegistry())
-    proxy._access_tokens = {"token123": object()}
-
-    dummy_jwt = SimpleNamespace(
-        decode=lambda token, options=None: {"sub": "user-1"})
-    monkeypatch.setitem(sys.modules, "jwt", dummy_jwt)
-
-    await proxy._map_new_tokens_to_users()
-
-    assert storage.tokens["user-1"] == "token123"
-
-
-@pytest.mark.anyio
-async def test_get_token_for_current_user(monkeypatch):
-    storage = FakeStorage()
-    storage.tokens["user-1"] = "token123"
-    proxy = build_proxy(monkeypatch, storage, FakeRegistry())
-
-    result = await proxy.get_token_for_current_user()
-    assert result == ("token123", "user-1")
-    assert await proxy.iter_user_tokens() == [("user-1", "token123")]
-
-
-@pytest.mark.anyio
-async def test_cleanup_expired_tokens_removes_orphans(monkeypatch):
-    storage = FakeStorage()
-    storage.tokens["user-1"] = "token123"
-    proxy = build_proxy(monkeypatch, storage, FakeRegistry())
-
-    proxy._access_tokens = {"token123": object(), "token999": object()}
-    monkeypatch.setattr(SessionAwareOAuthProxy,
-                        "_is_token_old_enough_to_cleanup", lambda self, token: True)
-
-    await proxy.cleanup_expired_tokens()
-
-    assert "token999" not in proxy._access_tokens
-    assert "token123" in proxy._access_tokens
-
-
-@pytest.mark.anyio
 async def test_handle_callback_sanitizes_none_state(monkeypatch):
-    storage = FakeStorage()
-    proxy = build_proxy(monkeypatch, storage, FakeRegistry())
+    proxy = build_proxy(monkeypatch, FakeRegistry())
 
     async def fake_handle(self, request, *args, **kwargs):
         return RedirectResponse("http://app/callback?code=new-token&state=None")
@@ -148,8 +75,7 @@ async def test_handle_callback_sanitizes_none_state(monkeypatch):
 
 @pytest.mark.anyio
 async def test_handle_callback_preserves_valid_state(monkeypatch):
-    storage = FakeStorage()
-    proxy = build_proxy(monkeypatch, storage, FakeRegistry())
+    proxy = build_proxy(monkeypatch, FakeRegistry())
 
     async def fake_handle(self, request, *args, **kwargs):
         return RedirectResponse("http://app/callback?code=token&state=valid123")
@@ -168,8 +94,7 @@ async def test_client_registry_persists_across_instances(monkeypatch, tmp_path):
     registry_path = tmp_path / "clients.json"
     monkeypatch.setenv("SYNAPSE_MCP_CLIENT_REGISTRY_PATH", str(registry_path))
 
-    storage = FakeStorage()
-    proxy = build_proxy(monkeypatch, storage)
+    proxy = build_proxy(monkeypatch)
 
     client_info = OAuthClientInformationFull(
         client_id="client-xyz",
@@ -183,10 +108,9 @@ async def test_client_registry_persists_across_instances(monkeypatch, tmp_path):
     saved = json.loads(registry_path.read_text())
     assert "client-xyz" in saved
 
-    new_storage = FakeStorage()
-    new_proxy = build_proxy(monkeypatch, new_storage)
+    new_proxy = build_proxy(monkeypatch)
 
-    assert "client-xyz" in new_proxy._clients
+    assert await new_proxy.get_client("client-xyz") is not None
 
 
 @pytest.mark.anyio
@@ -201,10 +125,9 @@ async def test_static_clients_loaded_from_env(monkeypatch):
     )
     monkeypatch.setenv("SYNAPSE_MCP_STATIC_CLIENTS", payload)
 
-    storage = FakeStorage()
-    proxy = build_proxy(monkeypatch, storage, FakeRegistry())
+    proxy = build_proxy(monkeypatch, FakeRegistry())
 
-    assert "static-client" in proxy._clients
+    assert await proxy.get_client("static-client") is not None
 
 
 @pytest.mark.anyio
@@ -252,3 +175,57 @@ async def test_connection_auth_with_oauth_token(monkeypatch):
     client = connection_auth.get_synapse_client(ctx)
     assert isinstance(client, DummySynapse)
     assert client.logged_in == token
+
+
+@pytest.mark.anyio
+async def test_get_client_falls_back_to_registry(monkeypatch):
+    """A fresh proxy (empty _client_store) should resolve clients
+    that exist only in the persistent registry — simulates a
+    container restart where the DiskStore is wiped but Redis persists."""
+    from synapse_mcp.oauth.client_registry import ClientRegistration
+
+    registry = FakeRegistry()
+    registry.records["persisted-client"] = ClientRegistration(
+        client_id="persisted-client",
+        client_secret=None,
+        redirect_uris=["http://127.0.0.1:5000/callback"],
+        grant_types=["authorization_code", "refresh_token"],
+    )
+
+    proxy = build_proxy(monkeypatch, registry)
+
+    result = await proxy.get_client("persisted-client")
+    assert result is not None
+    assert result.client_id == "persisted-client"
+
+    assert await proxy.get_client("nonexistent") is None
+
+
+@pytest.mark.anyio
+async def test_get_client_caches_registry_hit_in_local_store(monkeypatch):
+    """After resolving a client from the persistent registry, subsequent
+    lookups should be served from the local _client_store without hitting
+    the registry again."""
+    from synapse_mcp.oauth.client_registry import ClientRegistration
+
+    registry = FakeRegistry()
+    registry.records["cached-client"] = ClientRegistration(
+        client_id="cached-client",
+        client_secret=None,
+        redirect_uris=["http://127.0.0.1:5000/callback"],
+        grant_types=["authorization_code", "refresh_token"],
+    )
+
+    proxy = build_proxy(monkeypatch, registry)
+
+    # First call — should fall back to registry
+    result1 = await proxy.get_client("cached-client")
+    assert result1 is not None
+
+    # Remove from registry — simulates registry being unreachable
+    del registry.records["cached-client"]
+
+    # Second call — should be served from local _client_store
+    result2 = await proxy.get_client("cached-client")
+    assert result2 is not None
+    assert result2.client_id == "cached-client"
