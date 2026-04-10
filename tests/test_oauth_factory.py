@@ -1,7 +1,5 @@
 """Tests for the OAuth factory's Redis storage creation."""
 
-import pytest
-
 from synapse_mcp.oauth.factory import _create_redis_storage
 
 
@@ -16,7 +14,7 @@ def test_create_redis_storage_returns_none_with_empty_redis_url():
     assert result is None
 
 
-def test_create_redis_storage_returns_encrypted_wrapper(monkeypatch):
+def test_create_redis_storage_returns_encrypted_wrapper():
     """With REDIS_URL, factory returns a FernetEncryptionWrapper around RedisStore."""
     from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
 

@@ -2,11 +2,8 @@
 
 import logging
 import os
+from collections.abc import Mapping
 from typing import Optional
-
-from cryptography.fernet import Fernet
-from fastmcp.server.auth.jwt_issuer import derive_jwt_key
-from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
 
 from .config import load_oauth_settings, should_skip_oauth
 from .jwt import SynapseJWTVerifier
@@ -95,7 +92,7 @@ def create_oauth_proxy(env: Optional[dict[str, str]] = None):
     return auth
 
 
-def _create_redis_storage(env: dict[str, str], client_secret: str):
+def _create_redis_storage(env: Mapping[str, str], client_secret: str):
     """Create a Redis-backed encrypted storage for OAuth state.
 
     When REDIS_URL is available, returns a FernetEncryptionWrapper around
@@ -105,13 +102,22 @@ def _create_redis_storage(env: dict[str, str], client_secret: str):
     """
     redis_url = env.get("REDIS_URL")
     if not redis_url:
-        logger.info("No REDIS_URL configured — using default ephemeral DiskStore for OAuth state")
+        logger.info(
+            "No REDIS_URL configured — using default ephemeral DiskStore "
+            "for OAuth state"
+        )
         return None
 
     try:
+        from cryptography.fernet import Fernet
+        from fastmcp.server.auth.jwt_issuer import derive_jwt_key
         from key_value.aio.stores.redis import RedisStore
+        from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
     except ImportError:
-        logger.warning("RedisStore not available — using default ephemeral DiskStore for OAuth state")
+        logger.warning(
+            "RedisStore not available — using default ephemeral DiskStore "
+            "for OAuth state"
+        )
         return None
 
     # Match FastMCP's two-step key derivation:
