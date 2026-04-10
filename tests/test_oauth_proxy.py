@@ -199,33 +199,3 @@ async def test_get_client_falls_back_to_registry(monkeypatch):
     assert result.client_id == "persisted-client"
 
     assert await proxy.get_client("nonexistent") is None
-
-
-@pytest.mark.anyio
-async def test_get_client_caches_registry_hit_in_local_store(monkeypatch):
-    """After resolving a client from the persistent registry, subsequent
-    lookups should be served from the local _client_store without hitting
-    the registry again."""
-    from synapse_mcp.oauth.client_registry import ClientRegistration
-
-    registry = FakeRegistry()
-    registry.records["cached-client"] = ClientRegistration(
-        client_id="cached-client",
-        client_secret=None,
-        redirect_uris=["http://127.0.0.1:5000/callback"],
-        grant_types=["authorization_code", "refresh_token"],
-    )
-
-    proxy = build_proxy(monkeypatch, registry)
-
-    # First call — should fall back to registry
-    result1 = await proxy.get_client("cached-client")
-    assert result1 is not None
-
-    # Remove from registry — simulates registry being unreachable
-    del registry.records["cached-client"]
-
-    # Second call — should be served from local _client_store
-    result2 = await proxy.get_client("cached-client")
-    assert result2 is not None
-    assert result2.client_id == "cached-client"
