@@ -10,7 +10,6 @@ from fastmcp.server.auth.oauth_proxy import ProxyDCRClient
 from mcp.server.auth.provider import OAuthClientInformationFull
 from pydantic import AnyUrl, TypeAdapter
 
-from ..session_storage import create_session_storage
 from .client_registry import (
     ClientRegistration,
     create_client_registry,
@@ -21,15 +20,13 @@ logger = logging.getLogger("synapse_mcp.oauth")
 
 
 class SessionAwareOAuthProxy(OAuthProxy):
-    """OAuth proxy that mirrors tokens into session storage."""
+    """OAuth proxy with persistent client registry backed by Redis/file."""
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        self._session_storage = create_session_storage()
         self._client_registry = create_client_registry(os.environ)
         logger.debug(
-            "SessionAwareOAuthProxy initialized with session storage %s and client registry %s",
-            type(self._session_storage).__name__,
+            "SessionAwareOAuthProxy initialized with client registry %s",
             type(self._client_registry).__name__,
         )
 
@@ -73,8 +70,18 @@ class SessionAwareOAuthProxy(OAuthProxy):
         if registration is None:
             return None
 
+        proxy_client = self._registration_to_proxy_client(registration)
+
+        # Cache into _client_store so subsequent lookups in this
+        # container's lifetime (e.g. /consent, /token in the same
+        # auth flow) hit the local store instead of Redis.
+        try:
+            await self._client_store.put(key=client_id, value=proxy_client)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("Failed to cache client %s in local store: %s", client_id, exc)
+
         logger.info("Resolved client %s from persistent registry", client_id)
-        return self._registration_to_proxy_client(registration)
+        return proxy_client
 
     async def register_client(self, client_info):
         # Ensure grant_types includes refresh_token — many MCP clients
@@ -135,150 +142,7 @@ class SessionAwareOAuthProxy(OAuthProxy):
                     logger.debug(
                         "Removed empty state parameter from callback redirect")
 
-        if result:
-            try:
-                await self._map_new_tokens_to_users()
-            except Exception as exc:  # pragma: no cover - defensive
-                logger.warning("Failed to map tokens to users: %s", exc)
-        else:
-            logger.debug(
-                "No result returned from super()._handle_idp_callback")
-
         return result
-
-    async def exchange_authorization_code(
-        self,
-        client: Any,
-        authorization_code: Any,
-    ):
-
-        existing_tokens = set(getattr(self, "_access_tokens", {}).keys())
-        token_response = await super().exchange_authorization_code(client, authorization_code)
-
-        try:
-            await self._map_new_tokens_to_users()
-        except Exception as exc:  # pragma: no cover - defensive
-            logger.warning(
-                "Failed to map tokens to users after exchange: %s", exc)
-
-        access_tokens = getattr(self, "_access_tokens", {})
-        new_tokens = [
-            token for token in access_tokens if token not in existing_tokens]
-        logger.debug("New tokens from exchange: %s", [
-                     t[:8] + "***" for t in new_tokens])
-
-        return token_response
-
-    async def _map_new_tokens_to_users(self) -> None:
-        existing_users = await self._session_storage.get_all_user_subjects()
-        access_tokens = getattr(self, "_access_tokens", {})
-        known_attrs = [attr for attr in dir(
-            self) if "token" in attr.lower() and not attr.startswith("__")]
-        logger.debug(
-            "_map_new_tokens_to_users: existing_users=%s tokens=%s token_attrs=%s",
-            existing_users,
-            [t[:8] + "***" for t in access_tokens],
-            {attr: _summarize_token_attr(attr, getattr(
-                self, attr, None)) for attr in known_attrs},
-        )
-        unmapped_tokens = [token for token in access_tokens if await self._session_storage.find_user_by_token(token) is None]
-        logger.debug("Unmapped tokens: %s", [
-                     t[:8] + "***" for t in unmapped_tokens])
-
-        for token_key in unmapped_tokens:
-            try:
-                import jwt
-
-                decoded = jwt.decode(token_key, options={
-                                     "verify_signature": False})
-                user_subject = decoded.get("sub")
-                if user_subject:
-                    await self._session_storage.set_user_token(user_subject, token_key, ttl_seconds=3600)
-                    logger.info("Mapped token %s*** to user %s",
-                                token_key[:20], user_subject)
-                else:
-                    logger.warning(
-                        "Token %s*** has no subject claim", token_key[:20])
-            except Exception as exc:  # pragma: no cover - decoding failures
-                logger.warning("Failed to decode token %s***: %s",
-                               token_key[:20], exc)
-
-    async def get_user_token(self, user_subject: str) -> Optional[str]:
-        token_key = await self._session_storage.get_user_token(user_subject)
-        if token_key and token_key in self._access_tokens:
-            return token_key
-        return None
-
-    async def cleanup_user_tokens(self, user_subject: str) -> None:
-        token_key = await self._session_storage.get_user_token(user_subject)
-        if token_key:
-            if token_key in self._access_tokens:
-                del self._access_tokens[token_key]
-            await self._session_storage.remove_user_token(user_subject)
-            logger.info("Cleaned up token for user %s", user_subject)
-
-    async def cleanup_expired_tokens(self) -> None:
-        await self._session_storage.cleanup_expired_tokens()
-
-        existing_users = await self._session_storage.get_all_user_subjects()
-        mapped_tokens = {
-            token
-            for user_subject in existing_users
-            for token in [await self._session_storage.get_user_token(user_subject)]
-            if token
-        }
-
-        orphaned = [token for token in list(
-            self._access_tokens.keys()) if token not in mapped_tokens]
-        for token in orphaned:
-            if self._is_token_old_enough_to_cleanup(token):
-                del self._access_tokens[token]
-
-        if orphaned:
-            logger.info(
-                "Cleaned up %s orphaned tokens from OAuth proxy", len(orphaned))
-
-    def _is_token_old_enough_to_cleanup(self, token: str, min_age_seconds: int = 30) -> bool:
-        try:
-            import jwt
-            from datetime import datetime, timezone
-
-            decoded = jwt.decode(token, options={"verify_signature": False})
-            issued_at = decoded.get("iat")
-            if not issued_at:
-                return True
-            token_age = datetime.now(timezone.utc).timestamp() - issued_at
-            if token_age <= min_age_seconds:
-                logger.debug(
-                    "Token is only %.1fs old, keeping for now", token_age)
-                return False
-            return True
-        except Exception as exc:  # pragma: no cover - decoding failures
-            logger.debug(
-                "Error checking token age, assuming old enough: %s", exc)
-            return True
-
-    async def iter_user_tokens(self) -> list[tuple[str, str]]:
-        """Return all known (subject, token) pairs from storage."""
-
-        tokens: list[tuple[str, str]] = []
-        subjects = await self._session_storage.get_all_user_subjects()
-        for subject in subjects:
-            token = await self._session_storage.get_user_token(subject)
-            if token:
-                tokens.append((subject, token))
-        logger.debug("iter_user_tokens -> %s",
-                     [(sub, tok[:8] + "***") for sub, tok in tokens])
-        return tokens
-
-    async def get_token_for_current_user(self) -> Optional[tuple[str, Optional[str]]]:
-        """Return a token/subject pair when a single active user is known."""
-
-        tokens = await self.iter_user_tokens()
-        if len(tokens) == 1:
-            subject, token = tokens[0]
-            return token, subject
-        return None
 
 
 def _extract_secret(secret: Any) -> Optional[str]:
@@ -288,46 +152,6 @@ def _extract_secret(secret: Any) -> Optional[str]:
         return secret.get_secret_value()  # type: ignore[attr-defined]
     except AttributeError:
         return secret  # type: ignore[return-value]
-
-
-def _mask_token(token: Optional[str]) -> Optional[str]:
-    if not token:
-        return token
-    return token[:8] + "***"
-
-
-def _summarize_token_attr(attr: str, value: Any) -> Any:
-    if value is None:
-        return None
-
-    if attr == "_access_tokens" and isinstance(value, dict):
-        summary: dict[str, dict[str, Any]] = {}
-        for token, data in value.items():
-            masked = _mask_token(token) or "<missing>"
-            summary[masked] = {
-                "client_id": getattr(data, "client_id", None),
-                "scopes": getattr(data, "scopes", None),
-                "expires_at": getattr(data, "expires_at", None),
-            }
-        return summary
-
-    if attr == "_refresh_tokens" and isinstance(value, dict):
-        summary = {}
-        for token, data in value.items():
-            masked = _mask_token(token) or "<missing>"
-            summary[masked] = {
-                "client_id": getattr(data, "client_id", None),
-                "scopes": getattr(data, "scopes", None),
-            }
-        return summary
-
-    if isinstance(value, dict):
-        return {"type": "dict", "count": len(value)}
-
-    if isinstance(value, (list, set, tuple)):
-        return {"type": type(value).__name__, "count": len(value)}
-
-    return type(value).__name__
 
 
 __all__ = ["SessionAwareOAuthProxy"]
