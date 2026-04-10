@@ -113,6 +113,7 @@ def _create_redis_storage(env: Mapping[str, str], client_secret: str):
         from fastmcp.server.auth.jwt_issuer import derive_jwt_key
         from key_value.aio.stores.redis import RedisStore
         from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
+        from redis.asyncio import Redis
     except ImportError:
         logger.warning(
             "RedisStore not available — using default ephemeral DiskStore "
@@ -131,7 +132,12 @@ def _create_redis_storage(env: Mapping[str, str], client_secret: str):
         high_entropy_material=jwt_signing_key.decode(),
         salt="fastmcp-storage-encryption-key",
     )
-    redis_store = RedisStore(url=redis_url, default_collection="synapse-mcp-oauth")
+    # Build the Redis client ourselves via from_url() so that rediss:// URLs
+    # (TLS — required by AWS ElastiCache / Valkey) are handled correctly.
+    # The key_value RedisStore parses the URL manually and drops the scheme,
+    # so TLS connections hang instead of completing the handshake.
+    redis_client = Redis.from_url(redis_url, decode_responses=True)
+    redis_store = RedisStore(client=redis_client, default_collection="synapse-mcp-oauth")
     storage = FernetEncryptionWrapper(
         key_value=redis_store,
         fernet=Fernet(key=encryption_key),
