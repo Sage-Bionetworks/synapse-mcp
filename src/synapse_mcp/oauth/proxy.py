@@ -75,14 +75,6 @@ class SessionAwareOAuthProxy(OAuthProxy):
 
         proxy_client = self._registration_to_proxy_client(registration)
 
-        # Cache into _client_store so subsequent lookups in this
-        # container's lifetime (e.g. /consent, /token in the same
-        # auth flow) hit the local store instead of Redis.
-        try:
-            await self._client_store.put(key=client_id, value=proxy_client)
-        except Exception as exc:  # pragma: no cover - defensive
-            logger.debug("Failed to cache client %s in local store: %s", client_id, exc)
-
         logger.info("Resolved client %s from %s", client_id, source)
         return proxy_client
 
