@@ -27,6 +27,8 @@ and authenticates the synapseclient.
 import logging
 import os
 from typing import Optional, Dict, Any
+
+import anyio.to_thread
 from fastmcp import Context
 import synapseclient
 
@@ -198,10 +200,10 @@ async def _authenticate_with_oauth(client: synapseclient.Synapse, ctx: Context, 
     """
     try:
         # Authenticate using the access token
-        client.login(authToken=token)
+        await anyio.to_thread.run_sync(lambda: client.login(authToken=token))
 
         # Get user profile to verify authentication
-        profile = client.getUserProfile()
+        profile = await anyio.to_thread.run_sync(client.getUserProfile)
 
         # Store auth info in context
         await _set_state(ctx, USER_AUTH_INFO_KEY, {
@@ -235,10 +237,10 @@ async def _authenticate_with_pat(client: synapseclient.Synapse, ctx: Context, to
     """
     try:
         # Authenticate using PAT
-        client.login(authToken=token, silent=True)
+        await anyio.to_thread.run_sync(lambda: client.login(authToken=token, silent=True))
 
         # Get user profile to verify authentication
-        profile = client.getUserProfile()
+        profile = await anyio.to_thread.run_sync(client.getUserProfile)
 
         # Store auth info in context
         await _set_state(ctx, USER_AUTH_INFO_KEY, {

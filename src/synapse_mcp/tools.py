@@ -1,8 +1,10 @@
 """Tool registrations for Synapse MCP."""
 
 import json
+from functools import partial
 from typing import Any, Dict, List, Optional
 
+import anyio.to_thread
 from fastmcp import Context
 from synapseclient.core.exceptions import SynapseHTTPError
 
@@ -48,7 +50,9 @@ async def get_entity(entity_id: str, ctx: Context) -> Dict[str, Any]:
 
     try:
         entity_ops = await get_entity_operations(ctx)
-        return entity_ops["base"].get_entity_by_id(entity_id)
+        return await anyio.to_thread.run_sync(
+            partial(entity_ops["base"].get_entity_by_id, entity_id)
+        )
     except ConnectionAuthError as exc:
         return {"error": f"Authentication required: {exc}", "entity_id": entity_id}
     except Exception as exc:  # pragma: no cover - defensive path
@@ -72,7 +76,9 @@ async def get_entity_annotations(entity_id: str, ctx: Context) -> Dict[str, Any]
 
     try:
         entity_ops = await get_entity_operations(ctx)
-        annotations = entity_ops["base"].get_entity_annotations(entity_id)
+        annotations = await anyio.to_thread.run_sync(
+            partial(entity_ops["base"].get_entity_annotations, entity_id)
+        )
         return format_annotations(annotations)
     except ConnectionAuthError as exc:
         return {"error": f"Authentication required: {exc}", "entity_id": entity_id}
@@ -114,7 +120,9 @@ async def get_entity_provenance(
             return {"error": f"Invalid version number: {version}", "entity_id": entity_id}
 
     try:
-        activity = synapse_client.getProvenance(entity_id, version=normalized_version)
+        activity = await anyio.to_thread.run_sync(
+            partial(synapse_client.getProvenance, entity_id, version=normalized_version)
+        )
     except SynapseHTTPError as exc:
         response = getattr(exc, "response", None)
         status_code = getattr(response, "status_code", None)
@@ -173,14 +181,17 @@ async def get_entity_children(entity_id: str, ctx: Context) -> List[Dict[str, An
 
     try:
         entity_ops = await get_entity_operations(ctx)
-        entity = entity_ops["base"].get_entity_by_id(entity_id)
-        entity_type = entity.get("type", "").lower()
 
-        if entity_type == "project":
-            return entity_ops["project"].get_project_children(entity_id)
-        if entity_type == "folder":
-            return entity_ops["folder"].get_folder_children(entity_id)
-        return [{"error": f"Entity {entity_id} is not a container entity"}]
+        def _get_children() -> List[Dict[str, Any]]:
+            entity = entity_ops["base"].get_entity_by_id(entity_id)
+            entity_type = entity.get("type", "").lower()
+            if entity_type == "project":
+                return entity_ops["project"].get_project_children(entity_id)
+            if entity_type == "folder":
+                return entity_ops["folder"].get_folder_children(entity_id)
+            return [{"error": f"Entity {entity_id} is not a container entity"}]
+
+        return await anyio.to_thread.run_sync(_get_children)
     except ConnectionAuthError as exc:
         return [{"error": f"Authentication required: {exc}", "entity_id": entity_id}]
     except Exception as exc:  # pragma: no cover - defensive path
@@ -264,7 +275,9 @@ async def search_synapse(
     dropped_return_fields: Optional[List[str]] = None
 
     try:
-        response = synapse_client.restPOST("/search", body=json.dumps(request_payload))
+        response = await anyio.to_thread.run_sync(
+            partial(synapse_client.restPOST, "/search", body=json.dumps(request_payload))
+        )
     except ConnectionAuthError as exc:
         return {"error": f"Authentication required: {exc}"}
     except Exception as exc:  # pragma: no cover - defensive path
@@ -275,7 +288,9 @@ async def search_synapse(
             fallback_payload = {k: v for k, v in request_payload.items() if k != "returnFields"}
 
             try:
-                response = synapse_client.restPOST("/search", body=json.dumps(fallback_payload))
+                response = await anyio.to_thread.run_sync(
+                    partial(synapse_client.restPOST, "/search", body=json.dumps(fallback_payload))
+                )
             except Exception as fallback_exc:  # pragma: no cover - defensive path
                 return {
                     "error": str(fallback_exc),
