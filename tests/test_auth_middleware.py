@@ -49,10 +49,10 @@ class DummyFastMCPContext:
         self.fastmcp = SimpleNamespace(auth=None)
         self.session_id = "session-1"
 
-    def set_state(self, key, value):
+    async def set_state(self, key, value, serializable=True):
         self._state[key] = value
 
-    def get_state(self, key, default=None):
+    async def get_state(self, key, default=None):
         return self._state.get(key, default)
 
 
@@ -127,7 +127,7 @@ async def test_middleware_extracts_valid_token_from_authorization_header():
 
         result = await middleware.on_call_tool(context, call_next)
         assert result == "ok"
-        assert fast_ctx.get_state("oauth_access_token") == token
+        assert await fast_ctx.get_state("oauth_access_token") == token
 
 
 @pytest.mark.anyio
@@ -215,7 +215,7 @@ async def test_middleware_extracts_token_from_context_headers():
 
         result = await middleware.on_call_tool(context, call_next)
         assert result == "ok"
-        assert fast_ctx.get_state("oauth_access_token") == token
+        assert await fast_ctx.get_state("oauth_access_token") == token
 
 
 @pytest.mark.anyio
@@ -240,7 +240,7 @@ async def test_middleware_extracts_token_from_auth_context():
 
         result = await middleware.on_call_tool(context, call_next)
         assert result == "ok"
-        assert fast_ctx.get_state("oauth_access_token") == token
+        assert await fast_ctx.get_state("oauth_access_token") == token
 
 
 @pytest.mark.anyio
@@ -272,7 +272,7 @@ async def test_middleware_prefers_upstream_token_from_authenticated_user():
         result = await middleware.on_call_tool(context, call_next)
         assert result == "ok"
         # Should use the upstream token, not the proxy token
-        assert fast_ctx.get_state("oauth_access_token") == upstream_token
+        assert await fast_ctx.get_state("oauth_access_token") == upstream_token
 
 
 @pytest.mark.anyio
@@ -298,7 +298,7 @@ async def test_middleware_falls_back_to_header_when_no_user_in_scope():
 
         result = await middleware.on_call_tool(context, call_next)
         assert result == "ok"
-        assert fast_ctx.get_state("oauth_access_token") == token
+        assert await fast_ctx.get_state("oauth_access_token") == token
 
 
 @pytest.mark.anyio
@@ -322,7 +322,7 @@ async def test_middleware_handles_string_access_token():
 
         result = await middleware.on_call_tool(context, call_next)
         assert result == "ok"
-        assert fast_ctx.get_state("oauth_access_token") == upstream_token
+        assert await fast_ctx.get_state("oauth_access_token") == upstream_token
 
 
 @pytest.mark.anyio
@@ -349,7 +349,7 @@ async def test_middleware_falls_back_to_token_attr():
 
         result = await middleware.on_call_tool(context, call_next)
         assert result == "ok"
-        assert fast_ctx.get_state("oauth_access_token") == upstream_token
+        assert await fast_ctx.get_state("oauth_access_token") == upstream_token
 
 
 @pytest.mark.anyio
@@ -371,4 +371,4 @@ async def test_middleware_works_for_resource_calls():
 
         result = await middleware.on_call_resource(context, call_next)
         assert result == "ok"
-        assert fast_ctx.get_state("oauth_access_token") == token
+        assert await fast_ctx.get_state("oauth_access_token") == token

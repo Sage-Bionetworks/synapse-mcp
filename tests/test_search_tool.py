@@ -1,15 +1,25 @@
 import json
 
+import pytest
+
 import synapse_mcp
 import synapse_mcp.tools as tools
 from synapse_mcp.context_helpers import ConnectionAuthError
+
+pytestmark = pytest.mark.anyio("asyncio")
+
+
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
 
 
 class DummyContext:
     pass
 
 
-def test_search_synapse_builds_payload(monkeypatch):
+@pytest.mark.anyio
+async def test_search_synapse_builds_payload(monkeypatch):
     ctx = DummyContext()
     captured = {}
 
@@ -24,9 +34,12 @@ def test_search_synapse_builds_payload(monkeypatch):
                 "facets": [],
             }
 
-    monkeypatch.setattr(tools, "get_synapse_client", lambda _: DummySynapse())
+    async def fake_client(_):
+        return DummySynapse()
 
-    result = synapse_mcp.search_synapse.fn(
+    monkeypatch.setattr(tools, "get_synapse_client", fake_client)
+
+    result = await synapse_mcp.search_synapse(
         ctx,
         query_term="Cancer",
         name="Cancer",
@@ -47,7 +60,8 @@ def test_search_synapse_builds_payload(monkeypatch):
     assert result["hits"][0]["id"] == "syn999"
 
 
-def test_search_synapse_drops_invalid_return_fields(monkeypatch):
+@pytest.mark.anyio
+async def test_search_synapse_drops_invalid_return_fields(monkeypatch):
     ctx = DummyContext()
     captured = []
 
@@ -63,9 +77,12 @@ def test_search_synapse_drops_invalid_return_fields(monkeypatch):
                 raise Exception("com.amazonaws.services.cloudsearchdomain.model.SearchException: Invalid field name 'id' in return parameter")
             return {"found": 0, "start": 0, "hits": [], "facets": []}
 
-    monkeypatch.setattr(tools, "get_synapse_client", lambda _: DummySynapse())
+    async def fake_client(_):
+        return DummySynapse()
 
-    result = synapse_mcp.search_synapse.fn(ctx)
+    monkeypatch.setattr(tools, "get_synapse_client", fake_client)
+
+    result = await synapse_mcp.search_synapse(ctx)
 
     assert len(captured) == 2
     assert "returnFields" in captured[0]
@@ -77,15 +94,16 @@ def test_search_synapse_drops_invalid_return_fields(monkeypatch):
     assert result["warnings"]
 
 
-def test_search_synapse_requires_auth(monkeypatch):
+@pytest.mark.anyio
+async def test_search_synapse_requires_auth(monkeypatch):
     ctx = DummyContext()
 
-    def fake_client(_):
+    async def fake_client(_):
         raise ConnectionAuthError("missing context")
 
     monkeypatch.setattr(tools, "get_synapse_client", fake_client)
 
-    result = synapse_mcp.search_synapse.fn(ctx)
+    result = await synapse_mcp.search_synapse(ctx)
 
     assert "error" in result
     assert "Authentication required" in result["error"]

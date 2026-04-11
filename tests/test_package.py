@@ -19,7 +19,7 @@ class TestPackageInstallation(unittest.TestCase):
         self.assertIsNotNone(utils)
         
         from synapse_mcp import search_synapse
-        self.assertTrue(hasattr(search_synapse, "fn"))
+        self.assertTrue(callable(search_synapse))
         # Test entities subpackage
         from synapse_mcp.entities import base
         self.assertIsNotNone(base)

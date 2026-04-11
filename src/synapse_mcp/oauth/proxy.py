@@ -6,7 +6,7 @@ from typing import Any, List, Optional
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from fastmcp.server.auth import OAuthProxy
-from fastmcp.server.auth.oauth_proxy import ProxyDCRClient
+from fastmcp.server.auth.oauth_proxy.models import ProxyDCRClient
 from mcp.server.auth.provider import OAuthClientInformationFull
 from pydantic import AnyUrl, TypeAdapter
 
