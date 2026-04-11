@@ -41,13 +41,13 @@ def _normalize_fields(fields: Optional[List[str]]) -> List[str]:
         "openWorldHint": True,
     },
 )
-def get_entity(entity_id: str, ctx: Context) -> Dict[str, Any]:
+async def get_entity(entity_id: str, ctx: Context) -> Dict[str, Any]:
     """Return Synapse entity metadata by ID (projects, folders, files, tables, etc.)."""
     if not validate_synapse_id(entity_id):
         return {"error": f"Invalid Synapse ID: {entity_id}"}
 
     try:
-        entity_ops = get_entity_operations(ctx)
+        entity_ops = await get_entity_operations(ctx)
         return entity_ops["base"].get_entity_by_id(entity_id)
     except ConnectionAuthError as exc:
         return {"error": f"Authentication required: {exc}", "entity_id": entity_id}
@@ -65,13 +65,13 @@ def get_entity(entity_id: str, ctx: Context) -> Dict[str, Any]:
         "openWorldHint": True,
     },
 )
-def get_entity_annotations(entity_id: str, ctx: Context) -> Dict[str, Any]:
+async def get_entity_annotations(entity_id: str, ctx: Context) -> Dict[str, Any]:
     """Return custom annotation key/value pairs for a Synapse entity."""
     if not validate_synapse_id(entity_id):
         return {"error": f"Invalid Synapse ID: {entity_id}"}
 
     try:
-        entity_ops = get_entity_operations(ctx)
+        entity_ops = await get_entity_operations(ctx)
         annotations = entity_ops["base"].get_entity_annotations(entity_id)
         return format_annotations(annotations)
     except ConnectionAuthError as exc:
@@ -90,7 +90,7 @@ def get_entity_annotations(entity_id: str, ctx: Context) -> Dict[str, Any]:
         "openWorldHint": True,
     },
 )
-def get_entity_provenance(
+async def get_entity_provenance(
     entity_id: str,
     ctx: Context,
     version: Optional[int] = None,
@@ -100,7 +100,7 @@ def get_entity_provenance(
         return {"error": f"Invalid Synapse ID: {entity_id}"}
 
     try:
-        synapse_client = get_synapse_client(ctx)
+        synapse_client = await get_synapse_client(ctx)
     except ConnectionAuthError as exc:
         return {"error": f"Authentication required: {exc}", "entity_id": entity_id}
 
@@ -166,13 +166,13 @@ def get_entity_provenance(
         "openWorldHint": True,
     },
 )
-def get_entity_children(entity_id: str, ctx: Context) -> List[Dict[str, Any]]:
+async def get_entity_children(entity_id: str, ctx: Context) -> List[Dict[str, Any]]:
     """List children for Synapse container entities (projects or folders)."""
     if not validate_synapse_id(entity_id):
         return [{"error": f"Invalid Synapse ID: {entity_id}"}]
 
     try:
-        entity_ops = get_entity_operations(ctx)
+        entity_ops = await get_entity_operations(ctx)
         entity = entity_ops["base"].get_entity_by_id(entity_id)
         entity_type = entity.get("type", "").lower()
 
@@ -200,7 +200,7 @@ def get_entity_children(entity_id: str, ctx: Context) -> List[Dict[str, Any]]:
         "openWorldHint": True,
     },
 )
-def search_synapse(
+async def search_synapse(
     ctx: Context,
     query_term: Optional[str] = None,
     name: Optional[str] = None,
@@ -216,7 +216,7 @@ def search_synapse(
     determined by the original contributors; review the returned entity metadata for
     details."""
     try:
-        synapse_client = get_synapse_client(ctx)
+        synapse_client = await get_synapse_client(ctx)
     except ConnectionAuthError as exc:
         return {"error": f"Authentication required: {exc}"}
 

@@ -4,7 +4,8 @@ import json
 from types import SimpleNamespace
 
 import pytest
-from fastmcp.server.auth.oauth_proxy import OAuthClientInformationFull, OAuthProxy
+from fastmcp.server.auth import OAuthProxy
+from fastmcp.server.auth.oauth_proxy.models import OAuthClientInformationFull
 from starlette.responses import RedirectResponse
 
 import synapse_mcp.connection_auth as connection_auth
@@ -158,21 +159,21 @@ async def test_connection_auth_with_oauth_token(monkeypatch):
         def __init__(self):
             self._state = {}
 
-        def get_state(self, key, default=None):
+        async def get_state(self, key, default=None):
             if key in self._state:
                 return self._state[key]
             if default is not None:
                 return default
             raise KeyError(key)
 
-        def set_state(self, key, value):
+        async def set_state(self, key, value, serializable=True):
             self._state[key] = value
 
     token = "oauth-token-123"
     ctx = DummyContext()
-    ctx.set_state("oauth_access_token", token)
+    await ctx.set_state("oauth_access_token", token)
 
-    client = connection_auth.get_synapse_client(ctx)
+    client = await connection_auth.get_synapse_client(ctx)
     assert isinstance(client, DummySynapse)
     assert client.logged_in == token
 
