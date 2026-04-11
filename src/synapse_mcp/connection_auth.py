@@ -71,40 +71,30 @@ file_handle_endpoint = ENDPOINTS["fileHandleEndpoint"]
 portal_endpoint = ENDPOINTS["portalEndpoint"]
 
 
-def _get_state(ctx: Context, key: str, default: Optional[Any] = None) -> Optional[Any]:
+async def _get_state(ctx: Context, key: str, default: Optional[Any] = None) -> Optional[Any]:
     getter = getattr(ctx, "get_state", None)
     if not callable(getter):
         return default
     try:
-        value = getter(key)
-    except (TypeError, AttributeError):
-        # Unexpected signature; fall back if possible
-        try:
-            value = getter(key)  # type: ignore[misc]
-        except Exception:  # pragma: no cover - safeguard
-            return default
-    except KeyError:
+        value = await getter(key)
+    except (KeyError, TypeError, AttributeError):
         return default
     if value is None and default is not None:
         return default
     return value
 
 
-def _set_state(ctx: Context, key: str, value: Any) -> None:
+async def _set_state(ctx: Context, key: str, value: Any, serializable: bool = True) -> None:
     setter = getattr(ctx, "set_state", None)
     if not callable(setter):
         logger.debug("Context %s lacks set_state; unable to store %s",
                      type(ctx).__name__, key)
         return
     try:
-        setter(key, value)
-    except TypeError:
-        try:
-            setter(key, value)  # type: ignore[misc]
-        except Exception:  # pragma: no cover - defensive
-            logger.debug("Context %s rejected set_state for %s",
-                         type(ctx).__name__, key)
-            return
+        await setter(key, value, serializable)
+    except (TypeError, AttributeError) as exc:
+        logger.debug("Context %s rejected set_state for %s: %s",
+                     type(ctx).__name__, key, exc)
 
 
 class ConnectionAuthError(Exception):
@@ -112,7 +102,7 @@ class ConnectionAuthError(Exception):
     pass
 
 
-def get_synapse_client(ctx: Context) -> synapseclient.Synapse:
+async def get_synapse_client(ctx: Context) -> synapseclient.Synapse:
     """
     Get or create a synapseclient instance for this connection.
 
@@ -131,7 +121,7 @@ def get_synapse_client(ctx: Context) -> synapseclient.Synapse:
     # Check if client already exists for this connection
     logger.debug("get_synapse_client called with context type=%s attrs=%s", type(
         ctx).__name__, dir(ctx))
-    client = _get_state(ctx, SYNAPSE_CLIENT_KEY)
+    client = await _get_state(ctx, SYNAPSE_CLIENT_KEY)
     if client:
         logger.debug("Returning existing synapseclient for connection")
         return client
@@ -143,20 +133,20 @@ def get_synapse_client(ctx: Context) -> synapseclient.Synapse:
                                    fileHandleEndpoint=file_handle_endpoint, portalEndpoint=portal_endpoint)
 
     # Authenticate the client
-    if not _authenticate_client(client, ctx):
+    if not await _authenticate_client(client, ctx):
         raise ConnectionAuthError(
             "Authentication for connection needed (or re-authentication for expired sessions).")
 
-    # Store client in connection context
-    _set_state(ctx, SYNAPSE_CLIENT_KEY, client)
-    _set_state(ctx, AUTH_INITIALIZED_KEY, True)
+    # Store client in connection context (not JSON-serializable)
+    await _set_state(ctx, SYNAPSE_CLIENT_KEY, client, serializable=False)
+    await _set_state(ctx, AUTH_INITIALIZED_KEY, True)
 
     logger.info(
         "Successfully created and authenticated synapseclient for connection")
     return client
 
 
-def _authenticate_client(client: synapseclient.Synapse, ctx: Context) -> bool:
+async def _authenticate_client(client: synapseclient.Synapse, ctx: Context) -> bool:
     """
     Authenticate a synapseclient instance using token from context.
 
@@ -173,14 +163,14 @@ def _authenticate_client(client: synapseclient.Synapse, ctx: Context) -> bool:
     """
     try:
         # Check for OAuth token (production mode)
-        oauth_token = _get_state(ctx, "oauth_access_token")
+        oauth_token = await _get_state(ctx, "oauth_access_token")
         if oauth_token:
-            return _authenticate_with_oauth(client, ctx, oauth_token)
+            return await _authenticate_with_oauth(client, ctx, oauth_token)
 
         # Check for PAT token (development mode)
-        pat_token = _get_state(ctx, "synapse_pat_token")
+        pat_token = await _get_state(ctx, "synapse_pat_token")
         if pat_token:
-            return _authenticate_with_pat(client, ctx, pat_token)
+            return await _authenticate_with_pat(client, ctx, pat_token)
 
         # No token found in context - fail securely
         logger.error(
@@ -192,7 +182,7 @@ def _authenticate_client(client: synapseclient.Synapse, ctx: Context) -> bool:
         return False
 
 
-def _authenticate_with_oauth(client: synapseclient.Synapse, ctx: Context, token: str) -> bool:
+async def _authenticate_with_oauth(client: synapseclient.Synapse, ctx: Context, token: str) -> bool:
     """
     Authenticate synapseclient using OAuth access token.
 
@@ -214,7 +204,7 @@ def _authenticate_with_oauth(client: synapseclient.Synapse, ctx: Context, token:
         profile = client.getUserProfile()
 
         # Store auth info in context
-        _set_state(ctx, USER_AUTH_INFO_KEY, {
+        await _set_state(ctx, USER_AUTH_INFO_KEY, {
             "method": "oauth",
             "user_id": profile.get("ownerId"),
             "username": profile.get("userName"),
@@ -229,7 +219,7 @@ def _authenticate_with_oauth(client: synapseclient.Synapse, ctx: Context, token:
         return False
 
 
-def _authenticate_with_pat(client: synapseclient.Synapse, ctx: Context, token: str) -> bool:
+async def _authenticate_with_pat(client: synapseclient.Synapse, ctx: Context, token: str) -> bool:
     """
     Authenticate synapseclient using Personal Access Token.
 
@@ -251,7 +241,7 @@ def _authenticate_with_pat(client: synapseclient.Synapse, ctx: Context, token: s
         profile = client.getUserProfile()
 
         # Store auth info in context
-        _set_state(ctx, USER_AUTH_INFO_KEY, {
+        await _set_state(ctx, USER_AUTH_INFO_KEY, {
             "method": "pat",
             "user_id": profile.get("ownerId"),
             "username": profile.get("userName"),
@@ -267,7 +257,7 @@ def _authenticate_with_pat(client: synapseclient.Synapse, ctx: Context, token: s
         return False
 
 
-def get_user_auth_info(ctx: Context) -> Optional[Dict[str, Any]]:
+async def get_user_auth_info(ctx: Context) -> Optional[Dict[str, Any]]:
     """
     Get authentication information for the current connection.
 
@@ -277,10 +267,10 @@ def get_user_auth_info(ctx: Context) -> Optional[Dict[str, Any]]:
     Returns:
         Dict containing user authentication information, or None if not authenticated
     """
-    return _get_state(ctx, USER_AUTH_INFO_KEY)
+    return await _get_state(ctx, USER_AUTH_INFO_KEY)
 
 
-def is_authenticated(ctx: Context) -> bool:
+async def is_authenticated(ctx: Context) -> bool:
     """
     Check if the current connection is authenticated.
 
@@ -290,11 +280,11 @@ def is_authenticated(ctx: Context) -> bool:
     Returns:
         bool: True if connection is authenticated
     """
-    value = _get_state(ctx, AUTH_INITIALIZED_KEY)
+    value = await _get_state(ctx, AUTH_INITIALIZED_KEY)
     return bool(value)
 
 
-def require_authentication(ctx: Context) -> None:
+async def require_authentication(ctx: Context) -> None:
     """
     Ensure the connection is authenticated, raise error if not.
 
@@ -304,12 +294,12 @@ def require_authentication(ctx: Context) -> None:
     Raises:
         ConnectionAuthError: If connection is not authenticated
     """
-    if not is_authenticated(ctx):
+    if not await is_authenticated(ctx):
         raise ConnectionAuthError(
             "Authentication for connection needed (or re-authentication for expired sessions).")
 
 
-def has_scope(ctx: Context, required_scope: str) -> bool:
+async def has_scope(ctx: Context, required_scope: str) -> bool:
     """
     Check if the authenticated user has a specific scope.
 
@@ -320,7 +310,7 @@ def has_scope(ctx: Context, required_scope: str) -> bool:
     Returns:
         bool: True if user has the required scope
     """
-    auth_info = get_user_auth_info(ctx)
+    auth_info = await get_user_auth_info(ctx)
     if not auth_info:
         return False
 

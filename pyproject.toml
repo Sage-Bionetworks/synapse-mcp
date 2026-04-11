@@ -8,7 +8,9 @@ license = {text = "MIT"}
 authors = [
     {name = "Sage Bionetworks", email = "synapseinfo@sagebase.org"},
     {name = "Susheel Varma", email = "susheel.varma@sagebase.org"},
-    {name = "Anh Nguyet Vu", email = "anh.nguyet.vu@sagebase.org"}
+    {name = "Anh Nguyet Vu", email = "anh.nguyet.vu@sagebase.org"},
+    {name = "Bryan Fauble", email = "bryan.fauble@sagebase.org"},
+
 ]
 keywords = ["synapse", "mcp", "metadata", "bioinformatics"]
 classifiers = [
@@ -21,17 +23,13 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Bio-Informatics",
 ]
 dependencies = [
-    "fastmcp==2.14.6",
+    "fastmcp==3.2.3",
     "requests==2.32.3",
     "synapseclient==4.10.0",
     "pandas==1.5.0",
     "PyJWT>=2.10.1",
     "cryptography>=41.0.0",
     "redis>=5.1.0,<6",
-    # Pin fakeredis below 2.35.0: that release removed FakeConnection from
-    # fakeredis.aioredis, which pydocket (via fastmcp) still imports.
-    # Remove this pin once pydocket ships a compatible release.
-    "fakeredis[lua]<2.35.0",
 ]
 
 [project.urls]
