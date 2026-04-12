@@ -32,7 +32,7 @@ class SynapseJWTVerifier:
 
     async def verify_token(self, token: str) -> Optional[AccessToken]:
         try:
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             return await loop.run_in_executor(self._executor, self._verify_token_sync, token)
         except Exception as exc:  # pragma: no cover - defensive
             logger.error("Error in async Synapse JWT verification: %s", exc)
@@ -92,7 +92,10 @@ class SynapseJWTVerifier:
         self, decoded: Dict[str, Any], scopes: List[str], token: str
     ) -> AccessToken:
         aud = decoded.get("aud", "")
-        client_id = aud[0] if isinstance(aud, list) else (aud or "")
+        if isinstance(aud, list):
+            client_id = aud[0] if aud else ""
+        else:
+            client_id = aud or ""
         access_token = AccessToken(
             token=token,
             client_id=client_id,
