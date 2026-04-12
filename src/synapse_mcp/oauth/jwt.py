@@ -91,11 +91,7 @@ class SynapseJWTVerifier:
     def _create_fastmcp_access_token(
         self, decoded: Dict[str, Any], scopes: List[str], token: str
     ) -> AccessToken:
-        aud = decoded.get("aud", "")
-        if isinstance(aud, list):
-            client_id = aud[0] if aud else ""
-        else:
-            client_id = aud or ""
+        client_id = self.audience
         access_token = AccessToken(
             token=token,
             client_id=client_id,

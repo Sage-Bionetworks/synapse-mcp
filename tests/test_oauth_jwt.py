@@ -40,47 +40,6 @@ def test_verify_token_success(monkeypatch):
     assert result.client_id == "client"
 
 
-def test_verify_token_aud_as_list(monkeypatch):
-    decoded = {
-        "sub": "user",
-        "aud": ["client", "other"],
-        "exp": 123,
-        "access": {"scope": ["openid", "view"]},
-    }
-    _setup_jwt_mocks(monkeypatch, decoded)
-
-    verifier = jwt_module.SynapseJWTVerifier(
-        jwks_uri="http://example/jwks",
-        issuer="issuer",
-        audience="client",
-        required_scopes=["openid", "view"],
-    )
-
-    result: AccessToken = verifier._verify_token_sync("token")  # type: ignore[attr-defined]
-    assert isinstance(result, AccessToken)
-    assert result.client_id == "client"
-
-
-def test_verify_token_aud_as_empty_list(monkeypatch):
-    decoded = {
-        "sub": "user",
-        "aud": [],
-        "exp": 123,
-        "access": {"scope": ["openid", "view"]},
-    }
-    _setup_jwt_mocks(monkeypatch, decoded)
-
-    verifier = jwt_module.SynapseJWTVerifier(
-        jwks_uri="http://example/jwks",
-        issuer="issuer",
-        audience="client",
-        required_scopes=["openid", "view"],
-    )
-
-    result: AccessToken = verifier._verify_token_sync("token")  # type: ignore[attr-defined]
-    assert isinstance(result, AccessToken)
-    assert result.client_id == ""
-
 
 def test_verify_token_missing_scope_returns_none(monkeypatch):
     decoded = {
