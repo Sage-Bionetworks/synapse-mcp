@@ -1,7 +1,10 @@
 """FastMCP OAuth proxy extensions for Synapse."""
 
+import json
 import logging
 import os
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, List, Optional
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
@@ -10,33 +13,74 @@ from fastmcp.server.auth.oauth_proxy.models import ProxyDCRClient
 from mcp.server.auth.provider import OAuthClientInformationFull
 from pydantic import AnyUrl, TypeAdapter
 
-from .client_registry import (
-    ClientRegistration,
-    create_client_registry,
-    load_static_registrations,
-)
-
 logger = logging.getLogger("synapse_mcp.oauth")
 
 
+@dataclass
+class _StaticClient:
+    """Minimal representation of a statically configured OAuth client."""
+
+    client_id: str
+    client_secret: Optional[str]
+    redirect_uris: list[str]
+    grant_types: list[str]
+
+
+def _load_static_clients() -> list[_StaticClient]:
+    """Load statically configured clients from environment or file."""
+    raw = os.environ.get("SYNAPSE_MCP_STATIC_CLIENTS")
+    path = os.environ.get("SYNAPSE_MCP_STATIC_CLIENTS_PATH")
+
+    data: Optional[str] = None
+    if path:
+        try:
+            data = Path(path).expanduser().read_text()
+        except Exception as exc:
+            logger.warning("Failed to read static client file %s: %s", path, exc)
+    elif raw:
+        data = raw
+
+    if not data:
+        return []
+
+    try:
+        payload = json.loads(data)
+    except json.JSONDecodeError as exc:
+        logger.warning("Invalid JSON in static client configuration: %s", exc)
+        return []
+
+    if not isinstance(payload, list):
+        logger.warning("Static client configuration must be a list of objects")
+        return []
+
+    clients: list[_StaticClient] = []
+    for item in payload:
+        try:
+            clients.append(
+                _StaticClient(
+                    client_id=item["client_id"],
+                    client_secret=item.get("client_secret"),
+                    redirect_uris=list(item.get("redirect_uris", [])),
+                    grant_types=list(item.get("grant_types", [])),
+                )
+            )
+        except KeyError as exc:
+            logger.warning("Skipping malformed static client entry missing %s", exc)
+    return clients
+
+
 class SessionAwareOAuthProxy(OAuthProxy):
-    """OAuth proxy with persistent client registry backed by Redis/file."""
+    """OAuth proxy with static client fallback on top of FastMCP's built-in client_storage."""
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        self._client_registry = create_client_registry(os.environ)
-        self._static_registrations = load_static_registrations()
-        logger.debug(
-            "SessionAwareOAuthProxy initialized with client registry %s",
-            type(self._client_registry).__name__,
-        )
+        self._static_clients = _load_static_clients()
 
-    def _registration_to_proxy_client(self, record: ClientRegistration) -> ProxyDCRClient:
-        """Build a ProxyDCRClient from a persisted ClientRegistration."""
+    def _static_to_proxy_client(self, record: _StaticClient) -> ProxyDCRClient:
+        """Build a ProxyDCRClient from a static client config."""
         default_grants = ["authorization_code", "refresh_token"]
         adapter = TypeAdapter(List[AnyUrl])
-        redirect_source = record.redirect_uris if record.redirect_uris else [
-            "http://127.0.0.1"]
+        redirect_source = record.redirect_uris if record.redirect_uris else ["http://127.0.0.1"]
         redirect_uris = adapter.validate_python(redirect_source)
         return ProxyDCRClient(
             client_id=record.client_id,
@@ -51,32 +95,19 @@ class SessionAwareOAuthProxy(OAuthProxy):
     async def get_client(self, client_id: str) -> Optional[OAuthClientInformationFull]:
         """Look up a registered client.
 
-        Checks FastMCP's in-process ``_client_store`` first (covers
-        clients registered during *this* process lifetime), then falls
-        back to the persistent registry (Redis / file) so that clients
-        survive container restarts without bulk-loading into memory.
+        Checks FastMCP's client_storage first (persists clients registered via
+        DCR across container restarts), then falls back to static registrations.
         """
         client = await super().get_client(client_id)
         if client is not None:
             return client
 
-        # Persistent registry lookup (Redis hget or file read)
-        registration = self._client_registry.load_one(client_id)
-        source = "persistent registry"
-        if registration is None:
-            # Also check static registrations (cached at init)
-            for static in self._static_registrations:
-                if static.client_id == client_id:
-                    registration = static
-                    source = "static registrations"
-                    break
-        if registration is None:
-            return None
+        for static in self._static_clients:
+            if static.client_id == client_id:
+                logger.info("Resolved client %s from static registrations", client_id)
+                return self._static_to_proxy_client(static)
 
-        proxy_client = self._registration_to_proxy_client(registration)
-
-        logger.info("Resolved client %s from %s", client_id, source)
-        return proxy_client
+        return None
 
     async def register_client(self, client_info):
         # Ensure grant_types includes refresh_token — many MCP clients
@@ -89,25 +120,13 @@ class SessionAwareOAuthProxy(OAuthProxy):
                 client_info.grant_types = grants
                 logger.debug("Normalised grant_types to include refresh_token")
 
-        logger.debug("register_client called with: id=%s, redirect_uris=%s, grants=%s",
-                     client_info.client_id, client_info.redirect_uris, client_info.grant_types)
+        logger.debug(
+            "register_client called with: id=%s, redirect_uris=%s, grants=%s",
+            client_info.client_id,
+            client_info.redirect_uris,
+            client_info.grant_types,
+        )
         await super().register_client(client_info)
-
-        try:
-            registration = ClientRegistration(
-                client_id=client_info.client_id,
-                client_secret=_extract_secret(client_info.client_secret),
-                redirect_uris=[str(uri)
-                               for uri in (client_info.redirect_uris or [])],
-                grant_types=list(client_info.grant_types or [
-                                 "authorization_code", "refresh_token"]),
-            )
-            self._client_registry.save(registration)
-            logger.debug("Persisted OAuth client %s with redirect_uris=%s and grants=%s",
-                         client_info.client_id, registration.redirect_uris, registration.grant_types)
-        except Exception as exc:  # pragma: no cover - defensive
-            logger.warning("Unable to persist OAuth client %s: %s",
-                           client_info.client_id, exc)
 
     async def _handle_idp_callback(self, request, *args, **kwargs):
         result = await super()._handle_idp_callback(request, *args, **kwargs)
@@ -134,19 +153,9 @@ class SessionAwareOAuthProxy(OAuthProxy):
                     new_query = urlencode(filtered_pairs, doseq=True)
                     new_location = urlunparse(parsed._replace(query=new_query))
                     result.headers["location"] = new_location
-                    logger.debug(
-                        "Removed empty state parameter from callback redirect")
+                    logger.debug("Removed empty state parameter from callback redirect")
 
         return result
-
-
-def _extract_secret(secret: Any) -> Optional[str]:
-    if secret is None:
-        return None
-    try:
-        return secret.get_secret_value()  # type: ignore[attr-defined]
-    except AttributeError:
-        return secret  # type: ignore[return-value]
 
 
 __all__ = ["SessionAwareOAuthProxy"]

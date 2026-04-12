@@ -1,11 +1,9 @@
-"""Tests for the OAuth proxy with persistent client registry."""
+"""Tests for the OAuth proxy behavior."""
 
-import json
 from types import SimpleNamespace
 
 import pytest
 from fastmcp.server.auth import OAuthProxy
-from fastmcp.server.auth.oauth_proxy.models import OAuthClientInformationFull
 from starlette.responses import RedirectResponse
 
 import synapse_mcp.connection_auth as connection_auth
@@ -20,27 +18,7 @@ def anyio_backend():
     return "asyncio"
 
 
-class FakeRegistry:
-    def __init__(self):
-        self.records = {}
-
-    def load_all(self):
-        return list(self.records.values())
-
-    def load_one(self, client_id):
-        return self.records.get(client_id)
-
-    def save(self, registration):
-        self.records[registration.client_id] = registration
-
-    def remove(self, client_id):
-        self.records.pop(client_id, None)
-
-
-def build_proxy(monkeypatch, registry: FakeRegistry | None = None, token_verifier=None):
-    if registry is not None:
-        monkeypatch.setattr(
-            "synapse_mcp.oauth.proxy.create_client_registry", lambda *_, **__: registry)
+def build_proxy(token_verifier=None):
     if token_verifier is None:
         token_verifier = SimpleNamespace(required_scopes=[])
     return SessionAwareOAuthProxy(
@@ -56,7 +34,7 @@ def build_proxy(monkeypatch, registry: FakeRegistry | None = None, token_verifie
 
 @pytest.mark.anyio
 async def test_handle_callback_sanitizes_none_state(monkeypatch):
-    proxy = build_proxy(monkeypatch, FakeRegistry())
+    proxy = build_proxy()
 
     async def fake_handle(self, request, *args, **kwargs):
         return RedirectResponse("http://app/callback?code=new-token&state=None")
@@ -76,7 +54,7 @@ async def test_handle_callback_sanitizes_none_state(monkeypatch):
 
 @pytest.mark.anyio
 async def test_handle_callback_preserves_valid_state(monkeypatch):
-    proxy = build_proxy(monkeypatch, FakeRegistry())
+    proxy = build_proxy()
 
     async def fake_handle(self, request, *args, **kwargs):
         return RedirectResponse("http://app/callback?code=token&state=valid123")
@@ -91,31 +69,9 @@ async def test_handle_callback_preserves_valid_state(monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_client_registry_persists_across_instances(monkeypatch, tmp_path):
-    registry_path = tmp_path / "clients.json"
-    monkeypatch.setenv("SYNAPSE_MCP_CLIENT_REGISTRY_PATH", str(registry_path))
-
-    proxy = build_proxy(monkeypatch)
-
-    client_info = OAuthClientInformationFull(
-        client_id="client-xyz",
-        client_secret="secret",
-        redirect_uris=["http://127.0.0.1:5000/callback"],
-        grant_types=["authorization_code"],
-    )
-
-    await proxy.register_client(client_info)
-
-    saved = json.loads(registry_path.read_text())
-    assert "client-xyz" in saved
-
-    new_proxy = build_proxy(monkeypatch)
-
-    assert await new_proxy.get_client("client-xyz") is not None
-
-
-@pytest.mark.anyio
 async def test_static_clients_loaded_from_env(monkeypatch):
+    import json
+
     payload = json.dumps(
         [
             {
@@ -126,7 +82,7 @@ async def test_static_clients_loaded_from_env(monkeypatch):
     )
     monkeypatch.setenv("SYNAPSE_MCP_STATIC_CLIENTS", payload)
 
-    proxy = build_proxy(monkeypatch, FakeRegistry())
+    proxy = build_proxy()
 
     assert await proxy.get_client("static-client") is not None
 
@@ -176,27 +132,3 @@ async def test_connection_auth_with_oauth_token(monkeypatch):
     client = await connection_auth.get_synapse_client(ctx)
     assert isinstance(client, DummySynapse)
     assert client.logged_in == token
-
-
-@pytest.mark.anyio
-async def test_get_client_falls_back_to_registry(monkeypatch):
-    """A fresh proxy (empty _client_store) should resolve clients
-    that exist only in the persistent registry — simulates a
-    container restart where the DiskStore is wiped but Redis persists."""
-    from synapse_mcp.oauth.client_registry import ClientRegistration
-
-    registry = FakeRegistry()
-    registry.records["persisted-client"] = ClientRegistration(
-        client_id="persisted-client",
-        client_secret=None,
-        redirect_uris=["http://127.0.0.1:5000/callback"],
-        grant_types=["authorization_code", "refresh_token"],
-    )
-
-    proxy = build_proxy(monkeypatch, registry)
-
-    result = await proxy.get_client("persisted-client")
-    assert result is not None
-    assert result.client_id == "persisted-client"
-
-    assert await proxy.get_client("nonexistent") is None
