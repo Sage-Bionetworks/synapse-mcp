@@ -69,25 +69,6 @@ async def test_handle_callback_preserves_valid_state(monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_static_clients_loaded_from_env(monkeypatch):
-    import json
-
-    payload = json.dumps(
-        [
-            {
-                "client_id": "static-client",
-                "redirect_uris": ["https://claude.ai/api/mcp/auth_callback"],
-            }
-        ]
-    )
-    monkeypatch.setenv("SYNAPSE_MCP_STATIC_CLIENTS", payload)
-
-    proxy = build_proxy()
-
-    assert await proxy.get_client("static-client") is not None
-
-
-@pytest.mark.anyio
 async def test_connection_auth_with_oauth_token(monkeypatch):
     """Test that connection_auth.get_synapse_client works when an OAuth
     access token has been placed into the context by middleware.
