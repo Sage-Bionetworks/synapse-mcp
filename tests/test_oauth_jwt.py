@@ -1,9 +1,5 @@
 """Tests for Synapse JWT verifier."""
 
-import asyncio
-
-import pytest
-
 import synapse_mcp.oauth.jwt as jwt_module
 from fastmcp.server.auth.auth import AccessToken
 
