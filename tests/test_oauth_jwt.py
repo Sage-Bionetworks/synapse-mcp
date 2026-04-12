@@ -1,11 +1,7 @@
 """Tests for Synapse JWT verifier."""
 
-import asyncio
-from types import SimpleNamespace
-
-import pytest
-
 import synapse_mcp.oauth.jwt as jwt_module
+from fastmcp.server.auth.auth import AccessToken
 
 
 def _setup_jwt_mocks(monkeypatch, decoded_payload):
@@ -36,9 +32,13 @@ def test_verify_token_success(monkeypatch):
         required_scopes=["openid", "view"],
     )
 
-    result: SimpleNamespace = verifier._verify_token_sync("token")  # type: ignore[attr-defined]
-    assert result.sub == "user"
+    result: AccessToken = verifier._verify_token_sync("token")  # type: ignore[attr-defined]
+    assert isinstance(result, AccessToken)
+    assert result.claims.get("sub") == "user"
     assert result.scopes == ["openid", "view"]
+    assert result.token == "token"
+    assert result.client_id == "client"
+
 
 
 def test_verify_token_missing_scope_returns_none(monkeypatch):
