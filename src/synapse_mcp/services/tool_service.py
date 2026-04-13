@@ -1,10 +1,13 @@
 """Common service-layer helpers for MCP tool functions."""
 
+import dataclasses
+import enum
 import functools
 import inspect
+from collections.abc import Mapping
 from contextlib import asynccontextmanager
-from dataclasses import fields as dataclass_fields, is_dataclass
-from typing import Any, Callable, Dict, Tuple
+from datetime import date, datetime
+from typing import Any, Callable, Dict, Iterator, Tuple
 
 from fastmcp import Context
 
@@ -16,11 +19,18 @@ def dataclass_to_dict(obj: Any) -> Any:
 
     Includes all public fields where ``repr=True``. Fields starting with
     ``_`` are considered internal and excluded. Nested dataclasses, dicts,
-    and lists are recursively serialized. Non-dataclass values pass through
-    unchanged.
+    and lists are recursively serialized. Datetimes are converted to ISO
+    format strings, enums to their ``.value``. Non-dataclass values pass
+    through unchanged.
     """
     if obj is None or isinstance(obj, (str, int, float, bool)):
         return obj
+
+    if isinstance(obj, (datetime, date)):
+        return obj.isoformat()
+
+    if isinstance(obj, enum.Enum):
+        return obj.value
 
     if isinstance(obj, dict):
         return {k: dataclass_to_dict(v) for k, v in obj.items()}
@@ -28,9 +38,9 @@ def dataclass_to_dict(obj: Any) -> Any:
     if isinstance(obj, (list, tuple)):
         return [dataclass_to_dict(item) for item in obj]
 
-    if is_dataclass(obj) and not isinstance(obj, type):
+    if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
         result: Dict[str, Any] = {}
-        for f in dataclass_fields(obj):
+        for f in dataclasses.fields(obj):
             if not f.repr or f.name.startswith("_"):
                 continue
             value = getattr(obj, f.name)
@@ -40,6 +50,20 @@ def dataclass_to_dict(obj: Any) -> Any:
     return obj
 
 
+def collect_generator(gen: Iterator, limit: int = 100) -> list:
+    """Collect up to *limit* items from a generator.
+
+    All service methods that consume SDK generators must use this
+    helper to prevent unbounded iteration.
+    """
+    items: list = []
+    for item in gen:
+        items.append(item)
+        if len(items) >= limit:
+            break
+    return items
+
+
 @asynccontextmanager
 async def synapse_client(ctx: Context):
     """Yield an authenticated Synapse client for the given request context.
@@ -47,6 +71,64 @@ async def synapse_client(ctx: Context):
     Raises ConnectionAuthError if the client cannot be obtained.
     """
     yield await get_synapse_client(ctx)
+
+
+def serialize_model(obj: Any) -> Any:
+    """Recursively serialize a synapseclient model to JSON-safe types.
+
+    Includes all public dataclass fields except those marked with
+    ``repr=False`` or whose name starts with ``_``. Nested
+    dataclasses, lists, dicts, dates, and primitives are handled
+    recursively.
+
+    Arguments:
+        obj: A synapseclient model instance, dict, list, or
+            primitive value.
+
+    Returns:
+        A JSON-serializable dict, list, or primitive.
+    """
+    if obj is None:
+        return None
+
+    if isinstance(obj, (str, int, float, bool)):
+        return obj
+
+    if isinstance(obj, (datetime, date)):
+        return obj.isoformat()
+
+    if isinstance(obj, dict):
+        return {
+            k: serialize_model(v) for k, v in obj.items()
+        }
+
+    if isinstance(obj, (list, tuple)):
+        return [serialize_model(item) for item in obj]
+
+    if dataclasses.is_dataclass(obj) and not isinstance(
+        obj, type
+    ):
+        result: Dict[str, Any] = {}
+        for field in dataclasses.fields(obj):
+            if not field.repr or field.name.startswith("_"):
+                continue
+            val = getattr(obj, field.name, None)
+            result[field.name] = serialize_model(val)
+        return result
+
+    # Legacy Synapse entity objects (non-dataclass).
+    # These are MutableMapping subclasses (dict-like)
+    # returned by synapseclient.Synapse.get().
+    if isinstance(obj, Mapping):
+        return {
+            k: serialize_model(v)
+            for k, v in obj.items()
+        }
+
+    if hasattr(obj, "to_dict"):
+        return obj.to_dict()
+
+    return str(obj)
 
 
 def error_boundary(
@@ -98,6 +180,14 @@ def error_boundary(
                     "error_type": type(exc).__name__,
                     **extra,
                 }
+                # Extract HTTP status code from SynapseHTTPError
+                response = getattr(exc, "response", None)
+                if response is not None:
+                    status_code = getattr(
+                        response, "status_code", None
+                    )
+                    if status_code is not None:
+                        err["status_code"] = status_code
                 return [err] if wrap_errors else err
 
         return wrapper

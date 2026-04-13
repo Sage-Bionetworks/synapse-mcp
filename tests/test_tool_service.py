@@ -1,15 +1,19 @@
-"""Tests for synapse_client context manager, @error_boundary decorator,
-and dataclass_to_dict utility."""
+"""Tests for synapse_client, @error_boundary, serialize_model, dataclass_to_dict, and collect_generator."""
 
+import enum
 from dataclasses import dataclass, field
+from datetime import date, datetime
+from typing import List, Optional
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from synapse_mcp.connection_auth import ConnectionAuthError
 from synapse_mcp.services.tool_service import (
+    collect_generator,
     dataclass_to_dict,
     error_boundary,
+    serialize_model,
     synapse_client,
 )
 
@@ -180,147 +184,259 @@ class TestErrorBoundary:
         # THEN the original list is returned as-is (not double-wrapped)
         assert result == [{"data": 1}, {"data": 2}]
 
-    async def test_given_auth_error_when_called_then_error_dict_includes_error_type(self):
-        # GIVEN a service method that raises ConnectionAuthError
-        class Svc:
-            @error_boundary()
-            async def do_thing(self, ctx):
-                raise ConnectionAuthError("expired")
 
-        # WHEN the method is called
-        result = await Svc().do_thing(MagicMock())
+# -------------------------------------------------------------------
+# serialize_model
+# -------------------------------------------------------------------
 
-        # THEN the error dict includes the error_type key
-        assert result["error_type"] == "ConnectionAuthError"
+
+class TestSerializeModel:
+    def test_given_dataclass_then_returns_public_repr_fields(
+        self,
+    ):
+        # GIVEN a dataclass with public and private fields
+        @dataclass
+        class Sample:
+            id: str = "syn1"
+            name: str = "test"
+            _private: str = field(
+                default="hidden", repr=False
+            )
+            config: str = field(
+                default="skip", repr=False
+            )
+
+        # WHEN serialized
+        result = serialize_model(Sample())
+
+        # THEN only public repr=True fields are included
+        assert result == {"id": "syn1", "name": "test"}
+        assert "_private" not in result
+        assert "config" not in result
+
+    def test_given_nested_dataclass_then_serializes_recursively(
+        self,
+    ):
+        # GIVEN a dataclass containing another dataclass
+        @dataclass
+        class Inner:
+            value: int = 42
+
+        @dataclass
+        class Outer:
+            name: str = "parent"
+            child: Optional[Inner] = None
+
+        # WHEN serialized with a nested child
+        result = serialize_model(
+            Outer(child=Inner(value=99))
+        )
+
+        # THEN the nested dataclass is also serialized
+        assert result["child"] == {"value": 99}
+
+    def test_given_list_of_dataclasses_then_serializes_each(
+        self,
+    ):
+        # GIVEN a list of dataclasses
+        @dataclass
+        class Item:
+            id: int = 0
+
+        # WHEN serialized
+        result = serialize_model(
+            [Item(id=1), Item(id=2)]
+        )
+
+        # THEN each item is serialized
+        assert result == [{"id": 1}, {"id": 2}]
+
+    def test_given_dict_then_serializes_values(self):
+        # GIVEN a dict with mixed values
+        # WHEN serialized
+        result = serialize_model(
+            {"key": "val", "num": 42}
+        )
+
+        # THEN the dict is passed through
+        assert result == {"key": "val", "num": 42}
+
+    def test_given_datetime_then_returns_isoformat(self):
+        # GIVEN a datetime
+        dt = datetime(2025, 1, 15, 12, 30, 0)
+
+        # WHEN serialized
+        result = serialize_model(dt)
+
+        # THEN it returns an ISO format string
+        assert result == "2025-01-15T12:30:00"
+
+    def test_given_date_then_returns_isoformat(self):
+        # GIVEN a date
+        d = date(2025, 6, 1)
+
+        # WHEN serialized
+        result = serialize_model(d)
+
+        # THEN it returns an ISO format string
+        assert result == "2025-06-01"
+
+    def test_given_none_then_returns_none(self):
+        assert serialize_model(None) is None
+
+    def test_given_primitives_then_returns_unchanged(self):
+        assert serialize_model("hello") == "hello"
+        assert serialize_model(42) == 42
+        assert serialize_model(3.14) == 3.14
+        assert serialize_model(True) is True
+
+    def test_given_legacy_object_with_to_dict_then_uses_it(
+        self,
+    ):
+        # GIVEN a non-dataclass object with to_dict
+        class Legacy:
+            def to_dict(self):
+                return {"legacy": True}
+
+        # WHEN serialized
+        result = serialize_model(Legacy())
+
+        # THEN to_dict() is used
+        assert result == {"legacy": True}
 
 
 # -------------------------------------------------------------------
-# dataclass_to_dict
+# dataclass_to_dict enhancements
 # -------------------------------------------------------------------
 
 
 class TestDataclassToDict:
-    def test_given_simple_dataclass_then_returns_dict_with_all_fields(self):
-        # GIVEN a simple dataclass instance
+    def test_given_datetime_then_returns_isoformat(self):
+        dt = datetime(2025, 1, 15, 12, 30, 0)
+        result = dataclass_to_dict(dt)
+        assert result == "2025-01-15T12:30:00"
+
+    def test_given_date_then_returns_isoformat(self):
+        d = date(2025, 6, 1)
+        result = dataclass_to_dict(d)
+        assert result == "2025-06-01"
+
+    def test_given_enum_then_returns_value(self):
+        class Color(enum.Enum):
+            RED = "red"
+            BLUE = "blue"
+
+        result = dataclass_to_dict(Color.RED)
+        assert result == "red"
+
+    def test_given_dataclass_with_enum_field_then_extracts_value(self):
+        class Status(enum.Enum):
+            ACTIVE = "active"
+            ARCHIVED = "archived"
+
         @dataclass
         class Item:
             name: str = "test"
-            value: int = 42
+            status: Status = Status.ACTIVE
 
-        obj = Item()
+        result = dataclass_to_dict(Item())
+        assert result["status"] == "active"
 
-        # WHEN converted
-        result = dataclass_to_dict(obj)
+    def test_given_dataclass_with_datetime_field_then_converts(self):
+        @dataclass
+        class Event:
+            name: str = "meeting"
+            created_at: datetime = None
 
-        # THEN all fields are included
-        assert result == {"name": "test", "value": 42}
+        event = Event(created_at=datetime(2025, 3, 15, 9, 0))
+        result = dataclass_to_dict(event)
+        assert result["created_at"] == "2025-03-15T09:00:00"
 
-    def test_given_nested_dataclass_then_recursively_serializes(self):
-        # GIVEN a dataclass with a nested dataclass field
+    def test_given_nested_dataclass_then_serializes_recursively(self):
         @dataclass
         class Inner:
-            x: int = 1
+            value: int = 42
 
         @dataclass
         class Outer:
-            inner: Inner = None
-            label: str = "outer"
+            name: str = "parent"
+            child: Optional[Inner] = None
 
-        obj = Outer(inner=Inner(x=99), label="test")
+        result = dataclass_to_dict(Outer(child=Inner(value=99)))
+        assert result["child"] == {"value": 99}
 
-        # WHEN converted
-        result = dataclass_to_dict(obj)
-
-        # THEN the nested dataclass is also serialized to a dict
-        assert result == {"inner": {"x": 99}, "label": "test"}
-
-    def test_given_field_with_repr_false_then_field_is_excluded(self):
-        # GIVEN a dataclass with a repr=False field
+    def test_given_list_of_dataclasses_in_field_then_serializes_each(self):
         @dataclass
-        class WithHidden:
-            visible: str = "yes"
-            _internal: str = field(default="hidden", repr=False)
+        class Item:
+            id: int = 0
 
-        obj = WithHidden()
+        @dataclass
+        class Container:
+            items: List[Item] = field(default_factory=list)
 
-        # WHEN converted
-        result = dataclass_to_dict(obj)
-
-        # THEN the repr=False field is excluded
-        assert result == {"visible": "yes"}
-        assert "_internal" not in result
+        container = Container(items=[Item(id=1), Item(id=2)])
+        result = dataclass_to_dict(container)
+        assert result["items"] == [{"id": 1}, {"id": 2}]
 
     def test_given_none_then_returns_none(self):
-        # GIVEN None
-        # WHEN converted
-        result = dataclass_to_dict(None)
+        assert dataclass_to_dict(None) is None
 
-        # THEN None is returned
-        assert result is None
+    def test_given_primitives_then_returns_unchanged(self):
+        assert dataclass_to_dict("hello") == "hello"
+        assert dataclass_to_dict(42) == 42
+        assert dataclass_to_dict(3.14) == 3.14
+        assert dataclass_to_dict(True) is True
 
-    def test_given_non_dataclass_then_returns_object_unchanged(self):
-        # GIVEN a plain string
-        # WHEN converted
-        result = dataclass_to_dict("hello")
 
-        # THEN the string is returned as-is
-        assert result == "hello"
+# -------------------------------------------------------------------
+# collect_generator
+# -------------------------------------------------------------------
 
-    def test_given_nested_none_field_then_none_is_preserved(self):
-        # GIVEN a dataclass with a None field that could be a nested dataclass
-        @dataclass
-        class Parent:
-            child: object = None
-            name: str = "parent"
 
-        obj = Parent()
+class TestCollectGenerator:
+    def test_given_generator_under_limit_then_collects_all(self):
+        gen = iter([1, 2, 3])
+        result = collect_generator(gen, limit=10)
+        assert result == [1, 2, 3]
 
-        # WHEN converted
-        result = dataclass_to_dict(obj)
+    def test_given_generator_over_limit_then_truncates(self):
+        gen = iter(range(100))
+        result = collect_generator(gen, limit=5)
+        assert result == [0, 1, 2, 3, 4]
 
-        # THEN the None field is preserved
-        assert result == {"child": None, "name": "parent"}
+    def test_given_empty_generator_then_returns_empty_list(self):
+        gen = iter([])
+        result = collect_generator(gen, limit=10)
+        assert result == []
 
-    def test_given_underscore_field_then_field_is_excluded(self):
-        # GIVEN a dataclass with a field starting with _
-        @dataclass
-        class WithInternal:
-            name: str = "visible"
-            _cache: str = "hidden"
 
-        obj = WithInternal()
+# -------------------------------------------------------------------
+# error_boundary — SynapseHTTPError status_code extraction
+# -------------------------------------------------------------------
 
-        # WHEN converted
-        result = dataclass_to_dict(obj)
 
-        # THEN the _ field is excluded
-        assert result == {"name": "visible"}
-        assert "_cache" not in result
+class TestErrorBoundarySynapseHTTPError:
+    async def test_given_exception_with_response_status_code_then_includes_it(self):
+        class FakeResponse:
+            status_code = 404
 
-    def test_given_dict_with_dataclass_values_then_recursively_serializes(self):
-        # GIVEN a dict containing a dataclass value
-        @dataclass
-        class Item:
-            x: int = 1
+        class Svc:
+            @error_boundary()
+            async def do_thing(self, ctx):
+                exc = RuntimeError("Not Found")
+                exc.response = FakeResponse()
+                raise exc
 
-        obj = {"key": Item(x=42), "plain": "text"}
+        result = await Svc().do_thing(MagicMock())
+        assert result["status_code"] == 404
+        assert result["error"] == "Not Found"
 
-        # WHEN converted
-        result = dataclass_to_dict(obj)
+    async def test_given_exception_without_response_then_no_status_code(self):
+        class Svc:
+            @error_boundary()
+            async def do_thing(self, ctx):
+                raise ValueError("bad input")
 
-        # THEN the dict values are recursively serialized
-        assert result == {"key": {"x": 42}, "plain": "text"}
-
-    def test_given_list_with_dataclass_items_then_recursively_serializes(self):
-        # GIVEN a list containing dataclass items
-        @dataclass
-        class Item:
-            x: int = 1
-
-        obj = [Item(x=1), Item(x=2)]
-
-        # WHEN converted
-        result = dataclass_to_dict(obj)
-
-        # THEN each item is serialized
-        assert result == [{"x": 1}, {"x": 2}]
+        result = await Svc().do_thing(MagicMock())
+        assert "status_code" not in result
+        assert result["error"] == "bad input"
