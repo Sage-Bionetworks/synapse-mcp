@@ -54,10 +54,11 @@ class TestGetWikiPage:
     ):
         # GIVEN an entity with a wiki tree where root has id "111"
         mock_get_client.return_value = MagicMock()
-        mock_wh_cls.get_async = AsyncMock(return_value=[
-            FakeWikiHeader(id="111", title="Home", parent_id=None),
-            FakeWikiHeader(id="222", title="Methods", parent_id="111"),
-        ])
+        async def _wiki_headers(**kw):
+            yield FakeWikiHeader(id="111", title="Home", parent_id=None)
+            yield FakeWikiHeader(id="222", title="Methods", parent_id="111")
+
+        mock_wh_cls.get_async = _wiki_headers
         mock_wp_cls.return_value.get_async = AsyncMock(
             return_value=FakeWikiPage(markdown="# Project Wiki\nMain page.")
         )
@@ -111,10 +112,11 @@ class TestGetWikiHeaders:
     ):
         # GIVEN an entity with a wiki page tree
         mock_get_client.return_value = MagicMock()
-        mock_wh_cls.get_async = AsyncMock(return_value=[
-            FakeWikiHeader(id="1", title="Home", parent_id=None),
-            FakeWikiHeader(id="2", title="Methods", parent_id="1"),
-        ])
+        async def _wiki_headers(**kw):
+            yield FakeWikiHeader(id="1", title="Home", parent_id=None)
+            yield FakeWikiHeader(id="2", title="Methods", parent_id="1")
+
+        mock_wh_cls.get_async = _wiki_headers
 
         # WHEN we get wiki headers
         result = await WikiService().get_wiki_headers(MagicMock(), "syn123")
