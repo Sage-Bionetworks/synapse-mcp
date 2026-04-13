@@ -450,13 +450,13 @@ async def get_wiki_order_hint(
     ),
     annotations=_RO,
 )
-def get_team(
+async def get_team(
     ctx: Context,
     team_id: Optional[int] = None,
     team_name: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Get a Synapse Team by ID or name."""
-    return TeamService().get_team(ctx, team_id, team_name)
+    return await TeamService().get_team(ctx, team_id, team_name)
 
 
 @mcp.tool(
@@ -464,11 +464,11 @@ def get_team(
     description="List all members of a Synapse Team.",
     annotations=_RO,
 )
-def get_team_members(
+async def get_team_members(
     team_id: int, ctx: Context
 ) -> List[Dict[str, Any]]:
     """List all members of a Team."""
-    return TeamService().get_team_members(ctx, team_id)
+    return await TeamService().get_team_members(ctx, team_id)
 
 
 @mcp.tool(
@@ -478,11 +478,11 @@ def get_team_members(
     ),
     annotations=_RO,
 )
-def get_team_open_invitations(
+async def get_team_open_invitations(
     team_id: int, ctx: Context
 ) -> List[Dict[str, Any]]:
     """List pending Team invitations."""
-    return TeamService().get_team_open_invitations(
+    return await TeamService().get_team_open_invitations(
         ctx, team_id
     )
 
@@ -495,11 +495,11 @@ def get_team_open_invitations(
     ),
     annotations=_RO,
 )
-def get_team_membership_status(
+async def get_team_membership_status(
     team_id: int, user_id: str, ctx: Context
 ) -> Dict[str, Any]:
     """Check a user's Team membership status."""
-    return TeamService().get_team_membership_status(
+    return await TeamService().get_team_membership_status(
         ctx, team_id, user_id
     )
 
@@ -513,13 +513,13 @@ def get_team_membership_status(
     ),
     annotations=_RO,
 )
-def get_user_profile(
+async def get_user_profile(
     ctx: Context,
     user_id: Optional[int] = None,
     username: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Get a Synapse user profile."""
-    return UserService().get_user_profile(
+    return await UserService().get_user_profile(
         ctx, user_id, username
     )
 
@@ -531,11 +531,11 @@ def get_user_profile(
     ),
     annotations=_RO,
 )
-def is_user_certified(
+async def is_user_certified(
     user_id: int, ctx: Context
 ) -> Dict[str, Any]:
     """Check if a user is certified."""
-    return UserService().is_user_certified(ctx, user_id)
+    return await UserService().is_user_certified(ctx, user_id)
 
 
 # ---------------------------------------------------------------------------
