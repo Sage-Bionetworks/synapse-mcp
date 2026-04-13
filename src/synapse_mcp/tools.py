@@ -553,13 +553,13 @@ async def is_user_certified(
     ),
     annotations=_RO,
 )
-def get_evaluation(
+async def get_evaluation(
     ctx: Context,
     evaluation_id: Optional[str] = None,
     evaluation_name: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Get an Evaluation by ID or name."""
-    return EvaluationService().get_evaluation(
+    return await EvaluationService().get_evaluation(
         ctx, evaluation_id, evaluation_name
     )
 
@@ -574,7 +574,7 @@ def get_evaluation(
     ),
     annotations=_RO,
 )
-def list_evaluations(
+async def list_evaluations(
     ctx: Context,
     project_id: Optional[str] = None,
     access_type: Optional[str] = None,
@@ -585,7 +585,7 @@ def list_evaluations(
     limit: int = 20,
 ) -> List[Dict[str, Any]]:
     """List evaluations with filters."""
-    return EvaluationService().list_evaluations(
+    return await EvaluationService().list_evaluations(
         ctx,
         project_id=project_id,
         access_type=access_type,
@@ -605,11 +605,11 @@ def list_evaluations(
     ),
     annotations=_RO,
 )
-def get_evaluation_acl(
+async def get_evaluation_acl(
     evaluation_id: str, ctx: Context
 ) -> Dict[str, Any]:
     """Get ACL for an Evaluation queue."""
-    return EvaluationService().get_evaluation_acl(
+    return await EvaluationService().get_evaluation_acl(
         ctx, evaluation_id
     )
 
@@ -622,11 +622,11 @@ def get_evaluation_acl(
     ),
     annotations=_RO,
 )
-def get_evaluation_permissions(
+async def get_evaluation_permissions(
     evaluation_id: str, ctx: Context
 ) -> Dict[str, Any]:
     """Get permissions on an Evaluation queue."""
-    return EvaluationService().get_evaluation_permissions(
+    return await EvaluationService().get_evaluation_permissions(
         ctx, evaluation_id
     )
 
@@ -641,11 +641,11 @@ def get_evaluation_permissions(
     description="Get a Synapse Submission by its ID.",
     annotations=_RO,
 )
-def get_submission(
+async def get_submission(
     submission_id: str, ctx: Context
 ) -> Dict[str, Any]:
     """Get a Submission by ID."""
-    return SubmissionService().get_submission(
+    return await SubmissionService().get_submission(
         ctx, submission_id
     )
 
@@ -660,14 +660,14 @@ def get_submission(
     ),
     annotations=_RO,
 )
-def list_evaluation_submissions(
+async def list_evaluation_submissions(
     evaluation_id: str,
     ctx: Context,
     status: Optional[str] = None,
     limit: int = 50,
 ) -> List[Dict[str, Any]]:
     """List submissions to an Evaluation."""
-    return SubmissionService().list_evaluation_submissions(
+    return await SubmissionService().list_evaluation_submissions(
         ctx, evaluation_id, status, limit
     )
 
@@ -680,13 +680,13 @@ def list_evaluation_submissions(
     ),
     annotations=_RO,
 )
-def list_my_submissions(
+async def list_my_submissions(
     evaluation_id: str,
     ctx: Context,
     limit: int = 50,
 ) -> List[Dict[str, Any]]:
     """List current user's submissions."""
-    return SubmissionService().list_my_submissions(
+    return await SubmissionService().list_my_submissions(
         ctx, evaluation_id, limit
     )
 
@@ -699,11 +699,11 @@ def list_my_submissions(
     ),
     annotations=_RO,
 )
-def get_submission_count(
+async def get_submission_count(
     evaluation_id: str, ctx: Context
 ) -> Dict[str, Any]:
     """Get submission count for an Evaluation."""
-    return SubmissionService().get_submission_count(
+    return await SubmissionService().get_submission_count(
         ctx, evaluation_id
     )
 
@@ -715,11 +715,11 @@ def get_submission_count(
     ),
     annotations=_RO,
 )
-def get_submission_status(
+async def get_submission_status(
     submission_id: str, ctx: Context
 ) -> Dict[str, Any]:
     """Get status of a Submission."""
-    return SubmissionService().get_submission_status(
+    return await SubmissionService().get_submission_status(
         ctx, submission_id
     )
 
@@ -734,7 +734,7 @@ def get_submission_status(
     ),
     annotations=_RO,
 )
-def list_submission_statuses(
+async def list_submission_statuses(
     evaluation_id: str,
     ctx: Context,
     status: Optional[str] = None,
@@ -742,7 +742,7 @@ def list_submission_statuses(
     offset: int = 0,
 ) -> List[Dict[str, Any]]:
     """List submission statuses for an Evaluation."""
-    return SubmissionService().list_submission_statuses(
+    return await SubmissionService().list_submission_statuses(
         ctx, evaluation_id, status, limit, offset
     )
 
@@ -755,14 +755,14 @@ def list_submission_statuses(
     ),
     annotations=_RO,
 )
-def list_evaluation_submission_bundles(
+async def list_evaluation_submission_bundles(
     evaluation_id: str,
     ctx: Context,
     status: Optional[str] = None,
     limit: int = 50,
 ) -> List[Dict[str, Any]]:
     """List submission bundles for an Evaluation."""
-    return SubmissionService().list_evaluation_submission_bundles(
+    return await SubmissionService().list_evaluation_submission_bundles(
         ctx, evaluation_id, status, limit
     )
 
@@ -775,13 +775,13 @@ def list_evaluation_submission_bundles(
     ),
     annotations=_RO,
 )
-def list_my_submission_bundles(
+async def list_my_submission_bundles(
     evaluation_id: str,
     ctx: Context,
     limit: int = 50,
 ) -> List[Dict[str, Any]]:
     """List current user's submission bundles."""
-    return SubmissionService().list_my_submission_bundles(
+    return await SubmissionService().list_my_submission_bundles(
         ctx, evaluation_id, limit
     )
 
