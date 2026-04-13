@@ -17,7 +17,7 @@ class WikiService:
     """Orchestrates wiki read operations."""
 
     @error_boundary(error_context_keys=("owner_id",))
-    def get_wiki_page(
+    async def get_wiki_page(
         self,
         ctx: Context,
         owner_id: str,
@@ -36,11 +36,11 @@ class WikiService:
             Dict with page id, title, markdown content,
             owner_id, parent_wiki_id, and timestamps.
         """
-        with synapse_client(ctx) as client:
+        async with synapse_client(ctx) as client:
             if wiki_id is None:
                 # SDK requires id or title — find root page
                 # from the wiki header tree.
-                headers = list(WikiHeader.get(
+                headers = list(await WikiHeader.get_async(
                     owner_id=owner_id,
                     synapse_client=client,
                 ))
@@ -59,17 +59,17 @@ class WikiService:
                         "owner_id": owner_id,
                     }
                 wiki_id = root.id
-            page = WikiPage(
+            page = await WikiPage(
                 owner_id=owner_id,
                 id=wiki_id,
-            ).get(synapse_client=client)
+            ).get_async(synapse_client=client)
             return serialize_model(page)
 
     @error_boundary(
         error_context_keys=("owner_id",),
         wrap_errors=True,
     )
-    def get_wiki_headers(
+    async def get_wiki_headers(
         self,
         ctx: Context,
         owner_id: str,
@@ -89,8 +89,8 @@ class WikiService:
             List of dicts with id, title, and parent_id
             for each wiki page in the hierarchy.
         """
-        with synapse_client(ctx) as client:
-            headers = WikiHeader.get(
+        async with synapse_client(ctx) as client:
+            headers = await WikiHeader.get_async(
                 owner_id=owner_id,
                 offset=offset,
                 limit=limit,
@@ -104,7 +104,7 @@ class WikiService:
         error_context_keys=("owner_id",),
         wrap_errors=True,
     )
-    def get_wiki_history(
+    async def get_wiki_history(
         self,
         ctx: Context,
         owner_id: str,
@@ -125,8 +125,8 @@ class WikiService:
             List of dicts with version, modified_on,
             and modified_by for each revision.
         """
-        with synapse_client(ctx) as client:
-            snapshots = WikiHistorySnapshot.get(
+        async with synapse_client(ctx) as client:
+            snapshots = await WikiHistorySnapshot.get_async(
                 owner_id=owner_id,
                 id=wiki_id,
                 offset=offset,
@@ -138,7 +138,7 @@ class WikiService:
             ]
 
     @error_boundary(error_context_keys=("owner_id",))
-    def get_wiki_order_hint(
+    async def get_wiki_order_hint(
         self, ctx: Context, owner_id: str
     ) -> Dict[str, Any]:
         """Get the display ordering of wiki sub-pages.
@@ -151,8 +151,8 @@ class WikiService:
             Dict with owner_id, id_list (page ordering),
             and etag.
         """
-        with synapse_client(ctx) as client:
-            hint = WikiOrderHint(
+        async with synapse_client(ctx) as client:
+            hint = await WikiOrderHint(
                 owner_id=owner_id,
-            ).get(synapse_client=client)
+            ).get_async(synapse_client=client)
             return serialize_model(hint)

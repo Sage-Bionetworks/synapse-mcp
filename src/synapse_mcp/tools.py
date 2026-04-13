@@ -356,7 +356,7 @@ async def get_link(
     ),
     annotations=_RO,
 )
-def get_wiki_page(
+async def get_wiki_page(
     owner_id: str,
     ctx: Context,
     wiki_id: Optional[str] = None,
@@ -364,7 +364,7 @@ def get_wiki_page(
     """Get a wiki page's content and metadata."""
     if not validate_synapse_id(owner_id):
         return {"error": f"Invalid Synapse ID: {owner_id}"}
-    return WikiService().get_wiki_page(
+    return await WikiService().get_wiki_page(
         ctx, owner_id, wiki_id
     )
 
@@ -379,7 +379,7 @@ def get_wiki_page(
     ),
     annotations=_RO,
 )
-def get_wiki_headers(
+async def get_wiki_headers(
     owner_id: str,
     ctx: Context,
     offset: int = 0,
@@ -388,7 +388,7 @@ def get_wiki_headers(
     """Get the wiki table of contents for an entity."""
     if not validate_synapse_id(owner_id):
         return [{"error": f"Invalid Synapse ID: {owner_id}"}]
-    return WikiService().get_wiki_headers(
+    return await WikiService().get_wiki_headers(
         ctx, owner_id, offset, limit
     )
 
@@ -403,7 +403,7 @@ def get_wiki_headers(
     ),
     annotations=_RO,
 )
-def get_wiki_history(
+async def get_wiki_history(
     owner_id: str,
     wiki_id: str,
     ctx: Context,
@@ -413,7 +413,7 @@ def get_wiki_history(
     """Get revision history of a wiki page."""
     if not validate_synapse_id(owner_id):
         return [{"error": f"Invalid Synapse ID: {owner_id}"}]
-    return WikiService().get_wiki_history(
+    return await WikiService().get_wiki_history(
         ctx, owner_id, wiki_id, offset, limit
     )
 
@@ -426,13 +426,13 @@ def get_wiki_history(
     ),
     annotations=_RO,
 )
-def get_wiki_order_hint(
+async def get_wiki_order_hint(
     owner_id: str, ctx: Context
 ) -> Dict[str, Any]:
     """Get wiki page display ordering."""
     if not validate_synapse_id(owner_id):
         return {"error": f"Invalid Synapse ID: {owner_id}"}
-    return WikiService().get_wiki_order_hint(ctx, owner_id)
+    return await WikiService().get_wiki_order_hint(ctx, owner_id)
 
 
 # ---------------------------------------------------------------------------
