@@ -44,11 +44,11 @@ def first_successful_result(results: List[Dict[str, Any]]) -> Optional[Dict[str,
     return None
 
 
-def get_entity_operations(ctx: Context) -> Dict[str, Any]:
+async def get_entity_operations(ctx: Context) -> Dict[str, Any]:
     """Get entity operations for this connection's synapseclient."""
-    synapse_client = get_synapse_client(ctx)
+    synapse_client = await get_synapse_client(ctx)
 
-    entity_ops = ctx.get_state("entity_ops")
+    entity_ops = await ctx.get_state("entity_ops")
     if entity_ops:
         return entity_ops
 
@@ -61,7 +61,7 @@ def get_entity_operations(ctx: Context) -> Dict[str, Any]:
         "dataset": DatasetOperations(synapse_client),
     }
 
-    ctx.set_state("entity_ops", entity_ops)
+    await ctx.set_state("entity_ops", entity_ops, serializable=False)
     return entity_ops
 
 

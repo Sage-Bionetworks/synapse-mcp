@@ -4,11 +4,16 @@ Tests that connection_auth correctly reads OAuth tokens from context
 that were set by the auth_middleware.
 """
 
-from types import SimpleNamespace
-
 import pytest
 
 import synapse_mcp.connection_auth as connection_auth
+
+pytestmark = pytest.mark.anyio("asyncio")
+
+
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
 
 
 class DummyContext:
@@ -19,12 +24,12 @@ class DummyContext:
         if oauth_token:
             self._state["oauth_access_token"] = oauth_token
 
-    def get_state(self, key):
+    async def get_state(self, key):
         if key in self._state:
             return self._state[key]
         raise KeyError
 
-    def set_state(self, key, value):
+    async def set_state(self, key, value, serializable=True):
         self._state[key] = value
 
 
@@ -49,12 +54,13 @@ def patched_synapse(monkeypatch):
     return created
 
 
-def test_oauth_authentication_uses_token_from_context(patched_synapse):
+@pytest.mark.anyio
+async def test_oauth_authentication_uses_token_from_context(patched_synapse):
     """Test that connection_auth reads OAuth token from context (set by middleware)."""
     # Middleware has already set the token in context
     ctx = DummyContext(oauth_token="token-abc")
 
-    client = connection_auth.get_synapse_client(ctx)
+    client = await connection_auth.get_synapse_client(ctx)
     assert patched_synapse[0].logged_in == "token-abc"
-    assert connection_auth._get_state(ctx, connection_auth.SYNAPSE_CLIENT_KEY) is client
-    assert connection_auth._get_state(ctx, "oauth_access_token") == "token-abc"
+    assert await connection_auth._get_state(ctx, connection_auth.SYNAPSE_CLIENT_KEY) is client
+    assert await connection_auth._get_state(ctx, "oauth_access_token") == "token-abc"

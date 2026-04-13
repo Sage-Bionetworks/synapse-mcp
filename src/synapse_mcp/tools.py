@@ -9,6 +9,7 @@ from synapseclient.core.exceptions import SynapseHTTPError
 from .app import mcp
 from .connection_auth import get_synapse_client
 from .context_helpers import ConnectionAuthError, get_entity_operations
+from .services import CurationTaskService
 from .utils import format_annotations, validate_synapse_id
 
 
@@ -41,13 +42,13 @@ def _normalize_fields(fields: Optional[List[str]]) -> List[str]:
         "openWorldHint": True,
     },
 )
-def get_entity(entity_id: str, ctx: Context) -> Dict[str, Any]:
+async def get_entity(entity_id: str, ctx: Context) -> Dict[str, Any]:
     """Return Synapse entity metadata by ID (projects, folders, files, tables, etc.)."""
     if not validate_synapse_id(entity_id):
         return {"error": f"Invalid Synapse ID: {entity_id}"}
 
     try:
-        entity_ops = get_entity_operations(ctx)
+        entity_ops = await get_entity_operations(ctx)
         return entity_ops["base"].get_entity_by_id(entity_id)
     except ConnectionAuthError as exc:
         return {"error": f"Authentication required: {exc}", "entity_id": entity_id}
@@ -65,13 +66,13 @@ def get_entity(entity_id: str, ctx: Context) -> Dict[str, Any]:
         "openWorldHint": True,
     },
 )
-def get_entity_annotations(entity_id: str, ctx: Context) -> Dict[str, Any]:
+async def get_entity_annotations(entity_id: str, ctx: Context) -> Dict[str, Any]:
     """Return custom annotation key/value pairs for a Synapse entity."""
     if not validate_synapse_id(entity_id):
         return {"error": f"Invalid Synapse ID: {entity_id}"}
 
     try:
-        entity_ops = get_entity_operations(ctx)
+        entity_ops = await get_entity_operations(ctx)
         annotations = entity_ops["base"].get_entity_annotations(entity_id)
         return format_annotations(annotations)
     except ConnectionAuthError as exc:
@@ -90,7 +91,7 @@ def get_entity_annotations(entity_id: str, ctx: Context) -> Dict[str, Any]:
         "openWorldHint": True,
     },
 )
-def get_entity_provenance(
+async def get_entity_provenance(
     entity_id: str,
     ctx: Context,
     version: Optional[int] = None,
@@ -100,7 +101,7 @@ def get_entity_provenance(
         return {"error": f"Invalid Synapse ID: {entity_id}"}
 
     try:
-        synapse_client = get_synapse_client(ctx)
+        synapse_client = await get_synapse_client(ctx)
     except ConnectionAuthError as exc:
         return {"error": f"Authentication required: {exc}", "entity_id": entity_id}
 
@@ -166,13 +167,13 @@ def get_entity_provenance(
         "openWorldHint": True,
     },
 )
-def get_entity_children(entity_id: str, ctx: Context) -> List[Dict[str, Any]]:
+async def get_entity_children(entity_id: str, ctx: Context) -> List[Dict[str, Any]]:
     """List children for Synapse container entities (projects or folders)."""
     if not validate_synapse_id(entity_id):
         return [{"error": f"Invalid Synapse ID: {entity_id}"}]
 
     try:
-        entity_ops = get_entity_operations(ctx)
+        entity_ops = await get_entity_operations(ctx)
         entity = entity_ops["base"].get_entity_by_id(entity_id)
         entity_type = entity.get("type", "").lower()
 
@@ -200,7 +201,7 @@ def get_entity_children(entity_id: str, ctx: Context) -> List[Dict[str, Any]]:
         "openWorldHint": True,
     },
 )
-def search_synapse(
+async def search_synapse(
     ctx: Context,
     query_term: Optional[str] = None,
     name: Optional[str] = None,
@@ -216,7 +217,7 @@ def search_synapse(
     determined by the original contributors; review the returned entity metadata for
     details."""
     try:
-        synapse_client = get_synapse_client(ctx)
+        synapse_client = await get_synapse_client(ctx)
     except ConnectionAuthError as exc:
         return {"error": f"Authentication required: {exc}"}
 
@@ -309,10 +310,76 @@ def search_synapse(
     return result
 
 
+@mcp.tool(
+    title="List Curation Tasks",
+    description=(
+        "List all curation tasks within a specific Synapse project. "
+        "Returns task metadata including task IDs, data types, "
+        "instructions, and task properties."
+    ),
+    annotations={
+        "readOnlyHint": True,
+        "idempotentHint": True,
+        "destructiveHint": False,
+        "openWorldHint": True,
+    },
+)
+async def list_curation_tasks(project_id: str, ctx: Context) -> List[Dict[str, Any]]:
+    """List all curation tasks for a given project."""
+    if not validate_synapse_id(project_id):
+        return [{"error": f"Invalid Synapse ID: {project_id}"}]
+
+    return await CurationTaskService().list_tasks(ctx, project_id)
+
+
+@mcp.tool(
+    title="Get Curation Task",
+    description=(
+        "Retrieve detailed information about a specific curation task "
+        "by its task ID."
+    ),
+    annotations={
+        "readOnlyHint": True,
+        "idempotentHint": True,
+        "destructiveHint": False,
+        "openWorldHint": True,
+    },
+)
+async def get_curation_task(task_id: int, ctx: Context) -> Dict[str, Any]:
+    """Get a specific curation task by its task ID."""
+    return await CurationTaskService().get_task(ctx, task_id)
+
+
+@mcp.tool(
+    title="Get Curation Task Resources",
+    description=(
+        "Explore and retrieve resources associated with a curation task, "
+        "including RecordSets, Folders, and EntityViews based on the task "
+        "type (file-based or record-based)."
+    ),
+    annotations={
+        "readOnlyHint": True,
+        "idempotentHint": True,
+        "destructiveHint": False,
+        "openWorldHint": True,
+    },
+)
+async def get_curation_task_resources(task_id: int, ctx: Context) -> Dict[str, Any]:
+    """Get resources associated with a curation task.
+
+    For file-based tasks: returns upload folder and file view info.
+    For record-based tasks: returns record set info.
+    """
+    return await CurationTaskService().get_task_resources(ctx, task_id)
+
+
 __all__ = [
     "get_entity",
     "get_entity_annotations",
     "get_entity_provenance",
     "get_entity_children",
     "search_synapse",
+    "list_curation_tasks",
+    "get_curation_task",
+    "get_curation_task_resources",
 ]
