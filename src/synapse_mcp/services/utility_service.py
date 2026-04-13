@@ -3,7 +3,7 @@
 from typing import Any, Dict
 
 from fastmcp import Context
-from synapseclient.operations import find_entity_id, is_synapse_id, md5_query
+from synapseclient.operations import find_entity_id_async, is_synapse_id_async, md5_query_async
 
 from .tool_service import (
     error_boundary,
@@ -16,7 +16,7 @@ class UtilityService:
     """Orchestrates utility read operations."""
 
     @error_boundary(error_context_keys=("name",))
-    def find_entity_id(
+    async def find_entity_id(
         self,
         ctx: Context,
         name: str,
@@ -33,8 +33,8 @@ class UtilityService:
             Dict with the found entity_id, or an error
             if not found.
         """
-        with synapse_client(ctx) as client:
-            entity_id = find_entity_id(
+        async with synapse_client(ctx) as client:
+            entity_id = await find_entity_id_async(
                 name=name,
                 parent=parent_id,
                 synapse_client=client,
@@ -46,7 +46,7 @@ class UtilityService:
             }
 
     @error_boundary(error_context_keys=("syn_id",))
-    def is_synapse_id(
+    async def is_synapse_id(
         self, ctx: Context, syn_id: str
     ) -> Dict[str, Any]:
         """Check whether a Synapse ID exists.
@@ -58,8 +58,8 @@ class UtilityService:
         Returns:
             Dict with syn_id and is_valid boolean.
         """
-        with synapse_client(ctx) as client:
-            valid = is_synapse_id(
+        async with synapse_client(ctx) as client:
+            valid = await is_synapse_id_async(
                 syn_id=syn_id,
                 synapse_client=client,
             )
@@ -69,7 +69,7 @@ class UtilityService:
             }
 
     @error_boundary(error_context_keys=("md5",))
-    def md5_query(
+    async def md5_query(
         self, ctx: Context, md5: str
     ) -> Dict[str, Any]:
         """Find entities by MD5 hash of their file.
@@ -82,8 +82,8 @@ class UtilityService:
             Dict with md5 and a results list of matching
             entities.
         """
-        with synapse_client(ctx) as client:
-            results = md5_query(
+        async with synapse_client(ctx) as client:
+            results = await md5_query_async(
                 md5=md5,
                 synapse_client=client,
             )

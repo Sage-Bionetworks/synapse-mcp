@@ -999,13 +999,13 @@ async def list_form_data(
     ),
     annotations=_RO,
 )
-def find_entity_id(
+async def find_entity_id(
     name: str,
     ctx: Context,
     parent_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Find an entity's Synapse ID by name and parent."""
-    return UtilityService().find_entity_id(
+    return await UtilityService().find_entity_id(
         ctx, name, parent_id
     )
 
@@ -1018,11 +1018,11 @@ def find_entity_id(
     ),
     annotations=_RO,
 )
-def check_synapse_id(
+async def check_synapse_id(
     syn_id: str, ctx: Context
 ) -> Dict[str, Any]:
     """Validate whether a Synapse ID exists."""
-    return UtilityService().is_synapse_id(ctx, syn_id)
+    return await UtilityService().is_synapse_id(ctx, syn_id)
 
 
 @mcp.tool(
@@ -1033,11 +1033,11 @@ def check_synapse_id(
     ),
     annotations=_RO,
 )
-def md5_query(
+async def md5_query(
     md5: str, ctx: Context
 ) -> Dict[str, Any]:
     """Find entities by MD5 hash."""
-    return UtilityService().md5_query(ctx, md5)
+    return await UtilityService().md5_query(ctx, md5)
 
 
 # ---------------------------------------------------------------------------
@@ -1054,12 +1054,12 @@ def md5_query(
     ),
     annotations=_RO,
 )
-def get_docker_repository(
+async def get_docker_repository(
     entity_id: str, ctx: Context
 ) -> Dict[str, Any]:
     """Get a DockerRepository entity by Synapse ID."""
     if not validate_synapse_id(entity_id):
         return {"error": f"Invalid Synapse ID: {entity_id}"}
-    return DockerService().get_docker_repository(
+    return await DockerService().get_docker_repository(
         ctx, entity_id
     )

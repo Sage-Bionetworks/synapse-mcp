@@ -12,7 +12,7 @@ class DockerService:
     """Orchestrates Docker repository read operations."""
 
     @error_boundary(error_context_keys=("entity_id",))
-    def get_docker_repository(
+    async def get_docker_repository(
         self, ctx: Context, entity_id: str
     ) -> Dict[str, Any]:
         """Get a DockerRepository entity by ID.
@@ -24,8 +24,8 @@ class DockerService:
         Returns:
             Dict with DockerRepository metadata.
         """
-        with synapse_client(ctx) as client:
-            repo = DockerRepository(id=entity_id).get(
+        async with synapse_client(ctx) as client:
+            repo = await DockerRepository(id=entity_id).get_async(
                 synapse_client=client,
             )
             return serialize_model(repo)
