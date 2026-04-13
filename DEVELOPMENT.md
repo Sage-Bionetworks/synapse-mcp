@@ -81,7 +81,89 @@ python scripts/smoke_redis_session_storage.py
 
 The script exercises token creation, replacement, expiration, and cleanup. It exits non-zero if anything fails.
 
-## Deployment 
+## Code Architecture
+
+### Layered design (controller → service → manager)
+
+```
+src/synapse_mcp/
+├── tools.py              Controller — @mcp.tool registrations + input validation
+├── services/
+│   ├── tool_service.py   synapse_client context manager + @error_boundary
+│   └── <resource>_service.py  One per resource domain, called by tools.py
+├── managers/
+│   └── <resource>_manager.py  Multi-step API orchestration, called by services
+├── entities/             Legacy entity operations (predates service/manager pattern)
+```
+
+**Layer rules:**
+
+| Layer | Owns | Does NOT own |
+|---|---|---|
+| **Controller** (`tools.py`) | `@mcp.tool` registration, input validation, delegation to service | Business logic, Synapse API calls, serialization |
+| **Service** (`services/`) | Serialization (model → dict), error boundary (`@error_boundary`), simple SDK calls via `synapse_client` context manager | Multi-step API orchestration |
+| **Manager** (`managers/`) | Multi-step operations that compose several API calls with partial-failure handling. Returns raw model objects. | Serialization, error-to-dict conversion |
+
+**When to use a manager:** Only when an operation requires composing multiple API calls or handling partial failures across sub-operations. Simple one-liner SDK calls (`Model.list(...)`, `Model(...).get(...)`) belong in the service.
+
+**New tool vs. extending an existing tool:**
+
+- **Add a new tool** when the operation targets a different resource type (e.g., curation tasks vs. entities), serves a distinct user intent (e.g., "search" vs. "get by ID"), or requires a fundamentally different set of parameters.
+- **Extend an existing tool** (add optional parameters) when the new behavior is a natural variation of what the tool already does — same resource, same intent, just a narrower or broader filter. For example, adding an optional `name_filter` parameter to a "list" tool is better than creating a separate "search" tool that duplicates most of the logic.
+
+**Adding a new tool — follow this template:**
+
+**1. Service** — `services/<resource>_service.py`:
+
+```python
+class WidgetService:
+    @error_boundary(error_context_keys=("widget_id",))
+    def get_widget(self, ctx: Context, widget_id: str) -> Dict[str, Any]:
+        with synapse_client(ctx) as client:
+            widget = Widget(id=widget_id).get(synapse_client=client)
+            return _format_widget(widget)
+```
+
+**2. Tool** — `tools.py`:
+
+```python
+@mcp.tool(title="Get Widget", ...)
+def get_widget(widget_id: str, ctx: Context) -> Dict[str, Any]:
+    return WidgetService().get_widget(ctx, widget_id)
+```
+
+**3. Manager** (only if needed) — `managers/<resource>_manager.py`:
+
+```python
+class WidgetManager:
+    def __init__(self, synapse_client: synapseclient.Synapse) -> None:
+        self.synapse_client = synapse_client
+
+    def get_widget_with_parts(self, widget_id: str) -> Tuple[Widget, Dict]:
+        widget = Widget(id=widget_id).get(synapse_client=self.synapse_client)
+        parts = {}
+        # fetch related resources, handle partial failures
+        return widget, parts
+```
+
+### Error response conventions
+
+- Auth failures: `{"error": "Authentication required: ...", **context}`
+- Other failures: `{"error": "...", "error_type": "ExceptionClassName", **context}`
+- Tools returning `List[Dict]` wrap error dicts in a list: `[{"error": ...}]` — the `@error_boundary(wrap_errors=list)` decorator handles this.
+- `error_context_keys` should identify the input (e.g. `project_id`, `task_id`, `entity_id`)
+
+### Testing conventions
+
+- **Manager tests** mock `synapseclient.models` classes at the manager module level. Test multi-step orchestration and partial-failure handling.
+- **Service tests** mock `get_synapse_client` at the `tool_service` module level. For simple operations, mock SDK models at the service module level. For complex operations, mock the manager class. Test serialization and error boundary behavior.
+- **tool_service tests** test `synapse_client` and `@error_boundary` in isolation.
+
+### `entities/` vs `managers/`
+
+`entities/` is the older pattern (pre-existing). New resource-specific logic goes in `managers/` (for complex operations) or directly in `services/` (for simple SDK calls). The `entities/` tools have not yet been migrated to the service/manager pattern.
+
+## Deployment
 
 ### Docker build and run
 

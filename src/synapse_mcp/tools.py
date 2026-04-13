@@ -9,6 +9,7 @@ from synapseclient.core.exceptions import SynapseHTTPError
 from .app import mcp
 from .connection_auth import get_synapse_client
 from .context_helpers import ConnectionAuthError, get_entity_operations
+from .services import CurationTaskService
 from .utils import format_annotations, validate_synapse_id
 
 
@@ -309,10 +310,76 @@ async def search_synapse(
     return result
 
 
+@mcp.tool(
+    title="List Curation Tasks",
+    description=(
+        "List all curation tasks within a specific Synapse project. "
+        "Returns task metadata including task IDs, data types, "
+        "instructions, and task properties."
+    ),
+    annotations={
+        "readOnlyHint": True,
+        "idempotentHint": True,
+        "destructiveHint": False,
+        "openWorldHint": True,
+    },
+)
+def list_curation_tasks(project_id: str, ctx: Context) -> List[Dict[str, Any]]:
+    """List all curation tasks for a given project."""
+    if not validate_synapse_id(project_id):
+        return [{"error": f"Invalid Synapse ID: {project_id}"}]
+
+    return CurationTaskService().list_tasks(ctx, project_id)
+
+
+@mcp.tool(
+    title="Get Curation Task",
+    description=(
+        "Retrieve detailed information about a specific curation task "
+        "by its task ID."
+    ),
+    annotations={
+        "readOnlyHint": True,
+        "idempotentHint": True,
+        "destructiveHint": False,
+        "openWorldHint": True,
+    },
+)
+def get_curation_task(task_id: int, ctx: Context) -> Dict[str, Any]:
+    """Get a specific curation task by its task ID."""
+    return CurationTaskService().get_task(ctx, task_id)
+
+
+@mcp.tool(
+    title="Get Curation Task Resources",
+    description=(
+        "Explore and retrieve resources associated with a curation task, "
+        "including RecordSets, Folders, and EntityViews based on the task "
+        "type (file-based or record-based)."
+    ),
+    annotations={
+        "readOnlyHint": True,
+        "idempotentHint": True,
+        "destructiveHint": False,
+        "openWorldHint": True,
+    },
+)
+def get_curation_task_resources(task_id: int, ctx: Context) -> Dict[str, Any]:
+    """Get resources associated with a curation task.
+
+    For file-based tasks: returns upload folder and file view info.
+    For record-based tasks: returns record set info.
+    """
+    return CurationTaskService().get_task_resources(ctx, task_id)
+
+
 __all__ = [
     "get_entity",
     "get_entity_annotations",
     "get_entity_provenance",
     "get_entity_children",
     "search_synapse",
+    "list_curation_tasks",
+    "get_curation_task",
+    "get_curation_task_resources",
 ]
