@@ -856,13 +856,13 @@ async def get_curation_task_resources(
     ),
     annotations=_RO,
 )
-def get_schema_organization(
+async def get_schema_organization(
     ctx: Context,
     organization_name: Optional[str] = None,
     organization_id: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Get a Schema Organization by name or ID."""
-    return SchemaOrganizationService().get_schema_organization(
+    return await SchemaOrganizationService().get_schema_organization(
         ctx, organization_name, organization_id
     )
 
@@ -875,11 +875,11 @@ def get_schema_organization(
     ),
     annotations=_RO,
 )
-def get_schema_organization_acl(
+async def get_schema_organization_acl(
     organization_name: str, ctx: Context
 ) -> Dict[str, Any]:
     """Get ACL for a Schema Organization."""
-    return SchemaOrganizationService().get_schema_organization_acl(
+    return await SchemaOrganizationService().get_schema_organization_acl(
         ctx, organization_name
     )
 
@@ -892,11 +892,11 @@ def get_schema_organization_acl(
     ),
     annotations=_RO,
 )
-def list_json_schemas(
+async def list_json_schemas(
     organization_name: str, ctx: Context
 ) -> List[Dict[str, Any]]:
     """List schemas in an organization."""
-    return SchemaOrganizationService().list_json_schemas(
+    return await SchemaOrganizationService().list_json_schemas(
         ctx, organization_name
     )
 
@@ -909,13 +909,13 @@ def list_json_schemas(
     ),
     annotations=_RO,
 )
-def get_json_schema(
+async def get_json_schema(
     organization_name: str,
     schema_name: str,
     ctx: Context,
 ) -> Dict[str, Any]:
     """Get metadata for a JSON Schema."""
-    return SchemaOrganizationService().get_json_schema(
+    return await SchemaOrganizationService().get_json_schema(
         ctx, organization_name, schema_name
     )
 
@@ -928,14 +928,14 @@ def get_json_schema(
     ),
     annotations=_RO,
 )
-def get_json_schema_body(
+async def get_json_schema_body(
     organization_name: str,
     schema_name: str,
     ctx: Context,
     version: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Get the raw JSON schema document."""
-    return SchemaOrganizationService().get_json_schema_body(
+    return await SchemaOrganizationService().get_json_schema_body(
         ctx, organization_name, schema_name, version
     )
 
@@ -947,13 +947,13 @@ def get_json_schema_body(
     ),
     annotations=_RO,
 )
-def list_json_schema_versions(
+async def list_json_schema_versions(
     organization_name: str,
     schema_name: str,
     ctx: Context,
 ) -> List[Dict[str, Any]]:
     """List versions of a JSON Schema."""
-    return SchemaOrganizationService().list_json_schema_versions(
+    return await SchemaOrganizationService().list_json_schema_versions(
         ctx, organization_name, schema_name
     )
 
@@ -971,13 +971,13 @@ def list_json_schema_versions(
     ),
     annotations=_RO,
 )
-def list_form_data(
+async def list_form_data(
     group_id: str,
     ctx: Context,
     filter_by_state: Optional[List[str]] = None,
     as_reviewer: bool = False,
 ) -> List[Dict[str, Any]]:
     """List form submissions for a FormGroup."""
-    return FormService().list_form_data(
+    return await FormService().list_form_data(
         ctx, group_id, filter_by_state, as_reviewer
     )

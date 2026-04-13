@@ -17,7 +17,7 @@ class SchemaOrganizationService:
             "organization_id",
         )
     )
-    def get_schema_organization(
+    async def get_schema_organization(
         self,
         ctx: Context,
         organization_name: Optional[str] = None,
@@ -33,15 +33,15 @@ class SchemaOrganizationService:
         Returns:
             Dict with organization metadata.
         """
-        with synapse_client(ctx) as client:
+        async with synapse_client(ctx) as client:
             if organization_name is not None:
-                org = SchemaOrganization(
+                org = await SchemaOrganization(
                     name=organization_name,
-                ).get(synapse_client=client)
+                ).get_async(synapse_client=client)
             elif organization_id is not None:
-                org = SchemaOrganization(
+                org = await SchemaOrganization(
                     id=organization_id,
-                ).get(synapse_client=client)
+                ).get_async(synapse_client=client)
             else:
                 return {
                     "error": (
@@ -54,7 +54,7 @@ class SchemaOrganizationService:
     @error_boundary(
         error_context_keys=("organization_name",)
     )
-    def get_schema_organization_acl(
+    async def get_schema_organization_acl(
         self, ctx: Context, organization_name: str
     ) -> Dict[str, Any]:
         """Get the ACL for a Schema Organization.
@@ -66,11 +66,11 @@ class SchemaOrganizationService:
         Returns:
             Dict with ACL information.
         """
-        with synapse_client(ctx) as client:
+        async with synapse_client(ctx) as client:
             org = SchemaOrganization(
                 name=organization_name,
             )
-            acl = org.get_acl(synapse_client=client)
+            acl = await org.get_acl_async(synapse_client=client)
             return {
                 "organization_name": organization_name,
                 "acl": serialize_model(acl),
@@ -80,7 +80,7 @@ class SchemaOrganizationService:
         error_context_keys=("organization_name",),
         wrap_errors=list,
     )
-    def list_json_schemas(
+    async def list_json_schemas(
         self, ctx: Context, organization_name: str
     ) -> List[Dict[str, Any]]:
         """List all schemas in an organization.
@@ -92,7 +92,7 @@ class SchemaOrganizationService:
         Returns:
             List of JSON schema metadata dicts.
         """
-        with synapse_client(ctx) as client:
+        async with synapse_client(ctx) as client:
             org = SchemaOrganization(
                 name=organization_name,
             )
@@ -107,7 +107,7 @@ class SchemaOrganizationService:
             "schema_name",
         )
     )
-    def get_json_schema(
+    async def get_json_schema(
         self,
         ctx: Context,
         organization_name: str,
@@ -123,11 +123,11 @@ class SchemaOrganizationService:
         Returns:
             Dict with schema metadata.
         """
-        with synapse_client(ctx) as client:
-            schema = JSONSchema(
+        async with synapse_client(ctx) as client:
+            schema = await JSONSchema(
                 organization_name=organization_name,
                 name=schema_name,
-            ).get(synapse_client=client)
+            ).get_async(synapse_client=client)
             return serialize_model(schema)
 
     @error_boundary(
@@ -136,7 +136,7 @@ class SchemaOrganizationService:
             "schema_name",
         )
     )
-    def get_json_schema_body(
+    async def get_json_schema_body(
         self,
         ctx: Context,
         organization_name: str,
@@ -154,7 +154,7 @@ class SchemaOrganizationService:
         Returns:
             Dict containing the raw JSON schema document.
         """
-        with synapse_client(ctx) as client:
+        async with synapse_client(ctx) as client:
             schema = JSONSchema(
                 organization_name=organization_name,
                 name=schema_name,
@@ -172,7 +172,7 @@ class SchemaOrganizationService:
         ),
         wrap_errors=list,
     )
-    def list_json_schema_versions(
+    async def list_json_schema_versions(
         self,
         ctx: Context,
         organization_name: str,
@@ -188,7 +188,7 @@ class SchemaOrganizationService:
         Returns:
             List of version info dicts.
         """
-        with synapse_client(ctx) as client:
+        async with synapse_client(ctx) as client:
             schema = JSONSchema(
                 organization_name=organization_name,
                 name=schema_name,

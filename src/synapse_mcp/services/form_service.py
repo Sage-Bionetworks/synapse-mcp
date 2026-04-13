@@ -15,7 +15,7 @@ class FormService:
         error_context_keys=("group_id",),
         wrap_errors=list,
     )
-    def list_form_data(
+    async def list_form_data(
         self,
         ctx: Context,
         group_id: str,
@@ -34,9 +34,9 @@ class FormService:
         Returns:
             List of form data submission dicts.
         """
-        with synapse_client(ctx) as client:
+        async with synapse_client(ctx) as client:
             group = FormGroup(group_id=group_id)
-            submissions = group.list(
+            submissions = await group.list_async(
                 filter_by_state=filter_by_state,
                 as_reviewer=as_reviewer,
                 synapse_client=client,
