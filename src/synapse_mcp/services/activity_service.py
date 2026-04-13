@@ -12,7 +12,7 @@ class ActivityService:
     """Orchestrates provenance/activity read operations."""
 
     @error_boundary(error_context_keys=("entity_id",))
-    def get_provenance(
+    async def get_provenance(
         self,
         ctx: Context,
         entity_id: str,
@@ -31,8 +31,8 @@ class ActivityService:
             executed code, etc.). Returns an error dict if
             no provenance exists.
         """
-        with synapse_client(ctx) as client:
-            activity = Activity.get(
+        async with synapse_client(ctx) as client:
+            activity = await Activity.get_async(
                 parent_id=entity_id,
                 parent_version_number=version,
                 synapse_client=client,
@@ -60,7 +60,7 @@ class ActivityService:
             "parent_id",
         )
     )
-    def get_activity(
+    async def get_activity(
         self,
         ctx: Context,
         activity_id: Optional[str] = None,
@@ -79,8 +79,8 @@ class ActivityService:
         Returns:
             Dict with activity metadata.
         """
-        with synapse_client(ctx) as client:
-            activity = Activity.get(
+        async with synapse_client(ctx) as client:
+            activity = await Activity.get_async(
                 activity_id=activity_id,
                 parent_id=parent_id,
                 parent_version_number=parent_version_number,

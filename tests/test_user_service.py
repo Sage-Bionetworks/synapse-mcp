@@ -2,10 +2,20 @@
 
 from dataclasses import dataclass
 from typing import Optional
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from synapse_mcp.connection_auth import ConnectionAuthError
 from synapse_mcp.services.user_service import UserService
+
+import pytest
+
+pytestmark = pytest.mark.anyio("asyncio")
+
+
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
+
 
 TS = "synapse_mcp.services.tool_service"
 SVC = "synapse_mcp.services.user_service"
@@ -23,19 +33,19 @@ class FakeUserProfile:
 
 
 class TestGetUserProfile:
-    @patch(f"{TS}.get_synapse_client")
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
     @patch(f"{SVC}.UserProfile")
-    def test_given_user_id_when_fetched_then_returns_dict(
+    async def test_given_user_id_when_fetched_then_returns_dict(
         self, mock_up_cls, mock_get_client
     ):
         # GIVEN a user profile found by ID
         mock_get_client.return_value = MagicMock()
-        mock_up_cls.from_id.return_value = (
-            FakeUserProfile()
+        mock_up_cls.from_id_async = AsyncMock(
+            return_value=FakeUserProfile()
         )
 
         # WHEN we get the profile by user ID
-        result = UserService().get_user_profile(
+        result = await UserService().get_user_profile(
             MagicMock(), user_id=12345
         )
 
@@ -43,50 +53,50 @@ class TestGetUserProfile:
         assert result["id"] == 12345
         assert result["username"] == "jsmith"
         assert result["first_name"] == "Jane"
-        mock_up_cls.from_id.assert_called_once()
+        mock_up_cls.from_id_async.assert_called_once()
 
-    @patch(f"{TS}.get_synapse_client")
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
     @patch(f"{SVC}.UserProfile")
-    def test_given_username_when_fetched_then_uses_from_username(
+    async def test_given_username_when_fetched_then_uses_from_username(
         self, mock_up_cls, mock_get_client
     ):
         # GIVEN a user profile found by username
         mock_get_client.return_value = MagicMock()
-        mock_up_cls.from_username.return_value = (
-            FakeUserProfile(username="jdoe")
+        mock_up_cls.from_username_async = AsyncMock(
+            return_value=FakeUserProfile(username="jdoe")
         )
 
         # WHEN we get the profile by username
-        result = UserService().get_user_profile(
+        result = await UserService().get_user_profile(
             MagicMock(), username="jdoe"
         )
 
         # THEN the correct SDK method is called
         assert result["username"] == "jdoe"
-        mock_up_cls.from_username.assert_called_once()
+        mock_up_cls.from_username_async.assert_called_once()
 
-    @patch(f"{TS}.get_synapse_client")
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
     @patch(f"{SVC}.UserProfile")
-    def test_given_no_args_when_fetched_then_returns_self(
+    async def test_given_no_args_when_fetched_then_returns_self(
         self, mock_up_cls, mock_get_client
     ):
         # GIVEN no user_id or username (self-lookup)
         mock_get_client.return_value = MagicMock()
-        mock_up_cls.return_value.get.return_value = (
-            FakeUserProfile(username="me")
+        mock_up_cls.return_value.get_async = AsyncMock(
+            return_value=FakeUserProfile(username="me")
         )
 
         # WHEN we get the profile with no args
-        result = UserService().get_user_profile(
+        result = await UserService().get_user_profile(
             MagicMock()
         )
 
         # THEN it returns the current user's profile
         assert result["username"] == "me"
-        mock_up_cls.return_value.get.assert_called_once()
+        mock_up_cls.return_value.get_async.assert_called_once()
 
-    @patch(f"{TS}.get_synapse_client")
-    def test_given_expired_auth_then_returns_error(
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    async def test_given_expired_auth_then_returns_error(
         self, mock_get_client
     ):
         # GIVEN expired credentials
@@ -95,7 +105,7 @@ class TestGetUserProfile:
         )
 
         # WHEN we get a profile
-        result = UserService().get_user_profile(
+        result = await UserService().get_user_profile(
             MagicMock(), user_id=12345
         )
 

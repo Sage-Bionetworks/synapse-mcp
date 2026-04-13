@@ -6,10 +6,10 @@ from typing import Any, List, Optional
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from fastmcp.server.auth import OAuthProxy
-from fastmcp.server.auth.oauth_proxy import ProxyDCRClient
+from fastmcp.server.auth.oauth_proxy.models import ProxyDCRClient
+from mcp.server.auth.provider import OAuthClientInformationFull
 from pydantic import AnyUrl, TypeAdapter
 
-from ..session_storage import create_session_storage
 from .client_registry import (
     ClientRegistration,
     create_client_registry,
@@ -20,60 +20,63 @@ logger = logging.getLogger("synapse_mcp.oauth")
 
 
 class SessionAwareOAuthProxy(OAuthProxy):
-    """OAuth proxy that mirrors tokens into session storage."""
+    """OAuth proxy with persistent client registry backed by Redis/file."""
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        self._session_storage = create_session_storage()
         self._client_registry = create_client_registry(os.environ)
-        if not hasattr(self, "_clients"):
-            # Guard against older fastmcp versions where OAuthProxy skipped initialization.
-            self._clients = {}
-        self._restore_registered_clients()
+        self._static_registrations = load_static_registrations()
         logger.debug(
-            "SessionAwareOAuthProxy initialized with session storage %s and client registry %s",
-            type(self._session_storage).__name__,
+            "SessionAwareOAuthProxy initialized with client registry %s",
             type(self._client_registry).__name__,
         )
 
-    def _restore_registered_clients(self) -> None:
-        try:
-            registrations = list(self._client_registry.load_all())
-        except Exception as exc:  # pragma: no cover - defensive
-            logger.warning("Failed to load persisted OAuth clients: %s", exc)
-            return
-
-        # Merge statically configured clients (highest priority)
-        try:
-            registrations.extend(load_static_registrations())
-        except Exception as exc:  # pragma: no cover - defensive
-            logger.warning("Failed to load static OAuth clients: %s", exc)
-
+    def _registration_to_proxy_client(self, record: ClientRegistration) -> ProxyDCRClient:
+        """Build a ProxyDCRClient from a persisted ClientRegistration."""
         default_grants = ["authorization_code", "refresh_token"]
+        adapter = TypeAdapter(List[AnyUrl])
+        redirect_source = record.redirect_uris if record.redirect_uris else [
+            "http://127.0.0.1"]
+        redirect_uris = adapter.validate_python(redirect_source)
+        return ProxyDCRClient(
+            client_id=record.client_id,
+            client_secret=record.client_secret,
+            redirect_uris=redirect_uris,
+            grant_types=record.grant_types or default_grants,
+            scope=self._default_scope_str,
+            token_endpoint_auth_method="none",
+            allowed_redirect_uri_patterns=self._allowed_client_redirect_uris,
+        )
 
-        for record in registrations:
-            if record.client_id in self._clients:
-                continue
-            try:
-                adapter = TypeAdapter(List[AnyUrl])
-                redirect_source = record.redirect_uris if record.redirect_uris else [
-                    "http://127.0.0.1"]
-                redirect_uris = adapter.validate_python(redirect_source)
-                proxy_client = ProxyDCRClient(
-                    client_id=record.client_id,
-                    client_secret=record.client_secret,
-                    redirect_uris=redirect_uris,
-                    grant_types=record.grant_types or default_grants,
-                    scope=self._default_scope_str,
-                    token_endpoint_auth_method="none",
-                    allowed_redirect_uri_patterns=self._allowed_client_redirect_uris,
-                )
-                self._clients[record.client_id] = proxy_client
-                logger.info("Restored registered OAuth client %s",
-                            record.client_id)
-            except Exception as exc:  # pragma: no cover - defensive
-                logger.warning(
-                    "Failed to restore OAuth client %s: %s", record.client_id, exc)
+    async def get_client(self, client_id: str) -> Optional[OAuthClientInformationFull]:
+        """Look up a registered client.
+
+        Checks FastMCP's in-process ``_client_store`` first (covers
+        clients registered during *this* process lifetime), then falls
+        back to the persistent registry (Redis / file) so that clients
+        survive container restarts without bulk-loading into memory.
+        """
+        client = await super().get_client(client_id)
+        if client is not None:
+            return client
+
+        # Persistent registry lookup (Redis hget or file read)
+        registration = self._client_registry.load_one(client_id)
+        source = "persistent registry"
+        if registration is None:
+            # Also check static registrations (cached at init)
+            for static in self._static_registrations:
+                if static.client_id == client_id:
+                    registration = static
+                    source = "static registrations"
+                    break
+        if registration is None:
+            return None
+
+        proxy_client = self._registration_to_proxy_client(registration)
+
+        logger.info("Resolved client %s from %s", client_id, source)
+        return proxy_client
 
     async def register_client(self, client_info):
         # Ensure grant_types includes refresh_token — many MCP clients
@@ -134,150 +137,7 @@ class SessionAwareOAuthProxy(OAuthProxy):
                     logger.debug(
                         "Removed empty state parameter from callback redirect")
 
-        if result:
-            try:
-                await self._map_new_tokens_to_users()
-            except Exception as exc:  # pragma: no cover - defensive
-                logger.warning("Failed to map tokens to users: %s", exc)
-        else:
-            logger.debug(
-                "No result returned from super()._handle_idp_callback")
-
         return result
-
-    async def exchange_authorization_code(
-        self,
-        client: Any,
-        authorization_code: Any,
-    ):
-
-        existing_tokens = set(getattr(self, "_access_tokens", {}).keys())
-        token_response = await super().exchange_authorization_code(client, authorization_code)
-
-        try:
-            await self._map_new_tokens_to_users()
-        except Exception as exc:  # pragma: no cover - defensive
-            logger.warning(
-                "Failed to map tokens to users after exchange: %s", exc)
-
-        access_tokens = getattr(self, "_access_tokens", {})
-        new_tokens = [
-            token for token in access_tokens if token not in existing_tokens]
-        logger.debug("New tokens from exchange: %s", [
-                     t[:8] + "***" for t in new_tokens])
-
-        return token_response
-
-    async def _map_new_tokens_to_users(self) -> None:
-        existing_users = await self._session_storage.get_all_user_subjects()
-        access_tokens = getattr(self, "_access_tokens", {})
-        known_attrs = [attr for attr in dir(
-            self) if "token" in attr.lower() and not attr.startswith("__")]
-        logger.debug(
-            "_map_new_tokens_to_users: existing_users=%s tokens=%s token_attrs=%s",
-            existing_users,
-            [t[:8] + "***" for t in access_tokens],
-            {attr: _summarize_token_attr(attr, getattr(
-                self, attr, None)) for attr in known_attrs},
-        )
-        unmapped_tokens = [token for token in access_tokens if await self._session_storage.find_user_by_token(token) is None]
-        logger.debug("Unmapped tokens: %s", [
-                     t[:8] + "***" for t in unmapped_tokens])
-
-        for token_key in unmapped_tokens:
-            try:
-                import jwt
-
-                decoded = jwt.decode(token_key, options={
-                                     "verify_signature": False})
-                user_subject = decoded.get("sub")
-                if user_subject:
-                    await self._session_storage.set_user_token(user_subject, token_key, ttl_seconds=3600)
-                    logger.info("Mapped token %s*** to user %s",
-                                token_key[:20], user_subject)
-                else:
-                    logger.warning(
-                        "Token %s*** has no subject claim", token_key[:20])
-            except Exception as exc:  # pragma: no cover - decoding failures
-                logger.warning("Failed to decode token %s***: %s",
-                               token_key[:20], exc)
-
-    async def get_user_token(self, user_subject: str) -> Optional[str]:
-        token_key = await self._session_storage.get_user_token(user_subject)
-        if token_key and token_key in self._access_tokens:
-            return token_key
-        return None
-
-    async def cleanup_user_tokens(self, user_subject: str) -> None:
-        token_key = await self._session_storage.get_user_token(user_subject)
-        if token_key:
-            if token_key in self._access_tokens:
-                del self._access_tokens[token_key]
-            await self._session_storage.remove_user_token(user_subject)
-            logger.info("Cleaned up token for user %s", user_subject)
-
-    async def cleanup_expired_tokens(self) -> None:
-        await self._session_storage.cleanup_expired_tokens()
-
-        existing_users = await self._session_storage.get_all_user_subjects()
-        mapped_tokens = {
-            token
-            for user_subject in existing_users
-            for token in [await self._session_storage.get_user_token(user_subject)]
-            if token
-        }
-
-        orphaned = [token for token in list(
-            self._access_tokens.keys()) if token not in mapped_tokens]
-        for token in orphaned:
-            if self._is_token_old_enough_to_cleanup(token):
-                del self._access_tokens[token]
-
-        if orphaned:
-            logger.info(
-                "Cleaned up %s orphaned tokens from OAuth proxy", len(orphaned))
-
-    def _is_token_old_enough_to_cleanup(self, token: str, min_age_seconds: int = 30) -> bool:
-        try:
-            import jwt
-            from datetime import datetime, timezone
-
-            decoded = jwt.decode(token, options={"verify_signature": False})
-            issued_at = decoded.get("iat")
-            if not issued_at:
-                return True
-            token_age = datetime.now(timezone.utc).timestamp() - issued_at
-            if token_age <= min_age_seconds:
-                logger.debug(
-                    "Token is only %.1fs old, keeping for now", token_age)
-                return False
-            return True
-        except Exception as exc:  # pragma: no cover - decoding failures
-            logger.debug(
-                "Error checking token age, assuming old enough: %s", exc)
-            return True
-
-    async def iter_user_tokens(self) -> list[tuple[str, str]]:
-        """Return all known (subject, token) pairs from storage."""
-
-        tokens: list[tuple[str, str]] = []
-        subjects = await self._session_storage.get_all_user_subjects()
-        for subject in subjects:
-            token = await self._session_storage.get_user_token(subject)
-            if token:
-                tokens.append((subject, token))
-        logger.debug("iter_user_tokens -> %s",
-                     [(sub, tok[:8] + "***") for sub, tok in tokens])
-        return tokens
-
-    async def get_token_for_current_user(self) -> Optional[tuple[str, Optional[str]]]:
-        """Return a token/subject pair when a single active user is known."""
-
-        tokens = await self.iter_user_tokens()
-        if len(tokens) == 1:
-            subject, token = tokens[0]
-            return token, subject
-        return None
 
 
 def _extract_secret(secret: Any) -> Optional[str]:
@@ -287,46 +147,6 @@ def _extract_secret(secret: Any) -> Optional[str]:
         return secret.get_secret_value()  # type: ignore[attr-defined]
     except AttributeError:
         return secret  # type: ignore[return-value]
-
-
-def _mask_token(token: Optional[str]) -> Optional[str]:
-    if not token:
-        return token
-    return token[:8] + "***"
-
-
-def _summarize_token_attr(attr: str, value: Any) -> Any:
-    if value is None:
-        return None
-
-    if attr == "_access_tokens" and isinstance(value, dict):
-        summary: dict[str, dict[str, Any]] = {}
-        for token, data in value.items():
-            masked = _mask_token(token) or "<missing>"
-            summary[masked] = {
-                "client_id": getattr(data, "client_id", None),
-                "scopes": getattr(data, "scopes", None),
-                "expires_at": getattr(data, "expires_at", None),
-            }
-        return summary
-
-    if attr == "_refresh_tokens" and isinstance(value, dict):
-        summary = {}
-        for token, data in value.items():
-            masked = _mask_token(token) or "<missing>"
-            summary[masked] = {
-                "client_id": getattr(data, "client_id", None),
-                "scopes": getattr(data, "scopes", None),
-            }
-        return summary
-
-    if isinstance(value, dict):
-        return {"type": "dict", "count": len(value)}
-
-    if isinstance(value, (list, set, tuple)):
-        return {"type": type(value).__name__, "count": len(value)}
-
-    return type(value).__name__
 
 
 __all__ = ["SessionAwareOAuthProxy"]
