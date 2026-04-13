@@ -324,12 +324,12 @@ async def search_synapse(
         "openWorldHint": True,
     },
 )
-def list_curation_tasks(project_id: str, ctx: Context) -> List[Dict[str, Any]]:
+async def list_curation_tasks(project_id: str, ctx: Context) -> List[Dict[str, Any]]:
     """List all curation tasks for a given project."""
     if not validate_synapse_id(project_id):
         return [{"error": f"Invalid Synapse ID: {project_id}"}]
 
-    return CurationTaskService().list_tasks(ctx, project_id)
+    return await CurationTaskService().list_tasks(ctx, project_id)
 
 
 @mcp.tool(
@@ -345,9 +345,9 @@ def list_curation_tasks(project_id: str, ctx: Context) -> List[Dict[str, Any]]:
         "openWorldHint": True,
     },
 )
-def get_curation_task(task_id: int, ctx: Context) -> Dict[str, Any]:
+async def get_curation_task(task_id: int, ctx: Context) -> Dict[str, Any]:
     """Get a specific curation task by its task ID."""
-    return CurationTaskService().get_task(ctx, task_id)
+    return await CurationTaskService().get_task(ctx, task_id)
 
 
 @mcp.tool(
@@ -364,13 +364,13 @@ def get_curation_task(task_id: int, ctx: Context) -> Dict[str, Any]:
         "openWorldHint": True,
     },
 )
-def get_curation_task_resources(task_id: int, ctx: Context) -> Dict[str, Any]:
+async def get_curation_task_resources(task_id: int, ctx: Context) -> Dict[str, Any]:
     """Get resources associated with a curation task.
 
     For file-based tasks: returns upload folder and file view info.
     For record-based tasks: returns record set info.
     """
-    return CurationTaskService().get_task_resources(ctx, task_id)
+    return await CurationTaskService().get_task_resources(ctx, task_id)
 
 
 __all__ = [

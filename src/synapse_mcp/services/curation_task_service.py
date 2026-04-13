@@ -47,7 +47,7 @@ class CurationTaskService:
         error_context_keys=("project_id",),
         wrap_errors=True,
     )
-    def list_tasks(
+    async def list_tasks(
         self, ctx: Context, project_id: str
     ) -> List[Dict[str, Any]]:
         """List all curation tasks for a project.
@@ -56,17 +56,17 @@ class CurationTaskService:
             ctx: MCP request context for authentication.
             project_id: Synapse project ID (e.g. ``"syn123"``).
         """
-        with synapse_client(ctx) as client:
+        async with synapse_client(ctx) as client:
             return [
                 _format_task(task)
-                for task in CurationTask.list(
+                async for task in CurationTask.list_async(
                     project_id=project_id,
                     synapse_client=client,
                 )
             ]
 
     @error_boundary(error_context_keys=("task_id",))
-    def get_task(
+    async def get_task(
         self, ctx: Context, task_id: int
     ) -> Dict[str, Any]:
         """Retrieve a single curation task by ID.
@@ -75,14 +75,14 @@ class CurationTaskService:
             ctx: MCP request context for authentication.
             task_id: Numeric curation task identifier.
         """
-        with synapse_client(ctx) as client:
-            task = CurationTask(task_id=task_id).get(
+        async with synapse_client(ctx) as client:
+            task = await CurationTask(task_id=task_id).get_async(
                 synapse_client=client,
             )
             return _format_task(task)
 
     @error_boundary(error_context_keys=("task_id",))
-    def get_task_resources(
+    async def get_task_resources(
         self, ctx: Context, task_id: int
     ) -> Dict[str, Any]:
         """Retrieve a curation task and its associated resources.
@@ -91,9 +91,9 @@ class CurationTaskService:
             ctx: MCP request context for authentication.
             task_id: Numeric curation task identifier.
         """
-        with synapse_client(ctx) as client:
+        async with synapse_client(ctx) as client:
             mgr = CurationTaskManager(client)
-            task, resources = mgr.get_task_with_resources(
+            task, resources = await mgr.get_task_with_resources(
                 task_id,
             )
             result = _format_task(task)
