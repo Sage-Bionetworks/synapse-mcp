@@ -19,7 +19,7 @@ class CurationTaskManager:
     def __init__(self, synapse_client: synapseclient.Synapse) -> None:
         self.synapse_client = synapse_client
 
-    def get_task_with_resources(
+    async def get_task_with_resources(
         self, task_id: int
     ) -> Tuple[CurationTask, Dict[str, Any]]:
         """Fetch a curation task and its associated Synapse resources.
@@ -32,20 +32,20 @@ class CurationTaskManager:
         Partial failures are captured — one resource failing does not prevent
         others from being fetched.
         """
-        task = CurationTask(task_id=task_id).get(
+        task = await CurationTask(task_id=task_id).get_async(
             synapse_client=self.synapse_client
         )
 
         resources: Dict[str, Any] = {}
 
         if isinstance(task.task_properties, RecordBasedMetadataTaskProperties):
-            self._fetch_record_based_resources(task, resources)
+            await self._fetch_record_based_resources(task, resources)
         elif isinstance(task.task_properties, FileBasedMetadataTaskProperties):
-            self._fetch_file_based_resources(task, resources)
+            await self._fetch_file_based_resources(task, resources)
 
         return task, resources
 
-    def _fetch_file_based_resources(
+    async def _fetch_file_based_resources(
         self, task: CurationTask, resources: Dict[str, Any]
     ) -> None:
         resources["type"] = "file-based"
@@ -54,7 +54,7 @@ class CurationTaskManager:
 
         if upload_folder_id:
             try:
-                resources["upload_folder"] = Folder(id=upload_folder_id).get(
+                resources["upload_folder"] = await Folder(id=upload_folder_id).get_async(
                     synapse_client=self.synapse_client
                 )
             except Exception as exc:
@@ -65,7 +65,7 @@ class CurationTaskManager:
 
         if file_view_id:
             try:
-                resources["file_view"] = EntityView(id=file_view_id).get(
+                resources["file_view"] = await EntityView(id=file_view_id).get_async(
                     synapse_client=self.synapse_client
                 )
             except Exception as exc:
@@ -74,7 +74,7 @@ class CurationTaskManager:
                     "id": file_view_id,
                 }
 
-    def _fetch_record_based_resources(
+    async def _fetch_record_based_resources(
         self, task: CurationTask, resources: Dict[str, Any]
     ) -> None:
         resources["type"] = "record-based"
@@ -82,9 +82,9 @@ class CurationTaskManager:
 
         if record_set_id:
             try:
-                resources["record_set"] = RecordSet(
+                resources["record_set"] = await RecordSet(
                     id=record_set_id, download_file=False
-                ).get(synapse_client=self.synapse_client)
+                ).get_async(synapse_client=self.synapse_client)
             except Exception as exc:
                 resources["record_set"] = {
                     "error": str(exc),

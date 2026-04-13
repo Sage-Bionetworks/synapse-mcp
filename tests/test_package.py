@@ -15,7 +15,7 @@ class TestPackageInstallation(unittest.TestCase):
         self.assertIsNotNone(utils)
 
         from synapse_mcp import search_synapse
-        self.assertTrue(hasattr(search_synapse, "fn"))
+        self.assertTrue(callable(search_synapse))
 
         from synapse_mcp.services import EntityService
         self.assertIsNotNone(EntityService)

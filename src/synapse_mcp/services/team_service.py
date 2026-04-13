@@ -12,7 +12,7 @@ class TeamService:
     """Orchestrates team read operations."""
 
     @error_boundary(error_context_keys=("team_id", "team_name"))
-    def get_team(
+    async def get_team(
         self,
         ctx: Context,
         team_id: Optional[int] = None,
@@ -33,13 +33,13 @@ class TeamService:
             Returns an error dict if neither argument is
             provided.
         """
-        with synapse_client(ctx) as client:
+        async with synapse_client(ctx) as client:
             if team_id is not None:
-                team = Team.from_id(
+                team = await Team.from_id_async(
                     id=team_id, synapse_client=client
                 )
             elif team_name is not None:
-                team = Team.from_name(
+                team = await Team.from_name_async(
                     name=team_name, synapse_client=client
                 )
             else:
@@ -55,7 +55,7 @@ class TeamService:
         error_context_keys=("team_id",),
         wrap_errors=list,
     )
-    def get_team_members(
+    async def get_team_members(
         self, ctx: Context, team_id: int
     ) -> List[Dict[str, Any]]:
         """List all members of a Team.
@@ -67,9 +67,9 @@ class TeamService:
         Returns:
             List of team member dicts.
         """
-        with synapse_client(ctx) as client:
+        async with synapse_client(ctx) as client:
             team = Team(id=team_id)
-            members = team.members(
+            members = await team.members_async(
                 synapse_client=client,
             )
             return [serialize_model(m) for m in members]
@@ -78,7 +78,7 @@ class TeamService:
         error_context_keys=("team_id",),
         wrap_errors=list,
     )
-    def get_team_open_invitations(
+    async def get_team_open_invitations(
         self, ctx: Context, team_id: int
     ) -> List[Dict[str, Any]]:
         """List pending invitations for a Team.
@@ -90,9 +90,9 @@ class TeamService:
         Returns:
             List of invitation dicts.
         """
-        with synapse_client(ctx) as client:
+        async with synapse_client(ctx) as client:
             team = Team(id=team_id)
-            invitations = team.open_invitations(
+            invitations = await team.open_invitations_async(
                 synapse_client=client,
             )
             return [
@@ -100,7 +100,7 @@ class TeamService:
             ]
 
     @error_boundary(error_context_keys=("team_id",))
-    def get_team_membership_status(
+    async def get_team_membership_status(
         self,
         ctx: Context,
         team_id: int,
@@ -117,9 +117,9 @@ class TeamService:
             Dict with membership status flags
             (is_member, has_open_invitation, etc.).
         """
-        with synapse_client(ctx) as client:
+        async with synapse_client(ctx) as client:
             team = Team(id=team_id)
-            status = team.get_user_membership_status(
+            status = await team.get_user_membership_status_async(
                 user_id=user_id,
                 synapse_client=client,
             )

@@ -5,7 +5,7 @@ import enum
 import functools
 import inspect
 from collections.abc import Mapping
-from contextlib import contextmanager
+from contextlib import asynccontextmanager
 from datetime import date, datetime
 from typing import Any, Callable, Dict, Iterator, Tuple
 
@@ -64,13 +64,13 @@ def collect_generator(gen: Iterator, limit: int = 100) -> list:
     return items
 
 
-@contextmanager
-def synapse_client(ctx: Context):
+@asynccontextmanager
+async def synapse_client(ctx: Context):
     """Yield an authenticated Synapse client for the given request context.
 
     Raises ConnectionAuthError if the client cannot be obtained.
     """
-    yield get_synapse_client(ctx)
+    yield await get_synapse_client(ctx)
 
 
 def serialize_model(obj: Any) -> Any:
@@ -157,7 +157,7 @@ def error_boundary(
         }
 
         @functools.wraps(method)
-        def wrapper(self, ctx, *args, **kwargs):
+        async def wrapper(self, ctx, *args, **kwargs):
             extra: Dict[str, Any] = {}
             for name, pos in context_positions.items():
                 if pos < len(args):
@@ -166,7 +166,7 @@ def error_boundary(
                     extra[name] = kwargs[name]
 
             try:
-                return method(self, ctx, *args, **kwargs)
+                return await method(self, ctx, *args, **kwargs)
             except ConnectionAuthError as exc:
                 err = {
                     "error": f"Authentication required: {exc}",

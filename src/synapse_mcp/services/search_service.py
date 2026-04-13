@@ -30,7 +30,7 @@ class SearchService:
     """Orchestrates Synapse search operations."""
 
     @error_boundary()
-    def search(
+    async def search(
         self,
         ctx: Context,
         query_term: Optional[str] = None,
@@ -59,7 +59,7 @@ class SearchService:
             Dict with found count, start offset, hits
             list, facets, and the query payload used.
         """
-        with synapse_client(ctx) as client:
+        async with synapse_client(ctx) as client:
             sanitized_limit = max(0, min(limit, 100))
             sanitized_offset = max(0, offset)
 
@@ -103,7 +103,7 @@ class SearchService:
             dropped_return_fields: Optional[List[str]] = None
 
             try:
-                response = client.restPOST(
+                response = await client.rest_post_async(
                     "/search", body=json.dumps(request_payload)
                 )
             except Exception as exc:
@@ -121,7 +121,7 @@ class SearchService:
                         for k, v in request_payload.items()
                         if k != "returnFields"
                     }
-                    response = client.restPOST(
+                    response = await client.rest_post_async(
                         "/search", body=json.dumps(fallback_payload)
                     )
                     warnings.append(

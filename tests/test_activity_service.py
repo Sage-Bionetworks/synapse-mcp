@@ -2,10 +2,20 @@
 
 from dataclasses import dataclass, field
 from typing import List, Optional
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from synapse_mcp.connection_auth import ConnectionAuthError
 from synapse_mcp.services.activity_service import ActivityService
+
+import pytest
+
+pytestmark = pytest.mark.anyio("asyncio")
+
+
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
+
 
 TS = "synapse_mcp.services.tool_service"
 SVC = "synapse_mcp.services.activity_service"
@@ -37,17 +47,17 @@ class FakeActivity:
 
 
 class TestGetProvenance:
-    @patch(f"{TS}.get_synapse_client")
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
     @patch(f"{SVC}.Activity")
-    def test_given_entity_with_provenance_when_fetched_then_returns_activity(
+    async def test_given_entity_with_provenance_when_fetched_then_returns_activity(
         self, mock_activity_cls, mock_get_client
     ):
         # GIVEN an entity that has provenance
         mock_get_client.return_value = MagicMock()
-        mock_activity_cls.get.return_value = FakeActivity()
+        mock_activity_cls.get_async = AsyncMock(return_value=FakeActivity())
 
         # WHEN we get provenance
-        result = ActivityService().get_provenance(
+        result = await ActivityService().get_provenance(
             MagicMock(), "syn456"
         )
 
@@ -56,17 +66,17 @@ class TestGetProvenance:
         assert result["activity"]["id"] == "act123"
         assert result["activity"]["name"] == "Analysis Pipeline"
 
-    @patch(f"{TS}.get_synapse_client")
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
     @patch(f"{SVC}.Activity")
-    def test_given_no_provenance_when_fetched_then_returns_error(
+    async def test_given_no_provenance_when_fetched_then_returns_error(
         self, mock_activity_cls, mock_get_client
     ):
         # GIVEN an entity with no provenance
         mock_get_client.return_value = MagicMock()
-        mock_activity_cls.get.return_value = None
+        mock_activity_cls.get_async = AsyncMock(return_value=None)
 
         # WHEN we get provenance
-        result = ActivityService().get_provenance(
+        result = await ActivityService().get_provenance(
             MagicMock(), "syn456"
         )
 
@@ -74,30 +84,30 @@ class TestGetProvenance:
         assert "No provenance record found" in result["error"]
         assert result["entity_id"] == "syn456"
 
-    @patch(f"{TS}.get_synapse_client")
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
     @patch(f"{SVC}.Activity")
-    def test_given_version_when_fetching_then_passes_to_sdk(
+    async def test_given_version_when_fetching_then_passes_to_sdk(
         self, mock_activity_cls, mock_get_client
     ):
         # GIVEN a request for a specific version
         mock_get_client.return_value = MagicMock()
-        mock_activity_cls.get.return_value = FakeActivity()
+        mock_activity_cls.get_async = AsyncMock(return_value=FakeActivity())
 
         # WHEN we get provenance with a version
-        result = ActivityService().get_provenance(
+        result = await ActivityService().get_provenance(
             MagicMock(), "syn456", version=3
         )
 
         # THEN the version is passed and included in response
-        mock_activity_cls.get.assert_called_once_with(
+        mock_activity_cls.get_async.assert_called_once_with(
             parent_id="syn456",
             parent_version_number=3,
             synapse_client=mock_get_client.return_value,
         )
         assert result["version"] == 3
 
-    @patch(f"{TS}.get_synapse_client")
-    def test_given_expired_auth_when_fetching_then_returns_error(
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    async def test_given_expired_auth_when_fetching_then_returns_error(
         self, mock_get_client
     ):
         # GIVEN expired credentials
@@ -106,7 +116,7 @@ class TestGetProvenance:
         )
 
         # WHEN we get provenance
-        result = ActivityService().get_provenance(
+        result = await ActivityService().get_provenance(
             MagicMock(), "syn456"
         )
 
