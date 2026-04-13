@@ -10,7 +10,7 @@ from synapseclient.models import (
     WikiPage,
 )
 
-from .tool_service import error_boundary, serialize_model, synapse_client
+from .tool_service import collect_async_generator, error_boundary, serialize_model, synapse_client
 
 
 class WikiService:
@@ -40,10 +40,12 @@ class WikiService:
             if wiki_id is None:
                 # SDK requires id or title — find root page
                 # from the wiki header tree.
-                headers = list(await WikiHeader.get_async(
-                    owner_id=owner_id,
-                    synapse_client=client,
-                ))
+                headers = await collect_async_generator(
+                    WikiHeader.get_async(
+                        owner_id=owner_id,
+                        synapse_client=client,
+                    )
+                )
                 root = None
                 for h in headers:
                     pid = getattr(h, "parent_id", None)
@@ -90,11 +92,14 @@ class WikiService:
             for each wiki page in the hierarchy.
         """
         async with synapse_client(ctx) as client:
-            headers = await WikiHeader.get_async(
-                owner_id=owner_id,
-                offset=offset,
-                limit=limit,
-                synapse_client=client,
+            headers = await collect_async_generator(
+                WikiHeader.get_async(
+                    owner_id=owner_id,
+                    offset=offset,
+                    limit=limit,
+                    synapse_client=client,
+                ),
+                limit,
             )
             return [
                 serialize_model(h) for h in headers
@@ -126,12 +131,15 @@ class WikiService:
             and modified_by for each revision.
         """
         async with synapse_client(ctx) as client:
-            snapshots = await WikiHistorySnapshot.get_async(
-                owner_id=owner_id,
-                id=wiki_id,
-                offset=offset,
-                limit=limit,
-                synapse_client=client,
+            snapshots = await collect_async_generator(
+                WikiHistorySnapshot.get_async(
+                    owner_id=owner_id,
+                    id=wiki_id,
+                    offset=offset,
+                    limit=limit,
+                    synapse_client=client,
+                ),
+                limit,
             )
             return [
                 serialize_model(s) for s in snapshots
