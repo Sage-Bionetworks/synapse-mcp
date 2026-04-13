@@ -49,10 +49,17 @@ class _OAuthFixupMiddleware:
             return
 
         # --- Fix 2: patch token_endpoint_auth_methods on GET metadata -----
-        if (
-            scope["method"] == "GET"
-            and scope["path"] == "/.well-known/oauth-authorization-server"
+        # Match both the root and path-scoped (RFC 8414) metadata URLs.
+        # Some clients (e.g. Codex CLI) probe the path-scoped variant
+        # ``/.well-known/oauth-authorization-server/mcp`` derived from
+        # the MCP endpoint path.
+        if scope["method"] == "GET" and scope["path"] in (
+            "/.well-known/oauth-authorization-server",
+            "/.well-known/oauth-authorization-server/mcp",
         ):
+            # Rewrite the path-scoped URL to the root so the downstream
+            # FastMCP OAuth handler serves the metadata for both paths.
+            scope["path"] = "/.well-known/oauth-authorization-server"
             await self._handle_metadata(scope, receive, send)
             return
 
@@ -209,10 +216,11 @@ class _OAuthFixupMiddleware:
                     resp_data.get("client_id", "?"),
                 )
             except (json.JSONDecodeError, TypeError):
-                logger.info("OAuth /register response: HTTP %s", response_status)
+                logger.info("OAuth /register response: HTTP %s",
+                            response_status)
 
     async def _handle_metadata(self, scope, receive, send):
-        """Add ``"none"`` to ``token_endpoint_auth_methods_supported``."""
+        """Patch authorization-server metadata for client compatibility."""
         response_parts: list[bytes] = []
         response_start = None
 
@@ -227,6 +235,7 @@ class _OAuthFixupMiddleware:
                     body = b"".join(response_parts)
                     try:
                         data = json.loads(body)
+                        patched = False
                         methods = data.get(
                             "token_endpoint_auth_methods_supported", []
                         )
@@ -234,10 +243,29 @@ class _OAuthFixupMiddleware:
                             data["token_endpoint_auth_methods_supported"] = (
                                 methods + ["none"]
                             )
-                            body = json.dumps(data).encode()
+                            patched = True
                             logger.debug(
                                 "Patched token_endpoint_auth_methods_supported"
                             )
+
+                        # Workaround for openai/codex#15643: Codex CLI
+                        # reads scopes_supported from the authorization
+                        # server metadata instead of the protected resource
+                        # metadata as the MCP spec requires. Inject
+                        # scopes_supported here so Codex registers OAuth
+                        # apps with the correct scopes.
+                        if "scopes_supported" not in data:
+                            data["scopes_supported"] = sorted(
+                                self.SUPPORTED_SCOPES
+                            )
+                            patched = True
+                            logger.debug(
+                                "Injected scopes_supported into "
+                                "authorization server metadata"
+                            )
+
+                        if patched:
+                            body = json.dumps(data).encode()
                     except (json.JSONDecodeError, TypeError):
                         pass
 
@@ -353,7 +381,7 @@ async def oauth_protected_resource_root(request: Request) -> JSONResponse:
         {
             "resource": resource_url,
             "authorization_servers": [f"{base_url}/"],
-            "scopes_supported": ["openid", "view"],
+            "scopes_supported": sorted(_OAuthFixupMiddleware.SUPPORTED_SCOPES),
             "bearer_methods_supported": ["header"],
         }
     )

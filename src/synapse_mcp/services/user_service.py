@@ -12,7 +12,7 @@ class UserService:
     """Orchestrates user profile read operations."""
 
     @error_boundary(error_context_keys=("user_id", "username"))
-    def get_user_profile(
+    async def get_user_profile(
         self,
         ctx: Context,
         user_id: Optional[int] = None,
@@ -31,25 +31,25 @@ class UserService:
             neither argument is provided, returns the
             authenticated user's own profile.
         """
-        with synapse_client(ctx) as client:
+        async with synapse_client(ctx) as client:
             if user_id is not None:
-                profile = UserProfile.from_id(
+                profile = await UserProfile.from_id_async(
                     user_id=user_id,
                     synapse_client=client,
                 )
             elif username is not None:
-                profile = UserProfile.from_username(
+                profile = await UserProfile.from_username_async(
                     username=username,
                     synapse_client=client,
                 )
             else:
-                profile = UserProfile().get(
+                profile = await UserProfile().get_async(
                     synapse_client=client,
                 )
             return serialize_model(profile)
 
     @error_boundary(error_context_keys=("user_id",))
-    def is_user_certified(
+    async def is_user_certified(
         self, ctx: Context, user_id: int
     ) -> Dict[str, Any]:
         """Check if a Synapse user is certified.
@@ -61,9 +61,9 @@ class UserService:
         Returns:
             Dict with user_id and is_certified boolean.
         """
-        with synapse_client(ctx) as client:
+        async with synapse_client(ctx) as client:
             profile = UserProfile(id=user_id)
-            certified = profile.is_certified(
+            certified = await profile.is_certified_async(
                 synapse_client=client,
             )
             return {

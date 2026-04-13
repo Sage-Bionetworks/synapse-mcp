@@ -2,6 +2,7 @@
 
 import logging
 import os
+from collections.abc import Mapping
 from typing import Optional
 
 from .config import load_oauth_settings, should_skip_oauth
@@ -75,6 +76,8 @@ def create_oauth_proxy(env: Optional[dict[str, str]] = None):
         required_scopes=["openid", "view"],
     )
 
+    client_storage = _create_redis_storage(env_dict, settings.client_secret)
+
     auth = SessionAwareOAuthProxy(
         upstream_authorization_endpoint=endpoints["authorization_endpoint"],
         upstream_token_endpoint=endpoints["token_endpoint"],
@@ -83,9 +86,64 @@ def create_oauth_proxy(env: Optional[dict[str, str]] = None):
         redirect_path="/oauth/callback",
         token_verifier=jwt_verifier,
         base_url=settings.server_url,
+        client_storage=client_storage,
     )
 
     return auth
+
+
+def _create_redis_storage(env: Mapping[str, str], client_secret: str):
+    """Create a Redis-backed encrypted storage for OAuth state.
+
+    When REDIS_URL is available, returns a FernetEncryptionWrapper around
+    a RedisStore so that upstream tokens, JTI mappings, and refresh tokens
+    survive container restarts. Falls back to None (FastMCP's default
+    ephemeral DiskStore) when Redis is not configured.
+    """
+    redis_url = env.get("REDIS_URL")
+    if not redis_url:
+        logger.info(
+            "No REDIS_URL configured — using default ephemeral DiskStore "
+            "for OAuth state"
+        )
+        return None
+
+    try:
+        from cryptography.fernet import Fernet
+        from fastmcp.server.auth.jwt_issuer import derive_jwt_key
+        from key_value.aio.stores.redis import RedisStore
+        from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
+        from redis.asyncio import Redis
+    except ImportError:
+        logger.warning(
+            "RedisStore not available — using default ephemeral DiskStore "
+            "for OAuth state"
+        )
+        return None
+
+    # Match FastMCP's two-step key derivation:
+    # 1) client_secret -> jwt_signing_key (same as OAuthProxy.__init__)
+    # 2) jwt_signing_key -> storage_encryption_key
+    jwt_signing_key = derive_jwt_key(
+        high_entropy_material=client_secret,
+        salt="fastmcp-jwt-signing-key",
+    )
+    encryption_key = derive_jwt_key(
+        high_entropy_material=jwt_signing_key.decode(),
+        salt="fastmcp-storage-encryption-key",
+    )
+    # Build the Redis client ourselves via from_url() so that rediss:// URLs
+    # (TLS — required by AWS ElastiCache / Valkey) are handled correctly.
+    # The key_value RedisStore parses the URL manually and drops the scheme,
+    # so TLS connections hang instead of completing the handshake.
+    redis_client = Redis.from_url(redis_url, decode_responses=True)
+    redis_store = RedisStore(client=redis_client, default_collection="synapse-mcp-oauth")
+    storage = FernetEncryptionWrapper(
+        key_value=redis_store,
+        fernet=Fernet(key=encryption_key),
+    )
+    logger.info("Using Redis-backed encrypted storage for OAuth state")
+    return storage
 
 
 __all__ = ["create_oauth_proxy"]

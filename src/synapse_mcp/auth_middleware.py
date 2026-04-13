@@ -192,7 +192,7 @@ class OAuthTokenMiddleware(Middleware):
 
         # Store validated token in context for connection_auth to use
         if hasattr(fast_ctx, "set_state"):
-            fast_ctx.set_state("oauth_access_token", token)
+            await fast_ctx.set_state("oauth_access_token", token)
             logger.debug("Stored validated OAuth token in context")
         else:
             logger.warning(
@@ -393,7 +393,7 @@ class PATAuthMiddleware(Middleware):
             return
 
         if hasattr(fast_ctx, "set_state"):
-            fast_ctx.set_state("synapse_pat_token", self.synapse_pat)
+            await fast_ctx.set_state("synapse_pat_token", self.synapse_pat)
             logger.debug("Injected PAT token into context")
         else:
             logger.warning(

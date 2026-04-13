@@ -14,7 +14,7 @@ class EvaluationService:
     @error_boundary(
         error_context_keys=("evaluation_id", "evaluation_name")
     )
-    def get_evaluation(
+    async def get_evaluation(
         self,
         ctx: Context,
         evaluation_id: Optional[str] = None,
@@ -30,13 +30,13 @@ class EvaluationService:
         Returns:
             Dict with evaluation metadata.
         """
-        with synapse_client(ctx) as client:
+        async with synapse_client(ctx) as client:
             if evaluation_id is not None:
-                ev = Evaluation(id=evaluation_id).get(
+                ev = await Evaluation(id=evaluation_id).get_async(
                     synapse_client=client,
                 )
             elif evaluation_name is not None:
-                ev = Evaluation(name=evaluation_name).get(
+                ev = await Evaluation(name=evaluation_name).get_async(
                     synapse_client=client,
                 )
             else:
@@ -49,7 +49,7 @@ class EvaluationService:
             return serialize_model(ev)
 
     @error_boundary(wrap_errors=list)
-    def list_evaluations(
+    async def list_evaluations(
         self,
         ctx: Context,
         project_id: Optional[str] = None,
@@ -76,9 +76,9 @@ class EvaluationService:
         Returns:
             List of evaluation dicts.
         """
-        with synapse_client(ctx) as client:
+        async with synapse_client(ctx) as client:
             if project_id is not None:
-                evals = Evaluation.get_evaluations_by_project(
+                evals = await Evaluation.get_evaluations_by_project_async(
                     project_id=project_id,
                     access_type=access_type,
                     active_only=active_only,
@@ -88,7 +88,7 @@ class EvaluationService:
                     synapse_client=client,
                 )
             elif available_only:
-                evals = Evaluation.get_available_evaluations(
+                evals = await Evaluation.get_available_evaluations_async(
                     active_only=active_only,
                     evaluation_ids=evaluation_ids,
                     offset=offset,
@@ -96,7 +96,7 @@ class EvaluationService:
                     synapse_client=client,
                 )
             else:
-                evals = Evaluation.get_all_evaluations(
+                evals = await Evaluation.get_all_evaluations_async(
                     access_type=access_type,
                     active_only=active_only,
                     evaluation_ids=evaluation_ids,
@@ -107,7 +107,7 @@ class EvaluationService:
             return [serialize_model(e) for e in evals]
 
     @error_boundary(error_context_keys=("evaluation_id",))
-    def get_evaluation_acl(
+    async def get_evaluation_acl(
         self, ctx: Context, evaluation_id: str
     ) -> Dict[str, Any]:
         """Get the ACL for an Evaluation queue.
@@ -119,16 +119,16 @@ class EvaluationService:
         Returns:
             Dict with ACL information.
         """
-        with synapse_client(ctx) as client:
+        async with synapse_client(ctx) as client:
             ev = Evaluation(id=evaluation_id)
-            acl = ev.get_acl(synapse_client=client)
+            acl = await ev.get_acl_async(synapse_client=client)
             return {
                 "evaluation_id": evaluation_id,
                 "acl": serialize_model(acl),
             }
 
     @error_boundary(error_context_keys=("evaluation_id",))
-    def get_evaluation_permissions(
+    async def get_evaluation_permissions(
         self, ctx: Context, evaluation_id: str
     ) -> Dict[str, Any]:
         """Get current user's permissions on an Evaluation.
@@ -140,9 +140,9 @@ class EvaluationService:
         Returns:
             Dict with permission flags.
         """
-        with synapse_client(ctx) as client:
+        async with synapse_client(ctx) as client:
             ev = Evaluation(id=evaluation_id)
-            perms = ev.get_permissions(
+            perms = await ev.get_permissions_async(
                 synapse_client=client,
             )
             return {

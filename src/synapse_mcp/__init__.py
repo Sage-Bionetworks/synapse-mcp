@@ -59,7 +59,6 @@ from .tools import (
     list_submission_statuses,
     md5_query,
     search_synapse,
-    sync_container,
 )
 
 __all__ = [
@@ -121,6 +120,5 @@ __all__ = [
     "md5_query",
     "require_request_context",
     "search_synapse",
-    "sync_container",
     "synapse_blog_feed",
 ]
