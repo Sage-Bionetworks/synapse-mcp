@@ -30,7 +30,6 @@ from .tools import (
     list_curation_tasks,
     list_entity_acl,
     search_synapse,
-    sync_container,
 )
 
 __all__ = [
@@ -63,6 +62,5 @@ __all__ = [
     "mcp",
     "require_request_context",
     "search_synapse",
-    "sync_container",
     "synapse_blog_feed",
 ]
