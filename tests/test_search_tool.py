@@ -1,7 +1,9 @@
 """Tests for search_synapse tool via SearchService."""
 
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from synapse_mcp.connection_auth import ConnectionAuthError
 from synapse_mcp.services.search_service import (
@@ -9,20 +11,28 @@ from synapse_mcp.services.search_service import (
     SearchService,
 )
 
+pytestmark = pytest.mark.anyio("asyncio")
+
+
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
+
+
 TS = "synapse_mcp.services.tool_service"
 SVC = "synapse_mcp.services.search_service"
 
 
 class TestSearchService:
-    @patch(f"{TS}.get_synapse_client")
-    def test_given_search_params_when_searching_then_builds_correct_payload(
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    async def test_given_search_params_when_searching_then_builds_correct_payload(
         self, mock_get_client
     ):
         # GIVEN a Synapse client that captures the search request
         captured = {}
 
         class FakeClient:
-            def restPOST(self, path, body):
+            async def rest_post_async(self, path, body):
                 captured["path"] = path
                 captured["body"] = json.loads(body)
                 return {
@@ -37,7 +47,7 @@ class TestSearchService:
         mock_get_client.return_value = FakeClient()
 
         # WHEN we search with various filters
-        result = SearchService().search(
+        result = await SearchService().search(
             MagicMock(),
             query_term="Cancer",
             name="Cancer",
@@ -58,8 +68,8 @@ class TestSearchService:
         assert {"key": "path", "value": "syn123"} in payload["booleanQuery"]
         assert result["hits"][0]["id"] == "syn999"
 
-    @patch(f"{TS}.get_synapse_client")
-    def test_given_invalid_return_fields_when_searching_then_retries_without_fields(
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    async def test_given_invalid_return_fields_when_searching_then_retries_without_fields(
         self, mock_get_client
     ):
         # GIVEN a client that rejects return fields on first call
@@ -67,7 +77,7 @@ class TestSearchService:
             def __init__(self):
                 self.calls = 0
 
-            def restPOST(self, path, body):
+            async def rest_post_async(self, path, body):
                 self.calls += 1
                 if self.calls == 1:
                     raise Exception(
@@ -78,22 +88,22 @@ class TestSearchService:
         mock_get_client.return_value = FakeClient()
 
         # WHEN we search
-        result = SearchService().search(MagicMock())
+        result = await SearchService().search(MagicMock())
 
         # THEN the result includes warnings about dropped fields
         assert result["original_query"]["returnFields"] == DEFAULT_RETURN_FIELDS
         assert result["dropped_return_fields"] == DEFAULT_RETURN_FIELDS
         assert result["warnings"]
 
-    @patch(f"{TS}.get_synapse_client")
-    def test_given_expired_auth_when_searching_then_returns_error_dict(
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    async def test_given_expired_auth_when_searching_then_returns_error_dict(
         self, mock_get_client
     ):
         # GIVEN expired credentials
         mock_get_client.side_effect = ConnectionAuthError("missing context")
 
         # WHEN we search
-        result = SearchService().search(MagicMock())
+        result = await SearchService().search(MagicMock())
 
         # THEN an auth error is returned
         assert "error" in result

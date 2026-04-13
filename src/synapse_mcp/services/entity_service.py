@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional
 
 from fastmcp import Context
 from synapseclient.models import File, Folder, Link, Project
-from synapseclient.operations import get as operations_get
+from synapseclient.operations import get_async as operations_get_async
 from synapseclient.operations.factory_operations import (
     FileOptions,
     LinkOptions,
@@ -41,7 +41,7 @@ class EntityService:
     """Orchestrates entity read operations."""
 
     @error_boundary(error_context_keys=("entity_id",))
-    def get_entity(
+    async def get_entity(
         self, ctx: Context, entity_id: str
     ) -> Dict[str, Any]:
         """Get entity metadata by Synapse ID.
@@ -58,8 +58,8 @@ class EntityService:
             Dict with entity metadata (id, name, type,
             parentId, timestamps, etc.).
         """
-        with synapse_client(ctx) as client:
-            entity = operations_get(
+        async with synapse_client(ctx) as client:
+            entity = await operations_get_async(
                 entity_id,
                 file_options=FileOptions(
                     download_file=False,
@@ -69,7 +69,7 @@ class EntityService:
             return serialize_model(entity)
 
     @error_boundary(error_context_keys=("entity_id",))
-    def get_annotations(
+    async def get_annotations(
         self, ctx: Context, entity_id: str
     ) -> Dict[str, Any]:
         """Get custom annotations for an entity.
@@ -85,8 +85,8 @@ class EntityService:
         Returns:
             Dict mapping annotation keys to their values.
         """
-        with synapse_client(ctx) as client:
-            entity = operations_get(
+        async with synapse_client(ctx) as client:
+            entity = await operations_get_async(
                 entity_id,
                 file_options=FileOptions(
                     download_file=False,
@@ -102,7 +102,7 @@ class EntityService:
         error_context_keys=("entity_id",),
         wrap_errors=True,
     )
-    def get_children(
+    async def get_children(
         self, ctx: Context, entity_id: str
     ) -> List[Dict[str, Any]]:
         """List immediate children of a container entity.
@@ -121,10 +121,10 @@ class EntityService:
             Returns an error dict inside a list if the
             entity is not a container.
         """
-        with synapse_client(ctx) as client:
+        async with synapse_client(ctx) as client:
             container = Folder(id=entity_id)
             children: List[Dict[str, Any]] = []
-            for _path_info, folders, files in container.walk(
+            async for _path_info, folders, files in container.walk_async(
                 recursive=False,
                 synapse_client=client,
             ):
@@ -139,7 +139,7 @@ class EntityService:
             return children
 
     @error_boundary(error_context_keys=("entity_id",))
-    def get_acl(
+    async def get_acl(
         self,
         ctx: Context,
         entity_id: str,
@@ -157,9 +157,9 @@ class EntityService:
             Dict with entity_id, principal_id, and a list
             of access_types (e.g. READ, UPDATE, DELETE).
         """
-        with synapse_client(ctx) as client:
+        async with synapse_client(ctx) as client:
             entity = File(id=entity_id)
-            access_types = entity.get_acl(
+            access_types = await entity.get_acl_async(
                 principal_id=principal_id,
                 synapse_client=client,
             )
@@ -170,7 +170,7 @@ class EntityService:
             }
 
     @error_boundary(error_context_keys=("entity_id",))
-    def get_permissions(
+    async def get_permissions(
         self, ctx: Context, entity_id: str
     ) -> Dict[str, Any]:
         """Get current user's permissions on an entity.
@@ -183,9 +183,9 @@ class EntityService:
             Dict with entity_id and boolean permission
             flags (can_view, can_edit, can_download, etc.).
         """
-        with synapse_client(ctx) as client:
+        async with synapse_client(ctx) as client:
             entity = File(id=entity_id)
-            permissions = entity.get_permissions(
+            permissions = await entity.get_permissions_async(
                 synapse_client=client,
             )
             result = serialize_model(permissions)
@@ -193,7 +193,7 @@ class EntityService:
             return result
 
     @error_boundary(error_context_keys=("entity_id",))
-    def list_acl(
+    async def list_acl(
         self,
         ctx: Context,
         entity_id: str,
@@ -212,9 +212,9 @@ class EntityService:
             entries) and all_entity_acls (includes
             descendants if recursive).
         """
-        with synapse_client(ctx) as client:
+        async with synapse_client(ctx) as client:
             entity = File(id=entity_id)
-            acl_result = entity.list_acl(
+            acl_result = await entity.list_acl_async(
                 recursive=recursive,
                 synapse_client=client,
             )
@@ -224,7 +224,7 @@ class EntityService:
             return result
 
     @error_boundary(error_context_keys=("entity_id",))
-    def get_schema(
+    async def get_schema(
         self, ctx: Context, entity_id: str
     ) -> Dict[str, Any]:
         """Get the bound JSON schema for an entity.
@@ -238,9 +238,9 @@ class EntityService:
             Dict with JSON schema binding info
             (organization, schema name, version, etc.).
         """
-        with synapse_client(ctx) as client:
+        async with synapse_client(ctx) as client:
             entity = File(id=entity_id)
-            schema_info = entity.get_schema(
+            schema_info = await entity.get_schema_async(
                 synapse_client=client,
             )
             result = serialize_model(schema_info)
@@ -249,7 +249,7 @@ class EntityService:
             return result
 
     @error_boundary(error_context_keys=("entity_id",))
-    def get_schema_derived_keys(
+    async def get_schema_derived_keys(
         self, ctx: Context, entity_id: str
     ) -> Dict[str, Any]:
         """Get derived annotation keys from a bound schema.
@@ -263,9 +263,9 @@ class EntityService:
             Dict with entity_id and a list of
             derived_keys.
         """
-        with synapse_client(ctx) as client:
+        async with synapse_client(ctx) as client:
             entity = File(id=entity_id)
-            keys = entity.get_schema_derived_keys(
+            keys = await entity.get_schema_derived_keys_async(
                 synapse_client=client,
             )
             return {
@@ -274,7 +274,7 @@ class EntityService:
             }
 
     @error_boundary(error_context_keys=("entity_id",))
-    def get_schema_validation_statistics(
+    async def get_schema_validation_statistics(
         self, ctx: Context, entity_id: str
     ) -> Dict[str, Any]:
         """Get schema validation stats for a container.
@@ -288,9 +288,9 @@ class EntityService:
             Dict with validation statistics (counts of
             valid, invalid, unknown entities).
         """
-        with synapse_client(ctx) as client:
+        async with synapse_client(ctx) as client:
             container = Folder(id=entity_id)
-            stats = container.get_schema_validation_statistics(
+            stats = await container.get_schema_validation_statistics_async(
                 synapse_client=client,
             )
             result = serialize_model(stats)
@@ -302,7 +302,7 @@ class EntityService:
         error_context_keys=("entity_id",),
         wrap_errors=True,
     )
-    def get_schema_invalid_validations(
+    async def get_schema_invalid_validations(
         self, ctx: Context, entity_id: str
     ) -> List[Dict[str, Any]]:
         """Get invalid validation results for a container.
@@ -316,9 +316,9 @@ class EntityService:
             List of dicts describing entities that failed
             validation.
         """
-        with synapse_client(ctx) as client:
+        async with synapse_client(ctx) as client:
             container = Folder(id=entity_id)
-            results = container.get_invalid_validation(
+            results = await container.get_invalid_validation_async(
                 synapse_client=client,
             )
             return [
@@ -326,50 +326,7 @@ class EntityService:
             ]
 
     @error_boundary(error_context_keys=("entity_id",))
-    def sync_container(
-        self,
-        ctx: Context,
-        entity_id: str,
-        recursive: bool = False,
-        include_types: Optional[List[str]] = None,
-        follow_link: bool = False,
-    ) -> Dict[str, Any]:
-        """Retrieve full metadata tree for a container.
-
-        Uses sync_from_synapse with download_file=False to
-        populate all child entity lists without downloading
-        file content.
-
-        Arguments:
-            ctx: The FastMCP request context.
-            entity_id: Synapse ID of a Folder or Project.
-            recursive: Traverse subdirectories
-                (default False). Warning: may be slow on
-                large containers.
-            include_types: Entity types to include
-                (default all).
-            follow_link: Resolve Link entities
-                (default False).
-
-        Returns:
-            Dict with container metadata and child entity
-            lists (files, folders, tables, entityviews,
-            etc.).
-        """
-        with synapse_client(ctx) as client:
-            container = Folder(id=entity_id)
-            container.sync_from_synapse(
-                download_file=False,
-                recursive=recursive,
-                include_types=include_types,
-                follow_link=follow_link,
-                synapse_client=client,
-            )
-            result = serialize_model(container)
-            return result
-
-    @error_boundary(error_context_keys=("entity_id",))
-    def get_link(
+    async def get_link(
         self,
         ctx: Context,
         entity_id: str,
@@ -392,8 +349,8 @@ class EntityService:
             Dict with the resolved target entity or the
             Link entity metadata.
         """
-        with synapse_client(ctx) as client:
-            resolved = operations_get(
+        async with synapse_client(ctx) as client:
+            resolved = await operations_get_async(
                 entity_id,
                 link_options=LinkOptions(
                     follow_link=follow_link,
