@@ -1,19 +1,30 @@
 """Public exports for the Synapse MCP package."""
 
 from .app import auth, health_check, mcp
-from .connection_auth import get_synapse_client
+from .connection_auth import ConnectionAuthError, get_synapse_client
 from .context_helpers import (
-    ConnectionAuthError,
     first_successful_result,
-    get_entity_operations,
     get_request_context,
     require_request_context,
 )
 from .resources import synapse_blog_feed
 from .tools import (
+    get_activity,
+    get_curation_task,
+    get_curation_task_resources,
     get_entity,
+    get_entity_acl,
     get_entity_annotations,
     get_entity_children,
+    get_entity_permissions,
+    get_entity_provenance,
+    get_entity_schema,
+    get_entity_schema_derived_keys,
+    get_entity_schema_invalid_validations,
+    get_entity_schema_validation_statistics,
+    get_link,
+    list_curation_tasks,
+    list_entity_acl,
     search_synapse,
 )
 
@@ -21,13 +32,25 @@ __all__ = [
     "auth",
     "ConnectionAuthError",
     "first_successful_result",
+    "get_activity",
+    "get_curation_task",
+    "get_curation_task_resources",
     "get_entity",
+    "get_entity_acl",
     "get_entity_annotations",
     "get_entity_children",
-    "get_entity_operations",
+    "get_entity_permissions",
+    "get_entity_provenance",
+    "get_entity_schema",
+    "get_entity_schema_derived_keys",
+    "get_entity_schema_invalid_validations",
+    "get_entity_schema_validation_statistics",
+    "get_link",
     "get_synapse_client",
     "get_request_context",
     "health_check",
+    "list_curation_tasks",
+    "list_entity_acl",
     "mcp",
     "require_request_context",
     "search_synapse",
