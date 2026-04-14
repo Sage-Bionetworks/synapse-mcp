@@ -117,30 +117,38 @@ class TestGetAnnotations:
 class TestGetChildren:
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
     @patch(f"{SVC}.Folder")
-    async def test_given_container_with_children_when_listed_then_returns_list(
+    async def test_given_container_with_children_when_listed_then_returns_all_types(
         self, mock_folder_cls, mock_get_client
     ):
         mock_get_client.return_value = MagicMock()
-        path_info = ("My Folder", "syn789")
-        folder_headers = [
+        container = mock_folder_cls.return_value
+        container.sync_from_synapse_async = AsyncMock()
+        container.folders = [
             FakeEntityHeader(id="syn100", name="Folder1", type="folder"),
         ]
-        file_headers = [
+        container.files = [
             FakeEntityHeader(id="syn101", name="File1", type="file"),
         ]
-
-        async def _walk(**kw):
-            yield (path_info, folder_headers, file_headers)
-
-        mock_folder_cls.return_value.walk_async = _walk
+        container.tables = [
+            FakeEntityHeader(id="syn102", name="Table1", type="table"),
+        ]
+        container.entityviews = []
+        container.submissionviews = []
+        container.datasets = []
+        container.datasetcollections = []
+        container.materializedviews = []
+        container.virtualtables = []
 
         result = await EntityService().get_children(MagicMock(), "syn789")
 
-        assert len(result) == 2
-        assert result[0]["id"] == "syn100"
-        assert result[0]["name"] == "Folder1"
-        assert result[1]["id"] == "syn101"
-        assert result[1]["name"] == "File1"
+        assert len(result) == 3
+        ids = {r["id"] for r in result}
+        assert ids == {"syn100", "syn101", "syn102"}
+        container.sync_from_synapse_async.assert_called_once_with(
+            download_file=False,
+            recursive=False,
+            synapse_client=mock_get_client.return_value,
+        )
 
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
     @patch(f"{SVC}.Folder")
@@ -148,11 +156,12 @@ class TestGetChildren:
         self, mock_folder_cls, mock_get_client
     ):
         mock_get_client.return_value = MagicMock()
-
-        async def _walk(**kw):
-            yield (("Empty", "syn100"), [], [])
-
-        mock_folder_cls.return_value.walk_async = _walk
+        container = mock_folder_cls.return_value
+        container.sync_from_synapse_async = AsyncMock()
+        for attr in ("files", "folders", "tables", "entityviews",
+                     "submissionviews", "datasets", "datasetcollections",
+                     "materializedviews", "virtualtables"):
+            setattr(container, attr, [])
 
         result = await EntityService().get_children(MagicMock(), "syn100")
 
