@@ -68,7 +68,7 @@ async def collect_async_generator(gen: AsyncIterator, limit: int = 100) -> list:
     """Collect up to *limit* items from an async generator.
 
     Async counterpart of ``collect_generator`` for SDK methods that
-    return ``AsyncGenerator`` (e.g. ``WikiHeader.get_async``).
+    return ``AsyncGenerator``.
     """
     items: list = []
     async for item in gen:
