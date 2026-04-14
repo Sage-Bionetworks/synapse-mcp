@@ -2,6 +2,10 @@ from .activity_service import ActivityService
 from .curation_task_service import CurationTaskService
 from .entity_service import EntityService
 from .evaluation_service import EvaluationService
+from .form_service import FormService
+from .schema_organization_service import (
+    SchemaOrganizationService,
+)
 from .search_service import SearchService
 from .submission_service import SubmissionService
 from .team_service import TeamService
@@ -14,6 +18,8 @@ __all__ = [
     "CurationTaskService",
     "EntityService",
     "EvaluationService",
+    "FormService",
+    "SchemaOrganizationService",
     "SearchService",
     "SubmissionService",
     "TeamService",
