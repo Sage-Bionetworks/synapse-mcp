@@ -10,6 +10,7 @@ from .services import (
     CurationTaskService,
     EntityService,
     SearchService,
+    WikiService,
 )
 from .utils import validate_synapse_id
 
@@ -339,6 +340,99 @@ async def get_link(
     return await EntityService().get_link(
         ctx, entity_id, follow_link
     )
+
+
+# ---------------------------------------------------------------------------
+# Domain 8: Wiki
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(
+    title="Get Wiki Page",
+    description=(
+        "Get a wiki page's content (markdown) and "
+        "metadata for any Synapse entity. If wiki_id "
+        "is omitted, returns the root wiki page."
+    ),
+    annotations=_RO,
+)
+async def get_wiki_page(
+    owner_id: str,
+    ctx: Context,
+    wiki_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Get a wiki page's content and metadata."""
+    if not validate_synapse_id(owner_id):
+        return {"error": f"Invalid Synapse ID: {owner_id}"}
+    return await WikiService().get_wiki_page(
+        ctx, owner_id, wiki_id
+    )
+
+
+@mcp.tool(
+    title="Get Wiki Headers",
+    description=(
+        "Get the hierarchical table of contents "
+        "(wiki page tree) for a Synapse entity. "
+        "If the result set hits the limit, call again "
+        "with a higher offset to retrieve the next page."
+    ),
+    annotations=_RO,
+)
+async def get_wiki_headers(
+    owner_id: str,
+    ctx: Context,
+    offset: int = 0,
+    limit: int = 50,
+) -> List[Dict[str, Any]]:
+    """Get the wiki table of contents for an entity."""
+    if not validate_synapse_id(owner_id):
+        return [{"error": f"Invalid Synapse ID: {owner_id}"}]
+    return await WikiService().get_wiki_headers(
+        ctx, owner_id, offset, limit
+    )
+
+
+@mcp.tool(
+    title="Get Wiki History",
+    description=(
+        "Get the revision history of a specific "
+        "wiki page. If the result set hits the limit, "
+        "call again with a higher offset to retrieve "
+        "the next page."
+    ),
+    annotations=_RO,
+)
+async def get_wiki_history(
+    owner_id: str,
+    wiki_id: str,
+    ctx: Context,
+    offset: int = 0,
+    limit: int = 50,
+) -> List[Dict[str, Any]]:
+    """Get revision history of a wiki page."""
+    if not validate_synapse_id(owner_id):
+        return [{"error": f"Invalid Synapse ID: {owner_id}"}]
+    return await WikiService().get_wiki_history(
+        ctx, owner_id, wiki_id, offset, limit
+    )
+
+
+@mcp.tool(
+    title="Get Wiki Order Hint",
+    description=(
+        "Get the display ordering of wiki sub-pages "
+        "for a Synapse entity."
+    ),
+    annotations=_RO,
+)
+async def get_wiki_order_hint(
+    owner_id: str, ctx: Context
+) -> Dict[str, Any]:
+    """Get wiki page display ordering."""
+    if not validate_synapse_id(owner_id):
+        return {"error": f"Invalid Synapse ID: {owner_id}"}
+    return await WikiService().get_wiki_order_hint(ctx, owner_id)
 
 
 # ---------------------------------------------------------------------------

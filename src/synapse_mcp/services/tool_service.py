@@ -7,7 +7,7 @@ import inspect
 from collections.abc import Mapping
 from contextlib import asynccontextmanager
 from datetime import date, datetime
-from typing import Any, Callable, Dict, Iterator, Tuple
+from typing import Any, AsyncIterator, Callable, Dict, Iterator, Tuple
 
 from fastmcp import Context
 
@@ -58,6 +58,20 @@ def collect_generator(gen: Iterator, limit: int = 100) -> list:
     """
     items: list = []
     for item in gen:
+        items.append(item)
+        if len(items) >= limit:
+            break
+    return items
+
+
+async def collect_async_generator(gen: AsyncIterator, limit: int = 100) -> list:
+    """Collect up to *limit* items from an async generator.
+
+    Async counterpart of ``collect_generator`` for SDK methods that
+    return ``AsyncGenerator`` (e.g. ``WikiHeader.get_async``).
+    """
+    items: list = []
+    async for item in gen:
         items.append(item)
         if len(items) >= limit:
             break
