@@ -105,37 +105,32 @@ class EntityService:
     async def get_children(
         self, ctx: Context, entity_id: str
     ) -> List[Dict[str, Any]]:
-        """List immediate children of a container entity.
+        """List all immediate children of a container entity.
 
-        Uses ``Folder(id=...).walk(recursive=False)`` which
-        yields ``(path_info, folders, files)`` tuples where
-        folders and files are lists of ``EntityHeader``
-        dataclasses.
+        Uses ``sync_from_synapse_async(recursive=False)`` to
+        populate every child list (files, folders, tables,
+        views, datasets, etc.) without downloading content.
 
         Arguments:
             ctx: The FastMCP request context.
             entity_id: Synapse ID of a Project or Folder.
 
         Returns:
-            List of child entity dicts (id, name, type).
-            Returns an error dict inside a list if the
-            entity is not a container.
+            List of child entity dicts covering all entity
+            types. Returns an error dict inside a list if
+            the entity is not a container.
         """
         async with synapse_client(ctx) as client:
             container = Folder(id=entity_id)
-            children: List[Dict[str, Any]] = []
-            async for _path_info, folders, files in container.walk_async(
+            await container.sync_from_synapse_async(
+                download_file=False,
                 recursive=False,
                 synapse_client=client,
-            ):
-                for header in folders:
-                    children.append(
-                        serialize_model(header)
-                    )
-                for header in files:
-                    children.append(
-                        serialize_model(header)
-                    )
+            )
+            children: List[Dict[str, Any]] = []
+            for attr in _CONTAINER_CHILD_ATTRS:
+                for item in getattr(container, attr, []) or []:
+                    children.append(serialize_model(item))
             return children
 
     @error_boundary(error_context_keys=("entity_id",))

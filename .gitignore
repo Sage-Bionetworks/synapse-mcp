@@ -45,6 +45,7 @@ venv.bak/
 .env.development.local
 .env.test.local
 .env.production.local
+.coverage
 
 # Croissant metadata output
 croissant_metadata.json
