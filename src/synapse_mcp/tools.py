@@ -10,6 +10,8 @@ from .services import (
     CurationTaskService,
     EntityService,
     SearchService,
+    TeamService,
+    UserService,
     WikiService,
 )
 from .utils import validate_synapse_id
@@ -433,6 +435,107 @@ async def get_wiki_order_hint(
     if not validate_synapse_id(owner_id):
         return {"error": f"Invalid Synapse ID: {owner_id}"}
     return await WikiService().get_wiki_order_hint(ctx, owner_id)
+
+
+# ---------------------------------------------------------------------------
+# Domain 9: Team & User
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(
+    title="Get Team",
+    description=(
+        "Get a Synapse Team by its numeric ID or "
+        "by name."
+    ),
+    annotations=_RO,
+)
+async def get_team(
+    ctx: Context,
+    team_id: Optional[int] = None,
+    team_name: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Get a Synapse Team by ID or name."""
+    return await TeamService().get_team(ctx, team_id, team_name)
+
+
+@mcp.tool(
+    title="Get Team Members",
+    description="List all members of a Synapse Team.",
+    annotations=_RO,
+)
+async def get_team_members(
+    team_id: int, ctx: Context
+) -> List[Dict[str, Any]]:
+    """List all members of a Team."""
+    return await TeamService().get_team_members(ctx, team_id)
+
+
+@mcp.tool(
+    title="Get Team Open Invitations",
+    description=(
+        "List pending invitations for a Synapse Team."
+    ),
+    annotations=_RO,
+)
+async def get_team_open_invitations(
+    team_id: int, ctx: Context
+) -> List[Dict[str, Any]]:
+    """List pending Team invitations."""
+    return await TeamService().get_team_open_invitations(
+        ctx, team_id
+    )
+
+
+@mcp.tool(
+    title="Get Team Membership Status",
+    description=(
+        "Check if a specific user is a member of "
+        "or has applied to a Synapse Team."
+    ),
+    annotations=_RO,
+)
+async def get_team_membership_status(
+    team_id: int, user_id: str, ctx: Context
+) -> Dict[str, Any]:
+    """Check a user's Team membership status."""
+    return await TeamService().get_team_membership_status(
+        ctx, team_id, user_id
+    )
+
+
+@mcp.tool(
+    title="Get User Profile",
+    description=(
+        "Get a Synapse user's profile by numeric ID, "
+        "username, or self (no args returns the "
+        "authenticated user's own profile)."
+    ),
+    annotations=_RO,
+)
+async def get_user_profile(
+    ctx: Context,
+    user_id: Optional[int] = None,
+    username: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Get a Synapse user profile."""
+    return await UserService().get_user_profile(
+        ctx, user_id, username
+    )
+
+
+@mcp.tool(
+    title="Is User Certified",
+    description=(
+        "Check if a Synapse user is certified."
+    ),
+    annotations=_RO,
+)
+async def is_user_certified(
+    user_id: int, ctx: Context
+) -> Dict[str, Any]:
+    """Check if a user is certified."""
+    return await UserService().is_user_certified(ctx, user_id)
 
 
 # ---------------------------------------------------------------------------
