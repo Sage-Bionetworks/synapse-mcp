@@ -1,9 +1,8 @@
-"""Service layer for 4.12.0 utility operations."""
+"""Service layer for utility operations."""
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from fastmcp import Context
-from typing import Optional
 from synapseclient.operations import find_entity_id_async, is_synapse_id_async, md5_query_async
 
 from .tool_service import (
