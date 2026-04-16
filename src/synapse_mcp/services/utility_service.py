@@ -3,6 +3,7 @@
 from typing import Any, Dict
 
 from fastmcp import Context
+from typing import Optional
 from synapseclient.operations import find_entity_id_async, is_synapse_id_async, md5_query_async
 
 from .tool_service import (
@@ -20,7 +21,7 @@ class UtilityService:
         self,
         ctx: Context,
         name: str,
-        parent_id: str = None,
+        parent_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Find a Synapse entity ID by name and parent.
 
