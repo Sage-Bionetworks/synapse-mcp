@@ -8,6 +8,7 @@ from .app import mcp
 from .services import (
     ActivityService,
     CurationTaskService,
+    DockerService,
     EntityService,
     EvaluationService,
     FormService,
@@ -16,6 +17,7 @@ from .services import (
     SubmissionService,
     TeamService,
     UserService,
+    UtilityService,
     WikiService,
 )
 from .utils import validate_synapse_id
@@ -980,4 +982,84 @@ async def list_form_data(
     """List form submissions for a FormGroup."""
     return await FormService().list_form_data(
         ctx, group_id, filter_by_state, as_reviewer
+    )
+
+
+# ---------------------------------------------------------------------------
+# Domain 14: Utility Operations
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(
+    title="Find Entity ID",
+    description=(
+        "Find a Synapse entity's ID by its name and "
+        "optional parent container. Useful when you know "
+        "the name but not the synapse ID."
+    ),
+    annotations=_RO,
+)
+async def find_entity_id(
+    name: str,
+    ctx: Context,
+    parent_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Find an entity's Synapse ID by name and parent."""
+    return await UtilityService().find_entity_id(
+        ctx, name, parent_id
+    )
+
+
+@mcp.tool(
+    title="Validate Synapse ID",
+    description=(
+        "Check whether a Synapse ID exists and is valid "
+        "by querying the Synapse backend."
+    ),
+    annotations=_RO,
+)
+async def check_synapse_id(
+    syn_id: str, ctx: Context
+) -> Dict[str, Any]:
+    """Validate whether a Synapse ID exists."""
+    return await UtilityService().is_synapse_id(ctx, syn_id)
+
+
+@mcp.tool(
+    title="MD5 Query",
+    description=(
+        "Find Synapse entities by the MD5 hash of "
+        "their attached file."
+    ),
+    annotations=_RO,
+)
+async def md5_query(
+    md5: str, ctx: Context
+) -> Dict[str, Any]:
+    """Find entities by MD5 hash."""
+    return await UtilityService().md5_query(ctx, md5)
+
+
+# ---------------------------------------------------------------------------
+# Domain 15: DockerRepository
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(
+    title="Get Docker Repository",
+    description=(
+        "Get a Synapse DockerRepository entity by ID. "
+        "ACL and permissions use the generic entity "
+        "ACL tools."
+    ),
+    annotations=_RO,
+)
+async def get_docker_repository(
+    entity_id: str, ctx: Context
+) -> Dict[str, Any]:
+    """Get a DockerRepository entity by Synapse ID."""
+    if not validate_synapse_id(entity_id):
+        return {"error": f"Invalid Synapse ID: {entity_id}"}
+    return await DockerService().get_docker_repository(
+        ctx, entity_id
     )
