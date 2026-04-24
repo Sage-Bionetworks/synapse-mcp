@@ -10,10 +10,14 @@ import pytest
 
 from synapse_mcp.connection_auth import ConnectionAuthError
 from synapse_mcp.services.tool_service import (
+    DEFAULT_DESTRUCTIVE_ANNOTATIONS,
+    DEFAULT_READ_ANNOTATIONS,
+    DEFAULT_WRITE_ANNOTATIONS,
     collect_generator,
     dataclass_to_dict,
     error_boundary,
     serialize_model,
+    service_tool,
     synapse_client,
 )
 
@@ -440,3 +444,392 @@ class TestErrorBoundarySynapseHTTPError:
         result = await Svc().do_thing(MagicMock())
         assert "status_code" not in result
         assert result["error"] == "bad input"
+
+
+# -------------------------------------------------------------------
+# service_tool decorator
+# -------------------------------------------------------------------
+
+
+class _FakeMCP:
+    """Minimal mcp.tool recorder for unit tests."""
+
+    def __init__(self):
+        self.registrations = []
+
+    def tool(self, **kwargs):
+        def decorator(fn):
+            self.registrations.append({"fn": fn, **kwargs})
+            return fn
+
+        return decorator
+
+
+class TestServiceToolPrefixValidation:
+    def test_given_approved_prefix_when_decorating_then_registers(self):
+        mcp = _FakeMCP()
+
+        @service_tool(
+            mcp,
+            service="entity",
+            operation="read",
+            synapse_object="Synapse entity",
+            title="Get Thing",
+            description="Use this when the user wants a Synapse entity.",
+        )
+        async def get_thing():
+            return {"ok": True}
+
+        assert len(mcp.registrations) == 1
+        assert mcp.registrations[0]["fn"].__name__ == "get_thing"
+
+    def test_given_nonapproved_prefix_when_decorating_then_raises(self):
+        mcp = _FakeMCP()
+
+        with pytest.raises(ValueError, match="must start with"):
+
+            @service_tool(
+                mcp,
+                service="entity",
+                operation="read",
+                synapse_object="Synapse entity",
+                title="Fetch Thing",
+                description="Use this when the user wants a Synapse entity.",
+            )
+            async def fetch_thing():
+                return {}
+
+    def test_given_is_prefix_then_rejected(self):
+        mcp = _FakeMCP()
+        with pytest.raises(ValueError):
+
+            @service_tool(
+                mcp,
+                service="user",
+                operation="read",
+                synapse_object="Synapse user",
+                title="Is Certified",
+                description="Use this when checking a Synapse user is certified.",
+            )
+            async def is_user_certified():
+                return {}
+
+
+class TestServiceToolSynapseObjectValidation:
+    def test_given_synapse_object_missing_from_first_sentence_then_raises(self):
+        mcp = _FakeMCP()
+        with pytest.raises(ValueError, match="must name the Synapse object"):
+
+            @service_tool(
+                mcp,
+                service="entity",
+                operation="read",
+                synapse_object="Synapse entity",
+                title="Get Thing",
+                description="Use this when the user wants metadata. Works for any object.",
+            )
+            async def get_thing():
+                return {}
+
+    def test_given_synapse_object_case_insensitive_then_passes(self):
+        mcp = _FakeMCP()
+
+        @service_tool(
+            mcp,
+            service="team",
+            operation="read",
+            synapse_object="Synapse Team",
+            title="Get Team",
+            description="Use this when the user wants a synapse team by ID.",
+        )
+        async def get_team():
+            return {}
+
+        assert len(mcp.registrations) == 1
+
+
+class TestServiceToolDescriptionExtensions:
+    def test_given_synonyms_when_decorating_then_related_terms_appended(self):
+        mcp = _FakeMCP()
+
+        @service_tool(
+            mcp,
+            service="activity",
+            operation="read",
+            synapse_object="Synapse activity",
+            title="Get Provenance",
+            description="Use this when the user wants Synapse activity for an entity.",
+            synonyms=("lineage", "history", "inputs"),
+        )
+        async def get_provenance():
+            return {}
+
+        desc = mcp.registrations[0]["description"]
+        assert "Related terms: lineage, history, inputs" in desc
+
+    def test_given_siblings_when_decorating_then_distinct_from_appended(self):
+        mcp = _FakeMCP()
+
+        @service_tool(
+            mcp,
+            service="wiki",
+            operation="read",
+            synapse_object="Synapse wiki",
+            title="Get Wiki Headers",
+            description="Use this when the user wants the table of contents for a Synapse wiki.",
+            siblings=("get_wiki_history", "get_wiki_page"),
+        )
+        async def get_wiki_headers():
+            return {}
+
+        desc = mcp.registrations[0]["description"]
+        assert "Distinct from: get_wiki_history, get_wiki_page" in desc
+
+    def test_given_no_synonyms_or_siblings_then_description_unchanged(self):
+        mcp = _FakeMCP()
+
+        @service_tool(
+            mcp,
+            service="entity",
+            operation="read",
+            synapse_object="Synapse entity",
+            title="Get Entity",
+            description="Use this when the user wants a Synapse entity.",
+        )
+        async def get_entity():
+            return {}
+
+        assert mcp.registrations[0]["description"] == "Use this when the user wants a Synapse entity."
+
+
+class TestServiceToolTagging:
+    def _register(self, operation, service="entity"):
+        mcp = _FakeMCP()
+
+        @service_tool(
+            mcp,
+            service=service,
+            operation=operation,
+            synapse_object="Synapse entity",
+            title="T",
+            description="Use this when the user wants a Synapse entity.",
+        )
+        async def get_x():
+            return {}
+
+        return mcp.registrations[0]
+
+    def test_read_tags_include_readonly_and_service(self):
+        reg = self._register("read")
+        tags = reg["tags"]
+        assert "entity" in tags
+        assert "read" in tags
+        assert "readonly" in tags
+        assert "mutation" not in tags
+        assert "destructive" not in tags
+
+    def test_write_tags_include_mutation(self):
+        mcp = _FakeMCP()
+
+        @service_tool(
+            mcp,
+            service="entity",
+            operation="write",
+            synapse_object="Synapse entity",
+            title="U",
+            description="Use this when the user wants to update a Synapse entity.",
+        )
+        async def update_x():
+            return {}
+
+        tags = mcp.registrations[0]["tags"]
+        assert "write" in tags
+        assert "mutation" in tags
+        assert "readonly" not in tags
+        assert "destructive" not in tags
+
+    def test_destructive_tags_include_mutation_and_destructive(self):
+        mcp = _FakeMCP()
+
+        @service_tool(
+            mcp,
+            service="entity",
+            operation="destructive",
+            synapse_object="Synapse entity",
+            title="D",
+            description="Use this when the user wants to delete a Synapse entity.",
+        )
+        async def delete_x():
+            return {}
+
+        tags = mcp.registrations[0]["tags"]
+        assert "destructive" in tags
+        assert "mutation" in tags
+        assert "readonly" not in tags
+
+    def test_admin_tags_include_admin(self):
+        mcp = _FakeMCP()
+
+        @service_tool(
+            mcp,
+            service="team",
+            operation="admin",
+            synapse_object="Synapse team",
+            title="R",
+            description="Use this when the user wants to register a Synapse team admin hook.",
+        )
+        async def register_hook():
+            return {}
+
+        tags = mcp.registrations[0]["tags"]
+        assert "admin" in tags
+
+
+class TestServiceToolAnnotations:
+    def test_read_operation_uses_readonly_defaults(self):
+        mcp = _FakeMCP()
+
+        @service_tool(
+            mcp,
+            service="entity",
+            operation="read",
+            synapse_object="Synapse entity",
+            title="T",
+            description="Use this when the user wants a Synapse entity.",
+        )
+        async def get_x():
+            return {}
+
+        assert mcp.registrations[0]["annotations"] == DEFAULT_READ_ANNOTATIONS
+
+    def test_destructive_operation_uses_destructive_defaults(self):
+        mcp = _FakeMCP()
+
+        @service_tool(
+            mcp,
+            service="entity",
+            operation="destructive",
+            synapse_object="Synapse entity",
+            title="T",
+            description="Use this when the user wants to delete a Synapse entity.",
+        )
+        async def delete_x():
+            return {}
+
+        assert mcp.registrations[0]["annotations"] == DEFAULT_DESTRUCTIVE_ANNOTATIONS
+
+    def test_write_operation_uses_write_defaults(self):
+        mcp = _FakeMCP()
+
+        @service_tool(
+            mcp,
+            service="entity",
+            operation="write",
+            synapse_object="Synapse entity",
+            title="T",
+            description="Use this when the user wants to update a Synapse entity.",
+        )
+        async def update_x():
+            return {}
+
+        assert mcp.registrations[0]["annotations"] == DEFAULT_WRITE_ANNOTATIONS
+
+    def test_explicit_annotations_override_defaults(self):
+        mcp = _FakeMCP()
+        custom = {"readOnlyHint": True, "idempotentHint": False, "destructiveHint": False, "openWorldHint": False}
+
+        @service_tool(
+            mcp,
+            service="entity",
+            operation="read",
+            synapse_object="Synapse entity",
+            title="T",
+            description="Use this when the user wants a Synapse entity.",
+            annotations=custom,
+        )
+        async def get_x():
+            return {}
+
+        assert mcp.registrations[0]["annotations"] == custom
+
+
+class TestServiceToolErrorBoundary:
+    async def test_tool_raising_auth_error_returns_error_dict(self):
+        mcp = _FakeMCP()
+
+        @service_tool(
+            mcp,
+            service="entity",
+            operation="read",
+            synapse_object="Synapse entity",
+            title="T",
+            description="Use this when the user wants a Synapse entity.",
+        )
+        async def get_x(ctx):
+            raise ConnectionAuthError("expired")
+
+        fn = mcp.registrations[0]["fn"]
+        result = await fn(MagicMock())
+        assert result["error_type"] == "ConnectionAuthError"
+        assert "Authentication required" in result["error"]
+
+    async def test_tool_raising_generic_exception_returns_error_dict(self):
+        mcp = _FakeMCP()
+
+        @service_tool(
+            mcp,
+            service="entity",
+            operation="read",
+            synapse_object="Synapse entity",
+            title="T",
+            description="Use this when the user wants a Synapse entity.",
+        )
+        async def get_x(ctx):
+            raise ValueError("bad input")
+
+        fn = mcp.registrations[0]["fn"]
+        result = await fn(MagicMock())
+        assert result["error_type"] == "ValueError"
+        assert result["error"] == "bad input"
+
+    async def test_tool_success_passes_through(self):
+        mcp = _FakeMCP()
+
+        @service_tool(
+            mcp,
+            service="entity",
+            operation="read",
+            synapse_object="Synapse entity",
+            title="T",
+            description="Use this when the user wants a Synapse entity.",
+        )
+        async def get_x(ctx):
+            return {"id": "syn1"}
+
+        fn = mcp.registrations[0]["fn"]
+        result = await fn(MagicMock())
+        assert result == {"id": "syn1"}
+
+    async def test_tool_http_error_includes_status_code(self):
+        mcp = _FakeMCP()
+
+        class HTTPError(Exception):
+            pass
+
+        @service_tool(
+            mcp,
+            service="entity",
+            operation="read",
+            synapse_object="Synapse entity",
+            title="T",
+            description="Use this when the user wants a Synapse entity.",
+        )
+        async def get_x(ctx):
+            err = HTTPError("Not Found")
+            err.response = MagicMock(status_code=404)
+            raise err
+
+        fn = mcp.registrations[0]["fn"]
+        result = await fn(MagicMock())
+        assert result["status_code"] == 404
+        assert result["error"] == "Not Found"

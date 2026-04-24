@@ -1,8 +1,18 @@
-"""Tool registrations for Synapse MCP."""
+"""Tool registrations for Synapse MCP.
+
+Every tool is declared via ``@service_tool`` (not ``@mcp.tool``
+directly). See ``doc/tool-authoring.md`` for naming, description,
+synonym, and sibling conventions.
+
+This module also installs the BM25 tool-discovery transform at the
+end (after every ``@service_tool`` has run), so the transform has
+the full catalog to index.
+"""
 
 from typing import Any, Dict, List, Optional
 
 from fastmcp import Context
+from fastmcp.server.transforms.search import BM25SearchTransform
 
 from .app import mcp
 from .services import (
@@ -19,15 +29,41 @@ from .services import (
     UserService,
     UtilityService,
     WikiService,
+    service_tool,
 )
 from .utils import validate_synapse_id
 
-_RO = {
-    "readOnlyHint": True,
-    "idempotentHint": True,
-    "destructiveHint": False,
-    "openWorldHint": True,
-}
+
+# Reusable synonym sets so BM25 indexes user-language aliases for every
+# relevant tool without copy-pasting the same list 8 times. Keep these
+# tight: only include aliases users actually say, not every tangential
+# synonym.
+_ENTITY_TYPES = (
+    "project",
+    "folder",
+    "file",
+    "table",
+    "view",
+    "dataset",
+    "dataset collection",
+)
+_EVALUATION_SYNONYMS = ("challenge", "queue", "competition", "leaderboard")
+_SUBMISSION_SYNONYMS = ("submit", "entry", "challenge entry")
+_PROVENANCE_SYNONYMS = (
+    "lineage",
+    "history",
+    "inputs",
+    "outputs",
+    "derived from",
+    "provenance record",
+    "run",
+    "execution",
+)
+_ANNOTATION_SYNONYMS = ("metadata", "tags", "properties", "key-value pairs")
+_WIKI_SYNONYMS = ("documentation", "docs", "markdown", "page")
+_TEAM_SYNONYMS = ("group", "collaborators", "members")
+_SCHEMA_SYNONYMS = ("JSON schema", "validation", "data model")
+_ACL_SYNONYMS = ("permissions", "access control", "sharing", "who can access")
 
 
 # ---------------------------------------------------------------------------
@@ -35,33 +71,56 @@ _RO = {
 # ---------------------------------------------------------------------------
 
 
-@mcp.tool(
+@service_tool(
+    mcp,
+    service="entity",
+    operation="read",
+    synapse_object="Synapse entity",
     title="Fetch Entity",
     description=(
-        "Get metadata for any single Synapse entity by ID "
-        "(projects, folders, files, tables, etc.). "
-        "Only retrieves metadata — does not download "
-        "file content."
+        "Use this when the user wants the metadata, record, "
+        "details, or info for a specific Synapse entity "
+        "given its Synapse ID. A Synapse entity is any "
+        "first-class Synapse object — project, folder, file, "
+        "table, view, dataset, dataset collection, or Docker "
+        "repository. Entity ID example: syn123456. Only metadata "
+        "is returned; file content is never downloaded."
     ),
-    annotations=_RO,
+    synonyms=_ENTITY_TYPES + ("record", "details", "info", "fetch"),
+    siblings=(
+        "get_entity_annotations",
+        "get_entity_children",
+        "get_link",
+        "search_synapse",
+    ),
 )
-async def get_entity(
-    entity_id: str, ctx: Context
-) -> Dict[str, Any]:
+async def get_entity(entity_id: str, ctx: Context) -> Dict[str, Any]:
     """Return Synapse entity metadata by ID."""
     if not validate_synapse_id(entity_id):
         return {"error": f"Invalid Synapse ID: {entity_id}"}
     return await EntityService().get_entity(ctx, entity_id)
 
 
-@mcp.tool(
+@service_tool(
+    mcp,
+    service="entity",
+    operation="read",
+    synapse_object="Synapse entity",
     title="Fetch Entity Annotations",
     description=(
-        "Get only the custom annotation key/value pairs "
-        "for a Synapse entity. Use get_entity if you need "
-        "full entity metadata instead."
+        "Use this when the user wants the custom annotations "
+        "(metadata key/value pairs) attached to a Synapse "
+        "entity. Annotations are user-defined tags/properties "
+        "on an entity such as tissue type, disease, assay, or "
+        "any other arbitrary key/value pair. Entity ID "
+        "example: syn123456. Returns only annotations — call "
+        "get_entity for full entity metadata instead."
     ),
-    annotations=_RO,
+    synonyms=_ANNOTATION_SYNONYMS,
+    siblings=(
+        "get_entity",
+        "get_entity_schema_derived_keys",
+    ),
 )
 async def get_entity_annotations(
     entity_id: str, ctx: Context
@@ -72,13 +131,22 @@ async def get_entity_annotations(
     return await EntityService().get_annotations(ctx, entity_id)
 
 
-@mcp.tool(
+@service_tool(
+    mcp,
+    service="activity",
+    operation="read",
+    synapse_object="Synapse entity",
     title="Fetch Entity Provenance",
     description=(
-        "Return provenance (activity) metadata for a "
-        "Synapse entity, including inputs and code executed."
+        "Use this when the user wants to know what produced a "
+        "Synapse entity — its data lineage, inputs, outputs, "
+        "code executed, and the activity that generated it. "
+        "Works on any Synapse entity (project, folder, file, "
+        "table, view, dataset). Entity ID example: syn123456. "
+        "Optionally scope to a specific version of the entity."
     ),
-    annotations=_RO,
+    synonyms=_PROVENANCE_SYNONYMS,
+    siblings=("get_activity", "get_entity"),
 )
 async def get_entity_provenance(
     entity_id: str,
@@ -106,15 +174,21 @@ async def get_entity_provenance(
     )
 
 
-@mcp.tool(
+@service_tool(
+    mcp,
+    service="entity",
+    operation="read",
+    synapse_object="Synapse entity",
     title="List Entity Children",
     description=(
-        "List files and folders immediately inside a "
-        "container (one level deep). Works on Projects "
-        "and Folders. Call repeatedly on child folders "
-        "to traverse deeper."
+        "Use this when the user wants to list the files and "
+        "sub-folders immediately inside a Synapse entity "
+        "container (one level deep). Works on Projects and "
+        "Folders. Entity ID example: syn123456. Call "
+        "repeatedly on child folders to traverse deeper."
     ),
-    annotations=_RO,
+    synonyms=("contents", "files in folder", "listing") + _ENTITY_TYPES,
+    siblings=("get_entity", "search_synapse"),
 )
 async def get_entity_children(
     entity_id: str, ctx: Context
@@ -125,13 +199,26 @@ async def get_entity_children(
     return await EntityService().get_children(ctx, entity_id)
 
 
-@mcp.tool(
+@service_tool(
+    mcp,
+    service="search",
+    operation="read",
+    synapse_object="Synapse entity",
     title="Search Synapse",
     description=(
-        "Search Synapse entities using keyword queries "
-        "with optional name/type/parent filters."
+        "Use this when the user wants to search for Synapse "
+        "entities matching a keyword, topic, or subject "
+        "(e.g. 'brain tissue', 'cancer_type=glioma'). "
+        "Searches across all Synapse entity types (project, "
+        "folder, file, table, view, dataset). Example entity "
+        "type filter: 'file'. Parent ID example: syn123456. "
+        "Returns ranked matches. Use search_entity_by_name "
+        "when looking up an entity by exact name, "
+        "search_entities_by_md5 for MD5 hash lookups."
     ),
-    annotations=_RO,
+    synonyms=_ENTITY_TYPES
+    + ("find", "lookup", "query", "discover", "keyword", "topic", "about"),
+    siblings=("get_entity", "search_entity_by_name", "search_entities_by_md5"),
 )
 async def search_synapse(
     ctx: Context,
@@ -161,13 +248,23 @@ async def search_synapse(
 # ---------------------------------------------------------------------------
 
 
-@mcp.tool(
+@service_tool(
+    mcp,
+    service="entity",
+    operation="read",
+    synapse_object="Synapse entity",
     title="Get Entity ACL",
     description=(
-        "Get the access control list for a Synapse entity. "
-        "Optionally filter by a specific principal ID."
+        "Use this when the user wants the sharing settings "
+        "or access control list (ACL) of one single Synapse "
+        "entity — who can access it and with what "
+        "permissions. Entity ID example: syn123456. "
+        "Optionally filter to a single principal ID (user "
+        "or team), e.g. '3379097'. Use list_entity_acl to "
+        "audit ACLs across many entities under a container."
     ),
-    annotations=_RO,
+    synonyms=_ACL_SYNONYMS + ("sharing settings",),
+    siblings=("get_entity_permissions", "list_entity_acl"),
 )
 async def get_entity_acl(
     entity_id: str,
@@ -182,13 +279,22 @@ async def get_entity_acl(
     )
 
 
-@mcp.tool(
+@service_tool(
+    mcp,
+    service="entity",
+    operation="read",
+    synapse_object="Synapse entity",
     title="Get Entity Permissions",
     description=(
-        "Get the current user's permissions on a "
-        "Synapse entity."
+        "Use this when the user wants to know what the "
+        "currently authenticated user is allowed to do on a "
+        "Synapse entity (READ, UPDATE, DELETE, etc.). Entity "
+        "ID example: syn123456. Returns the caller's own "
+        "permissions only — use get_entity_acl to see "
+        "everyone's permissions."
     ),
-    annotations=_RO,
+    synonyms=_ACL_SYNONYMS + ("can I", "my access"),
+    siblings=("get_entity_acl", "list_entity_acl"),
 )
 async def get_entity_permissions(
     entity_id: str, ctx: Context
@@ -199,13 +305,20 @@ async def get_entity_permissions(
     return await EntityService().get_permissions(ctx, entity_id)
 
 
-@mcp.tool(
+@service_tool(
+    mcp,
+    service="entity",
+    operation="read",
+    synapse_object="Synapse entity",
     title="List Entity ACL",
     description=(
-        "Recursively list all ACLs for an entity and "
-        "optionally its descendants."
+        "Use this when the user wants every ACL on a Synapse "
+        "entity and, with recursive=True, on all its "
+        "descendants — useful for auditing sharing across a "
+        "project subtree. Entity ID example: syn123456."
     ),
-    annotations=_RO,
+    synonyms=_ACL_SYNONYMS + ("audit", "recursive"),
+    siblings=("get_entity_acl", "get_entity_permissions"),
 )
 async def list_entity_acl(
     entity_id: str,
@@ -225,12 +338,25 @@ async def list_entity_acl(
 # ---------------------------------------------------------------------------
 
 
-@mcp.tool(
+@service_tool(
+    mcp,
+    service="schema",
+    operation="read",
+    synapse_object="Synapse entity",
     title="Get Entity Schema",
     description=(
-        "Get the JSON schema bound to a Synapse entity."
+        "Use this when the user wants to know which JSON "
+        "schema (data model / validation contract) is bound "
+        "to a Synapse entity. Entity ID example: syn123456. "
+        "Returns the schema binding metadata, not the schema "
+        "body — use get_json_schema_body for that."
     ),
-    annotations=_RO,
+    synonyms=_SCHEMA_SYNONYMS + ("bound schema", "data contract"),
+    siblings=(
+        "get_entity_schema_derived_keys",
+        "get_entity_schema_validation_statistics",
+        "get_json_schema",
+    ),
 )
 async def get_entity_schema(
     entity_id: str, ctx: Context
@@ -241,13 +367,25 @@ async def get_entity_schema(
     return await EntityService().get_schema(ctx, entity_id)
 
 
-@mcp.tool(
+@service_tool(
+    mcp,
+    service="schema",
+    operation="read",
+    synapse_object="Synapse entity",
     title="Get Entity Schema Derived Keys",
     description=(
-        "Get annotation keys derived from a bound "
-        "JSON schema on a Synapse entity."
+        "Use this when the user wants the annotation keys a "
+        "bound JSON schema requires on a Synapse entity. "
+        "Useful for knowing what metadata fields a schema is "
+        "enforcing. Entity ID example: syn123456."
     ),
-    annotations=_RO,
+    synonyms=_ANNOTATION_SYNONYMS
+    + _SCHEMA_SYNONYMS
+    + ("required fields", "expected keys"),
+    siblings=(
+        "get_entity_schema",
+        "get_entity_annotations",
+    ),
 )
 async def get_entity_schema_derived_keys(
     entity_id: str, ctx: Context
@@ -260,13 +398,24 @@ async def get_entity_schema_derived_keys(
     )
 
 
-@mcp.tool(
+@service_tool(
+    mcp,
+    service="schema",
+    operation="read",
+    synapse_object="Synapse entity",
     title="Get Entity Schema Validation Statistics",
     description=(
-        "Get validation statistics for a Folder or "
-        "Project with a bound JSON schema."
+        "Use this when the user wants an aggregate "
+        "validation summary for a Synapse entity container "
+        "(Folder or Project) with a bound JSON schema — how "
+        "many child entities pass or fail validation. Entity "
+        "ID example: syn123456."
     ),
-    annotations=_RO,
+    synonyms=_SCHEMA_SYNONYMS + ("compliance", "summary", "pass fail"),
+    siblings=(
+        "get_entity_schema_invalid_validations",
+        "get_entity_schema",
+    ),
 )
 async def get_entity_schema_validation_statistics(
     entity_id: str, ctx: Context
@@ -279,13 +428,23 @@ async def get_entity_schema_validation_statistics(
     )
 
 
-@mcp.tool(
+@service_tool(
+    mcp,
+    service="schema",
+    operation="read",
+    synapse_object="Synapse entity",
     title="Get Entity Schema Invalid Validations",
     description=(
-        "Get entities with invalid JSON schema "
-        "validations under a Folder or Project."
+        "Use this when the user wants the list of Synapse "
+        "entities inside a Folder or Project that currently "
+        "fail their bound JSON schema — the 'what's broken' "
+        "view. Container entity ID example: syn123456."
     ),
-    annotations=_RO,
+    synonyms=_SCHEMA_SYNONYMS + ("failing", "invalid", "broken"),
+    siblings=(
+        "get_entity_schema_validation_statistics",
+        "get_entity_schema",
+    ),
 )
 async def get_entity_schema_invalid_validations(
     entity_id: str, ctx: Context
@@ -298,19 +457,27 @@ async def get_entity_schema_invalid_validations(
     )
 
 
-
 # ---------------------------------------------------------------------------
 # Domain 6: Activity (Provenance)
 # ---------------------------------------------------------------------------
 
 
-@mcp.tool(
+@service_tool(
+    mcp,
+    service="activity",
+    operation="read",
+    synapse_object="Synapse activity",
     title="Get Activity",
     description=(
-        "Get a provenance Activity by its own ID, "
-        "or by parent entity ID and optional version."
+        "Use this when the user has a standalone Synapse "
+        "activity (provenance record) they want to look up "
+        "by activity ID, or when they want the activity that "
+        "produced a specific entity version. Activity ID "
+        "example: '9660001'. Parent entity ID example: "
+        "syn123456."
     ),
-    annotations=_RO,
+    synonyms=_PROVENANCE_SYNONYMS,
+    siblings=("get_entity_provenance",),
 )
 async def get_activity(
     ctx: Context,
@@ -329,13 +496,22 @@ async def get_activity(
 # ---------------------------------------------------------------------------
 
 
-@mcp.tool(
+@service_tool(
+    mcp,
+    service="entity",
+    operation="read",
+    synapse_object="Synapse Link entity",
     title="Get Link",
     description=(
-        "Resolve a Synapse Link entity to its target, "
-        "or get the Link metadata itself."
+        "Use this when the user has a Synapse Link entity "
+        "(a shortcut that points at another entity) and "
+        "wants either the Link's own metadata or the target "
+        "it resolves to. Link entity ID example: syn123456. "
+        "Set follow_link=False to inspect the Link itself "
+        "instead of its target."
     ),
-    annotations=_RO,
+    synonyms=("shortcut", "alias", "pointer", "reference"),
+    siblings=("get_entity",),
 )
 async def get_link(
     entity_id: str,
@@ -355,14 +531,26 @@ async def get_link(
 # ---------------------------------------------------------------------------
 
 
-@mcp.tool(
+@service_tool(
+    mcp,
+    service="wiki",
+    operation="read",
+    synapse_object="Synapse wiki",
     title="Get Wiki Page",
     description=(
-        "Get a wiki page's content (markdown) and "
-        "metadata for any Synapse entity. If wiki_id "
-        "is omitted, returns the root wiki page."
+        "Use this when the user wants to read a Synapse "
+        "wiki page — its markdown content and metadata — "
+        "attached to a project, folder, or file. A Synapse "
+        "wiki is the markdown documentation surfaced on an "
+        "entity. Owner entity ID example: syn123456. Omit "
+        "wiki_id to get the root wiki page."
     ),
-    annotations=_RO,
+    synonyms=_WIKI_SYNONYMS + ("readme", "content"),
+    siblings=(
+        "get_wiki_headers",
+        "get_wiki_history",
+        "get_wiki_order_hint",
+    ),
 )
 async def get_wiki_page(
     owner_id: str,
@@ -377,15 +565,25 @@ async def get_wiki_page(
     )
 
 
-@mcp.tool(
+@service_tool(
+    mcp,
+    service="wiki",
+    operation="read",
+    synapse_object="Synapse wiki",
     title="Get Wiki Headers",
     description=(
-        "Get the hierarchical table of contents "
-        "(wiki page tree) for a Synapse entity. "
-        "If the result set hits the limit, call again "
-        "with a higher offset to retrieve the next page."
+        "Use this when the user wants the table of contents "
+        "of a Synapse wiki — the list of pages and sub-pages "
+        "attached to an entity. Owner entity ID example: "
+        "syn123456. If the result hits the limit, call again "
+        "with a higher offset to paginate."
     ),
-    annotations=_RO,
+    synonyms=_WIKI_SYNONYMS + ("toc", "table of contents", "navigation"),
+    siblings=(
+        "get_wiki_page",
+        "get_wiki_history",
+        "get_wiki_order_hint",
+    ),
 )
 async def get_wiki_headers(
     owner_id: str,
@@ -401,15 +599,25 @@ async def get_wiki_headers(
     )
 
 
-@mcp.tool(
+@service_tool(
+    mcp,
+    service="wiki",
+    operation="read",
+    synapse_object="Synapse wiki",
     title="Get Wiki History",
     description=(
-        "Get the revision history of a specific "
-        "wiki page. If the result set hits the limit, "
-        "call again with a higher offset to retrieve "
-        "the next page."
+        "Use this when the user wants the revision history "
+        "(edit log) of a specific Synapse wiki page — who "
+        "changed it and when. Owner entity ID example: "
+        "syn123456. Wiki ID example: '123456' (numeric "
+        "wiki page id). Paginate via offset if needed."
     ),
-    annotations=_RO,
+    synonyms=_WIKI_SYNONYMS
+    + ("revisions", "edits", "changelog"),
+    siblings=(
+        "get_wiki_page",
+        "get_wiki_headers",
+    ),
 )
 async def get_wiki_history(
     owner_id: str,
@@ -426,13 +634,23 @@ async def get_wiki_history(
     )
 
 
-@mcp.tool(
+@service_tool(
+    mcp,
+    service="wiki",
+    operation="read",
+    synapse_object="Synapse wiki",
     title="Get Wiki Order Hint",
     description=(
-        "Get the display ordering of wiki sub-pages "
-        "for a Synapse entity."
+        "Use this when the user wants to know the display "
+        "order of sub-pages in a Synapse wiki — how the wiki "
+        "navigation is sorted. Owner entity ID example: "
+        "syn123456."
     ),
-    annotations=_RO,
+    synonyms=_WIKI_SYNONYMS + ("order", "sort", "arrangement"),
+    siblings=(
+        "get_wiki_page",
+        "get_wiki_headers",
+    ),
 )
 async def get_wiki_order_hint(
     owner_id: str, ctx: Context
@@ -448,13 +666,25 @@ async def get_wiki_order_hint(
 # ---------------------------------------------------------------------------
 
 
-@mcp.tool(
+@service_tool(
+    mcp,
+    service="team",
+    operation="read",
+    synapse_object="Synapse team",
     title="Get Team",
     description=(
-        "Get a Synapse Team by its numeric ID or "
-        "by name."
+        "Use this when the user wants a Synapse team by its "
+        "numeric ID or name. A Synapse team is a group of "
+        "users (collaborators, members) that can be granted "
+        "access to entities collectively. Team ID example: "
+        "'3379097'. Team name example: 'NF-OSI Curators'."
     ),
-    annotations=_RO,
+    synonyms=_TEAM_SYNONYMS,
+    siblings=(
+        "get_team_members",
+        "get_team_open_invitations",
+        "get_team_membership_status",
+    ),
 )
 async def get_team(
     ctx: Context,
@@ -465,10 +695,23 @@ async def get_team(
     return await TeamService().get_team(ctx, team_id, team_name)
 
 
-@mcp.tool(
+@service_tool(
+    mcp,
+    service="team",
+    operation="read",
+    synapse_object="Synapse team",
     title="Get Team Members",
-    description="List all members of a Synapse Team.",
-    annotations=_RO,
+    description=(
+        "Use this when the user wants the roster of a "
+        "Synapse team — who is on it. Team ID example: "
+        "'3379097'."
+    ),
+    synonyms=_TEAM_SYNONYMS + ("roster", "who"),
+    siblings=(
+        "get_team",
+        "get_team_membership_status",
+        "get_team_open_invitations",
+    ),
 )
 async def get_team_members(
     team_id: int, ctx: Context
@@ -477,12 +720,23 @@ async def get_team_members(
     return await TeamService().get_team_members(ctx, team_id)
 
 
-@mcp.tool(
+@service_tool(
+    mcp,
+    service="team",
+    operation="read",
+    synapse_object="Synapse team",
     title="Get Team Open Invitations",
     description=(
-        "List pending invitations for a Synapse Team."
+        "Use this when the user wants the pending (not yet "
+        "accepted or rejected) invitations for a Synapse "
+        "team. Team ID example: '3379097'."
     ),
-    annotations=_RO,
+    synonyms=_TEAM_SYNONYMS + ("pending", "invited", "invite"),
+    siblings=(
+        "get_team",
+        "get_team_members",
+        "get_team_membership_status",
+    ),
 )
 async def get_team_open_invitations(
     team_id: int, ctx: Context
@@ -493,13 +747,25 @@ async def get_team_open_invitations(
     )
 
 
-@mcp.tool(
+@service_tool(
+    mcp,
+    service="team",
+    operation="read",
+    synapse_object="Synapse team",
     title="Get Team Membership Status",
     description=(
-        "Check if a specific user is a member of "
-        "or has applied to a Synapse Team."
+        "Use this when the user wants to know whether a "
+        "specific Synapse user is already a member of, has "
+        "applied to, or has been invited to a Synapse team. "
+        "Team ID example: '3379097'. User ID example: "
+        "'1234567'."
     ),
-    annotations=_RO,
+    synonyms=_TEAM_SYNONYMS + ("is member", "joined", "status"),
+    siblings=(
+        "get_team",
+        "get_team_members",
+        "get_team_open_invitations",
+    ),
 )
 async def get_team_membership_status(
     team_id: int, user_id: str, ctx: Context
@@ -510,14 +776,21 @@ async def get_team_membership_status(
     )
 
 
-@mcp.tool(
+@service_tool(
+    mcp,
+    service="user",
+    operation="read",
+    synapse_object="Synapse user",
     title="Get User Profile",
     description=(
-        "Get a Synapse user's profile by numeric ID, "
-        "username, or self (no args returns the "
-        "authenticated user's own profile)."
+        "Use this when the user wants a Synapse user profile "
+        "by numeric user ID or username, or the "
+        "authenticated caller's own profile when called with "
+        "no arguments. User ID example: '1234567'. Username "
+        "example: 'janedoe'."
     ),
-    annotations=_RO,
+    synonyms=("profile", "account", "person", "me", "whoami"),
+    siblings=("check_user_certified",),
 )
 async def get_user_profile(
     ctx: Context,
@@ -530,14 +803,22 @@ async def get_user_profile(
     )
 
 
-@mcp.tool(
-    title="Is User Certified",
+@service_tool(
+    mcp,
+    service="user",
+    operation="read",
+    synapse_object="Synapse user",
+    title="Check User Certified",
     description=(
-        "Check if a Synapse user is certified."
+        "Use this when the user wants to know whether a "
+        "Synapse user has passed the certification quiz "
+        "required for uploading human data. User ID "
+        "example: '1234567'."
     ),
-    annotations=_RO,
+    synonyms=("certification", "quiz", "passed", "qualified"),
+    siblings=("get_user_profile",),
 )
-async def is_user_certified(
+async def check_user_certified(
     user_id: int, ctx: Context
 ) -> Dict[str, Any]:
     """Check if a user is certified."""
@@ -549,13 +830,26 @@ async def is_user_certified(
 # ---------------------------------------------------------------------------
 
 
-@mcp.tool(
+@service_tool(
+    mcp,
+    service="evaluation",
+    operation="read",
+    synapse_object="Synapse evaluation",
     title="Get Evaluation",
     description=(
-        "Get a Synapse Evaluation (challenge queue) "
-        "by ID or name."
+        "Use this when the user wants a Synapse Evaluation "
+        "queue — the challenge/competition queue that "
+        "participants submit models or results to. "
+        "Synonymous with 'challenge queue', 'leaderboard "
+        "queue'. Evaluation ID example: '9600001'. "
+        "Evaluation name example: 'DREAM Patient Data'."
     ),
-    annotations=_RO,
+    synonyms=_EVALUATION_SYNONYMS,
+    siblings=(
+        "list_evaluations",
+        "get_evaluation_acl",
+        "get_evaluation_permissions",
+    ),
 )
 async def get_evaluation(
     ctx: Context,
@@ -568,15 +862,25 @@ async def get_evaluation(
     )
 
 
-@mcp.tool(
+@service_tool(
+    mcp,
+    service="evaluation",
+    operation="read",
+    synapse_object="Synapse evaluation",
     title="List Evaluations",
     description=(
-        "List Synapse Evaluations with optional "
-        "filters (project, access type, active only). "
-        "If the result set hits the limit, call again "
-        "with a higher offset to retrieve the next page."
+        "Use this when the user wants to enumerate Synapse "
+        "Evaluation queues (challenges, competitions, "
+        "leaderboards) — optionally filtered by project, "
+        "access type, or active-only. Project ID example: "
+        "syn123456. Paginate via offset."
     ),
-    annotations=_RO,
+    synonyms=_EVALUATION_SYNONYMS,
+    siblings=(
+        "get_evaluation",
+        "get_evaluation_acl",
+        "list_evaluation_submissions",
+    ),
 )
 async def list_evaluations(
     ctx: Context,
@@ -601,13 +905,23 @@ async def list_evaluations(
     )
 
 
-@mcp.tool(
+@service_tool(
+    mcp,
+    service="evaluation",
+    operation="read",
+    synapse_object="Synapse evaluation",
     title="Get Evaluation ACL",
     description=(
-        "Get the access control list for a Synapse "
-        "Evaluation queue."
+        "Use this when the user wants the access control "
+        "list of a Synapse Evaluation queue (challenge "
+        "queue) — who is allowed to submit, administer, or "
+        "view. Evaluation ID example: '9600001'."
     ),
-    annotations=_RO,
+    synonyms=_EVALUATION_SYNONYMS + _ACL_SYNONYMS,
+    siblings=(
+        "get_evaluation",
+        "get_evaluation_permissions",
+    ),
 )
 async def get_evaluation_acl(
     evaluation_id: str, ctx: Context
@@ -618,13 +932,23 @@ async def get_evaluation_acl(
     )
 
 
-@mcp.tool(
+@service_tool(
+    mcp,
+    service="evaluation",
+    operation="read",
+    synapse_object="Synapse evaluation",
     title="Get Evaluation Permissions",
     description=(
-        "Get the current user's permissions on a "
-        "Synapse Evaluation queue."
+        "Use this when the user wants to know what the "
+        "authenticated caller is allowed to do on a Synapse "
+        "Evaluation queue (challenge queue) — submit, "
+        "administer, etc. Evaluation ID example: '9600001'."
     ),
-    annotations=_RO,
+    synonyms=_EVALUATION_SYNONYMS + _ACL_SYNONYMS + ("my access",),
+    siblings=(
+        "get_evaluation",
+        "get_evaluation_acl",
+    ),
 )
 async def get_evaluation_permissions(
     evaluation_id: str, ctx: Context
@@ -640,10 +964,24 @@ async def get_evaluation_permissions(
 # ---------------------------------------------------------------------------
 
 
-@mcp.tool(
+@service_tool(
+    mcp,
+    service="submission",
+    operation="read",
+    synapse_object="Synapse submission",
     title="Get Submission",
-    description="Get a Synapse Submission by its ID.",
-    annotations=_RO,
+    description=(
+        "Use this when the user wants a specific Synapse "
+        "submission — a challenge entry a participant sent "
+        "to an Evaluation queue. Submission ID example: "
+        "'9722233'."
+    ),
+    synonyms=_SUBMISSION_SYNONYMS + _EVALUATION_SYNONYMS,
+    siblings=(
+        "get_submission_status",
+        "list_evaluation_submissions",
+        "list_my_submissions",
+    ),
 )
 async def get_submission(
     submission_id: str, ctx: Context
@@ -654,15 +992,32 @@ async def get_submission(
     )
 
 
-@mcp.tool(
+@service_tool(
+    mcp,
+    service="submission",
+    operation="read",
+    synapse_object="Synapse submission",
     title="List Evaluation Submissions",
     description=(
-        "List all submissions to a Synapse Evaluation "
-        "queue, optionally filtered by status. "
-        "If the result set hits the limit, call again "
-        "with a higher offset to retrieve the next page."
+        "Use this when the user wants ALL submissions "
+        "(every challenge entry from every participant) "
+        "sent to a Synapse Evaluation queue — optionally "
+        "filtered by status (SCORED, INVALID, etc.). NOT "
+        "just the caller's own — use list_my_submissions "
+        "for that. Evaluation ID example: '9600001'. "
+        "Returns raw Submission objects; use "
+        "list_submission_statuses for status-only data and "
+        "list_evaluation_submission_bundles for bundled "
+        "submission+status pairs."
     ),
-    annotations=_RO,
+    synonyms=_SUBMISSION_SYNONYMS
+    + _EVALUATION_SYNONYMS
+    + ("all entries", "all submissions", "everyone"),
+    siblings=(
+        "list_submission_statuses",
+        "list_evaluation_submission_bundles",
+        "list_my_submissions",
+    ),
 )
 async def list_evaluation_submissions(
     evaluation_id: str,
@@ -676,13 +1031,24 @@ async def list_evaluation_submissions(
     )
 
 
-@mcp.tool(
+@service_tool(
+    mcp,
+    service="submission",
+    operation="read",
+    synapse_object="Synapse submission",
     title="List My Submissions",
     description=(
-        "List the current user's submissions to a "
-        "Synapse Evaluation queue."
+        "Use this when the user wants their own submissions "
+        "(challenge entries) to a Synapse Evaluation queue. "
+        "Evaluation ID example: '9600001'."
     ),
-    annotations=_RO,
+    synonyms=_SUBMISSION_SYNONYMS
+    + _EVALUATION_SYNONYMS
+    + ("mine", "my entries"),
+    siblings=(
+        "list_my_submission_bundles",
+        "list_evaluation_submissions",
+    ),
 )
 async def list_my_submissions(
     evaluation_id: str,
@@ -695,13 +1061,25 @@ async def list_my_submissions(
     )
 
 
-@mcp.tool(
+@service_tool(
+    mcp,
+    service="submission",
+    operation="read",
+    synapse_object="Synapse submission",
     title="Get Submission Count",
     description=(
-        "Get the count of submissions to a Synapse "
-        "Evaluation queue."
+        "Use this when the user wants only the count of "
+        "Synapse submissions (challenge entries) in an "
+        "Evaluation queue, not the submissions themselves. "
+        "Evaluation ID example: '9600001'."
     ),
-    annotations=_RO,
+    synonyms=_SUBMISSION_SYNONYMS
+    + _EVALUATION_SYNONYMS
+    + ("count", "how many", "total"),
+    siblings=(
+        "list_evaluation_submissions",
+        "list_submission_statuses",
+    ),
 )
 async def get_submission_count(
     evaluation_id: str, ctx: Context
@@ -712,12 +1090,23 @@ async def get_submission_count(
     )
 
 
-@mcp.tool(
+@service_tool(
+    mcp,
+    service="submission",
+    operation="read",
+    synapse_object="Synapse submission",
     title="Get Submission Status",
     description=(
-        "Get the status of a specific Synapse Submission."
+        "Use this when the user wants the scoring status of "
+        "a single Synapse submission (challenge entry) — "
+        "e.g. RECEIVED, EVALUATION_IN_PROGRESS, SCORED. "
+        "Submission ID example: '9722233'."
     ),
-    annotations=_RO,
+    synonyms=_SUBMISSION_SYNONYMS + ("scored", "state", "progress"),
+    siblings=(
+        "list_submission_statuses",
+        "get_submission",
+    ),
 )
 async def get_submission_status(
     submission_id: str, ctx: Context
@@ -728,15 +1117,26 @@ async def get_submission_status(
     )
 
 
-@mcp.tool(
+@service_tool(
+    mcp,
+    service="submission",
+    operation="read",
+    synapse_object="Synapse submission",
     title="List Submission Statuses",
     description=(
-        "List statuses for all submissions in a "
-        "Synapse Evaluation queue. "
-        "If the result set hits the limit, call again "
-        "with a higher offset to retrieve the next page."
+        "Use this when the user wants the scoring statuses "
+        "of every Synapse submission in an Evaluation queue "
+        "— optionally filtered (SCORED, INVALID, etc.). "
+        "Evaluation ID example: '9600001'. Returns status "
+        "records only; use list_evaluation_submissions for "
+        "the submissions themselves."
     ),
-    annotations=_RO,
+    synonyms=_SUBMISSION_SYNONYMS + _EVALUATION_SYNONYMS + ("scored",),
+    siblings=(
+        "list_evaluation_submissions",
+        "list_evaluation_submission_bundles",
+        "get_submission_status",
+    ),
 )
 async def list_submission_statuses(
     evaluation_id: str,
@@ -751,13 +1151,24 @@ async def list_submission_statuses(
     )
 
 
-@mcp.tool(
+@service_tool(
+    mcp,
+    service="submission",
+    operation="read",
+    synapse_object="Synapse submission",
     title="List Evaluation Submission Bundles",
     description=(
-        "List submission+status bundles for a Synapse "
-        "Evaluation queue."
+        "Use this when the user wants Synapse submission "
+        "plus scoring status together (as bundles) for an "
+        "Evaluation queue — one call returns both sides. "
+        "Evaluation ID example: '9600001'."
     ),
-    annotations=_RO,
+    synonyms=_SUBMISSION_SYNONYMS + _EVALUATION_SYNONYMS + ("bundle",),
+    siblings=(
+        "list_evaluation_submissions",
+        "list_submission_statuses",
+        "list_my_submission_bundles",
+    ),
 )
 async def list_evaluation_submission_bundles(
     evaluation_id: str,
@@ -771,13 +1182,26 @@ async def list_evaluation_submission_bundles(
     )
 
 
-@mcp.tool(
+@service_tool(
+    mcp,
+    service="submission",
+    operation="read",
+    synapse_object="Synapse submission",
     title="List My Submission Bundles",
     description=(
-        "List the current user's submission bundles "
-        "for a Synapse Evaluation queue."
+        "Use this when the user wants their own Synapse "
+        "submission+status bundles for an Evaluation queue "
+        "— one call returns both submission and scoring "
+        "status for every entry they made. Evaluation ID "
+        "example: '9600001'."
     ),
-    annotations=_RO,
+    synonyms=_SUBMISSION_SYNONYMS
+    + _EVALUATION_SYNONYMS
+    + ("mine", "my entries", "bundle"),
+    siblings=(
+        "list_my_submissions",
+        "list_evaluation_submission_bundles",
+    ),
 )
 async def list_my_submission_bundles(
     evaluation_id: str,
@@ -795,13 +1219,23 @@ async def list_my_submission_bundles(
 # ---------------------------------------------------------------------------
 
 
-@mcp.tool(
+@service_tool(
+    mcp,
+    service="curation",
+    operation="read",
+    synapse_object="Synapse curation task",
     title="List Curation Tasks",
     description=(
-        "List all curation tasks within a specific "
-        "Synapse project."
+        "Use this when the user wants every Synapse "
+        "curation task in a project — the queue of "
+        "data-curation work items attached to that "
+        "project. Project entity ID example: syn123456."
     ),
-    annotations=_RO,
+    synonyms=("curator", "work items", "queue", "backlog"),
+    siblings=(
+        "get_curation_task",
+        "get_curation_task_resources",
+    ),
 )
 async def list_curation_tasks(
     project_id: str, ctx: Context
@@ -812,13 +1246,22 @@ async def list_curation_tasks(
     return await CurationTaskService().list_tasks(ctx, project_id)
 
 
-@mcp.tool(
+@service_tool(
+    mcp,
+    service="curation",
+    operation="read",
+    synapse_object="Synapse curation task",
     title="Get Curation Task",
     description=(
-        "Retrieve detailed information about a specific "
-        "curation task by its task ID."
+        "Use this when the user wants the details of a "
+        "single Synapse curation task by its numeric task "
+        "ID. Task ID example: 42."
     ),
-    annotations=_RO,
+    synonyms=("curator", "work item", "todo"),
+    siblings=(
+        "list_curation_tasks",
+        "get_curation_task_resources",
+    ),
 )
 async def get_curation_task(
     task_id: int, ctx: Context
@@ -827,14 +1270,23 @@ async def get_curation_task(
     return await CurationTaskService().get_task(ctx, task_id)
 
 
-@mcp.tool(
+@service_tool(
+    mcp,
+    service="curation",
+    operation="read",
+    synapse_object="Synapse curation task",
     title="Get Curation Task Resources",
     description=(
-        "Explore and retrieve resources associated with "
-        "a curation task, including RecordSets, Folders, "
-        "and EntityViews."
+        "Use this when the user wants the Synapse "
+        "resources (RecordSets, Folders, EntityViews) "
+        "linked to a curation task — the data the curator "
+        "will act on. Task ID example: 42."
     ),
-    annotations=_RO,
+    synonyms=("curator", "recordset", "entityview", "resources"),
+    siblings=(
+        "list_curation_tasks",
+        "get_curation_task",
+    ),
 )
 async def get_curation_task_resources(
     task_id: int, ctx: Context
@@ -850,13 +1302,24 @@ async def get_curation_task_resources(
 # ---------------------------------------------------------------------------
 
 
-@mcp.tool(
+@service_tool(
+    mcp,
+    service="organization",
+    operation="read",
+    synapse_object="Synapse JSON Schema Organization",
     title="Get Schema Organization",
     description=(
-        "Get a Synapse JSON Schema Organization "
-        "by name or ID."
+        "Use this when the user wants a Synapse JSON Schema "
+        "Organization (namespace that owns a set of JSON "
+        "schemas / data models) by name or numeric ID. "
+        "Organization name example: 'org.sagebionetworks'. "
+        "Organization ID example: 42."
     ),
-    annotations=_RO,
+    synonyms=_SCHEMA_SYNONYMS + ("namespace", "owner"),
+    siblings=(
+        "get_schema_organization_acl",
+        "list_json_schemas",
+    ),
 )
 async def get_schema_organization(
     ctx: Context,
@@ -869,13 +1332,20 @@ async def get_schema_organization(
     )
 
 
-@mcp.tool(
+@service_tool(
+    mcp,
+    service="organization",
+    operation="read",
+    synapse_object="Synapse JSON Schema Organization",
     title="Get Schema Organization ACL",
     description=(
-        "Get the ACL for a Synapse JSON Schema "
-        "Organization."
+        "Use this when the user wants the ACL of a Synapse "
+        "JSON Schema Organization — who may publish schemas "
+        "under that namespace. Organization name example: "
+        "'org.sagebionetworks'."
     ),
-    annotations=_RO,
+    synonyms=_SCHEMA_SYNONYMS + _ACL_SYNONYMS,
+    siblings=("get_schema_organization",),
 )
 async def get_schema_organization_acl(
     organization_name: str, ctx: Context
@@ -886,13 +1356,24 @@ async def get_schema_organization_acl(
     )
 
 
-@mcp.tool(
+@service_tool(
+    mcp,
+    service="schema",
+    operation="read",
+    synapse_object="Synapse JSON Schema",
     title="List JSON Schemas",
     description=(
-        "List all JSON Schemas in a Synapse "
-        "Schema Organization."
+        "Use this when the user wants every Synapse JSON "
+        "Schema (data model, validation contract) owned by "
+        "an organization. Organization name example: "
+        "'org.sagebionetworks'."
     ),
-    annotations=_RO,
+    synonyms=_SCHEMA_SYNONYMS,
+    siblings=(
+        "get_json_schema",
+        "list_json_schema_versions",
+        "get_schema_organization",
+    ),
 )
 async def list_json_schemas(
     organization_name: str, ctx: Context
@@ -903,13 +1384,25 @@ async def list_json_schemas(
     )
 
 
-@mcp.tool(
+@service_tool(
+    mcp,
+    service="schema",
+    operation="read",
+    synapse_object="Synapse JSON Schema",
     title="Get JSON Schema",
     description=(
-        "Get metadata for a specific Synapse "
-        "JSON Schema."
+        "Use this when the user wants metadata about a "
+        "specific Synapse JSON Schema (data model, "
+        "validation contract). Organization name example: "
+        "'org.sagebionetworks'. Schema name example: "
+        "'myDataset-1.0.0'."
     ),
-    annotations=_RO,
+    synonyms=_SCHEMA_SYNONYMS,
+    siblings=(
+        "list_json_schemas",
+        "get_json_schema_body",
+        "list_json_schema_versions",
+    ),
 )
 async def get_json_schema(
     organization_name: str,
@@ -922,13 +1415,24 @@ async def get_json_schema(
     )
 
 
-@mcp.tool(
+@service_tool(
+    mcp,
+    service="schema",
+    operation="read",
+    synapse_object="Synapse JSON Schema",
     title="Get JSON Schema Body",
     description=(
-        "Get the actual JSON document of a Synapse "
-        "JSON Schema."
+        "Use this when the user wants the raw JSON document "
+        "of a Synapse JSON Schema — the actual data model / "
+        "validation rules. Organization name example: "
+        "'org.sagebionetworks'. Schema name example: "
+        "'myDataset-1.0.0'."
     ),
-    annotations=_RO,
+    synonyms=_SCHEMA_SYNONYMS + ("body", "document", "raw"),
+    siblings=(
+        "get_json_schema",
+        "list_json_schema_versions",
+    ),
 )
 async def get_json_schema_body(
     organization_name: str,
@@ -942,12 +1446,23 @@ async def get_json_schema_body(
     )
 
 
-@mcp.tool(
+@service_tool(
+    mcp,
+    service="schema",
+    operation="read",
+    synapse_object="Synapse JSON Schema",
     title="List JSON Schema Versions",
     description=(
-        "List all versions of a Synapse JSON Schema."
+        "Use this when the user wants every version "
+        "published for a Synapse JSON Schema. Organization "
+        "name example: 'org.sagebionetworks'. Schema name "
+        "example: 'myDataset-1.0.0'."
     ),
-    annotations=_RO,
+    synonyms=_SCHEMA_SYNONYMS + ("versions", "releases"),
+    siblings=(
+        "get_json_schema",
+        "get_json_schema_body",
+    ),
 )
 async def list_json_schema_versions(
     organization_name: str,
@@ -965,13 +1480,21 @@ async def list_json_schema_versions(
 # ---------------------------------------------------------------------------
 
 
-@mcp.tool(
+@service_tool(
+    mcp,
+    service="form",
+    operation="read",
+    synapse_object="Synapse FormGroup",
     title="List Form Data",
     description=(
-        "List form submissions for a Synapse FormGroup, "
-        "optionally filtered by state."
+        "Use this when the user wants the form submissions "
+        "for a Synapse FormGroup — a collection of "
+        "structured-data forms submitted by users. Form "
+        "group ID example: '42'. Optionally filter by state "
+        "('SUBMITTED_WAITING_FOR_REVIEW', 'ACCEPTED', etc.)."
     ),
-    annotations=_RO,
+    synonyms=("form", "survey", "intake", "questionnaire"),
+    siblings=(),
 )
 async def list_form_data(
     group_id: str,
@@ -990,16 +1513,32 @@ async def list_form_data(
 # ---------------------------------------------------------------------------
 
 
-@mcp.tool(
-    title="Find Entity ID",
+@service_tool(
+    mcp,
+    service="utility",
+    operation="read",
+    synapse_object="Synapse entity",
+    title="Search Entity By Name",
     description=(
-        "Find a Synapse entity's ID by its name and "
-        "optional parent container. Useful when you know "
-        "the name but not the synapse ID."
+        "Use this when the user has a file name or Synapse "
+        "entity name (and optionally its parent folder or "
+        "project) but does not know the Synapse ID — "
+        "resolves a name to its Synapse ID. Parent entity "
+        "ID example: syn123456. Name example: 'sample.csv'."
     ),
-    annotations=_RO,
+    synonyms=(
+        "lookup",
+        "find",
+        "resolve",
+        "by name",
+        "named",
+        "filename",
+        "id of",
+        "synapse id",
+    ),
+    siblings=("search_synapse", "check_synapse_id"),
 )
-async def find_entity_id(
+async def search_entity_by_name(
     name: str,
     ctx: Context,
     parent_id: Optional[str] = None,
@@ -1010,13 +1549,27 @@ async def find_entity_id(
     )
 
 
-@mcp.tool(
+@service_tool(
+    mcp,
+    service="utility",
+    operation="read",
+    synapse_object="Synapse",
     title="Validate Synapse ID",
     description=(
-        "Check whether a Synapse ID exists and is valid "
-        "by querying the Synapse backend."
+        "Use this when the user has a string that looks "
+        "like a Synapse ID (e.g. syn123456) and wants to "
+        "check whether the ID exist or does exist — verify "
+        "it is valid by querying the Synapse backend."
     ),
-    annotations=_RO,
+    synonyms=(
+        "exist",
+        "exists",
+        "verify",
+        "validate",
+        "does exist",
+        "is valid",
+    ),
+    siblings=("get_entity", "search_entity_by_name"),
 )
 async def check_synapse_id(
     syn_id: str, ctx: Context
@@ -1025,15 +1578,23 @@ async def check_synapse_id(
     return await UtilityService().is_synapse_id(ctx, syn_id)
 
 
-@mcp.tool(
-    title="MD5 Query",
+@service_tool(
+    mcp,
+    service="utility",
+    operation="read",
+    synapse_object="Synapse entity",
+    title="Search Entities By MD5",
     description=(
-        "Find Synapse entities by the MD5 hash of "
-        "their attached file."
+        "Use this when the user has an MD5 hash of a file "
+        "and wants the Synapse entities (file entities) "
+        "whose attached file has that exact MD5 — useful "
+        "for deduplication and 'is this already in Synapse' "
+        "checks. MD5 example: '9e107d9d372bb6826bd81d3542a419d6'."
     ),
-    annotations=_RO,
+    synonyms=("hash", "checksum", "deduplicate"),
+    siblings=("search_synapse", "search_entity_by_name"),
 )
-async def md5_query(
+async def search_entities_by_md5(
     md5: str, ctx: Context
 ) -> Dict[str, Any]:
     """Find entities by MD5 hash."""
@@ -1045,14 +1606,30 @@ async def md5_query(
 # ---------------------------------------------------------------------------
 
 
-@mcp.tool(
+@service_tool(
+    mcp,
+    service="docker",
+    operation="read",
+    synapse_object="Synapse Docker repository",
     title="Get Docker Repository",
     description=(
-        "Get a Synapse DockerRepository entity by ID. "
-        "ACL and permissions use the generic entity "
-        "ACL tools."
+        "Use this when the user wants a Synapse Docker "
+        "repository entity — a first-class Synapse object "
+        "that points to a Docker image stored in Synapse's "
+        "container registry. NOT a general Docker "
+        "container, NOT a container runtime, NOT a Docker "
+        "daemon — this is the Synapse metadata record for "
+        "an image. Entity ID example: syn123456. ACL and "
+        "caller permissions use the generic entity ACL "
+        "tools."
     ),
-    annotations=_RO,
+    synonyms=(
+        "synapse docker",
+        "docker image",
+        "image repository",
+        "container registry entity",
+    ),
+    siblings=("get_entity", "get_entity_acl"),
 )
 async def get_docker_repository(
     entity_id: str, ctx: Context
@@ -1063,3 +1640,26 @@ async def get_docker_repository(
     return await DockerService().get_docker_repository(
         ctx, entity_id
     )
+
+
+# ---------------------------------------------------------------------------
+# Discovery: BM25 search transform
+# ---------------------------------------------------------------------------
+# Applied after all tools are registered so the transform has the full
+# catalog to index. The LLM's default view becomes the two pinned tools
+# plus the synthetic ``search_tools`` / ``call_tool`` pair; every other
+# tool is reached by calling ``search_tools`` with a natural-language
+# query and then invoking ``call_tool``.
+
+
+def _configure_discovery_transforms() -> None:
+    """Register the BM25 search transform on the live FastMCP server."""
+    mcp.add_transform(
+        BM25SearchTransform(
+            max_results=7,
+            always_visible=["search_synapse", "get_entity"],
+        )
+    )
+
+
+_configure_discovery_transforms()
