@@ -252,6 +252,10 @@ If not set, the server defaults to `prod`.
 
 For contributor/development setup details, see [DEVELOPMENT.md](./DEVELOPMENT.md).
 
+#### Tool Discovery
+
+The server replaces the standard `list_tools` with a BM25-ranked `search_tools` synthetic tool so the LLM can find the right tool from a natural-language query without loading the full 50-tool catalog into context on every call. `get_entity` and `search_synapse` remain always-visible. See [doc/tool-authoring.md](./doc/tool-authoring.md) for the conventions each tool follows.
+
 ### Example Prompts
 
 See [usage examples](./doc/usage.md)
