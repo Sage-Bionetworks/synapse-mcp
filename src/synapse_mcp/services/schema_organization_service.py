@@ -5,7 +5,12 @@ from typing import Any, Optional
 from fastmcp import Context
 from synapseclient.models import JSONSchema, SchemaOrganization
 
-from .tool_service import error_boundary, serialize_model, synapse_client
+from .tool_service import (
+    collect_async_generator,
+    error_boundary,
+    serialize_model,
+    synapse_client,
+)
 
 
 class SchemaOrganizationService:
@@ -78,17 +83,21 @@ class SchemaOrganizationService:
             }
 
     @error_boundary(
-        error_context_keys=("organization_name",),
+        error_context_keys=("organization_name", "limit"),
         wrap_errors=list,
     )
     async def list_json_schemas(
-        self, ctx: Context, organization_name: str
+        self,
+        ctx: Context,
+        organization_name: str,
+        limit: int = 100,
     ) -> list[dict[str, Any]]:
         """List all schemas in an organization.
 
         Arguments:
             ctx: The FastMCP request context.
             organization_name: Organization name string.
+            limit: Maximum number of schemas to return.
 
         Returns:
             List of JSON schema metadata dicts.
@@ -97,8 +106,9 @@ class SchemaOrganizationService:
             org = SchemaOrganization(
                 name=organization_name,
             )
-            schemas = org.get_json_schemas(
-                synapse_client=client,
+            schemas = await collect_async_generator(
+                org.get_json_schemas_async(synapse_client=client),
+                limit,
             )
             return [serialize_model(schema) for schema in schemas]
 
@@ -160,7 +170,7 @@ class SchemaOrganizationService:
                 organization_name=organization_name,
                 name=schema_name,
             )
-            body = schema.get_body(
+            body = await schema.get_body_async(
                 version=version,
                 synapse_client=client,
             )
@@ -170,6 +180,7 @@ class SchemaOrganizationService:
         error_context_keys=(
             "organization_name",
             "schema_name",
+            "limit",
         ),
         wrap_errors=list,
     )
@@ -178,6 +189,7 @@ class SchemaOrganizationService:
         ctx: Context,
         organization_name: str,
         schema_name: str,
+        limit: int = 100,
     ) -> list[dict[str, Any]]:
         """List all versions of a JSON Schema.
 
@@ -185,6 +197,7 @@ class SchemaOrganizationService:
             ctx: The FastMCP request context.
             organization_name: Organization name string.
             schema_name: Schema name string.
+            limit: Maximum number of versions to return.
 
         Returns:
             List of version info dicts.
@@ -194,7 +207,8 @@ class SchemaOrganizationService:
                 organization_name=organization_name,
                 name=schema_name,
             )
-            versions = schema.get_versions(
-                synapse_client=client,
+            versions = await collect_async_generator(
+                schema.get_versions_async(synapse_client=client),
+                limit,
             )
             return [serialize_model(v) for v in versions]

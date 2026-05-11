@@ -190,14 +190,12 @@ class TestListJsonSchemas:
         """list_json_schemas serializes every schema yielded by the SDK iterator into the result list."""
         # GIVEN an organization with two schemas
         mock_get_client.return_value = MagicMock()
-        mock_org_cls.return_value.get_json_schemas = MagicMock(
-            return_value=iter(
-                [
-                    FakeSchema(name="SchemaA"),
-                    FakeSchema(name="SchemaB"),
-                ]
-            )
-        )
+
+        async def _schemas(**kw):
+            yield FakeSchema(name="SchemaA")
+            yield FakeSchema(name="SchemaB")
+
+        mock_org_cls.return_value.get_json_schemas_async = _schemas
 
         # WHEN we list schemas
         result = await SchemaOrganizationService().list_json_schemas(
@@ -210,6 +208,34 @@ class TestListJsonSchemas:
         assert result[0]["name"] == "SchemaA"
         assert "name" in result[1]
         assert result[1]["name"] == "SchemaB"
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.SchemaOrganization")
+    async def test_given_limit_when_listed_then_stops_at_limit(
+        self, mock_org_cls: MagicMock, mock_get_client: AsyncMock
+    ):
+        """list_json_schemas honors the limit and stops iterating the SDK generator early."""
+        # GIVEN an organization that would yield five schemas
+        mock_get_client.return_value = MagicMock()
+        fetched: list[str] = []
+
+        async def _schemas(**kw):
+            for i in range(5):
+                fetched.append(f"Schema{i}")
+                yield FakeSchema(name=f"Schema{i}")
+
+        mock_org_cls.return_value.get_json_schemas_async = _schemas
+
+        # WHEN we list with limit=2
+        result = await SchemaOrganizationService().list_json_schemas(
+            MagicMock(), organization_name="sage.example", limit=2
+        )
+
+        # THEN only two are returned AND the SDK is not iterated past the limit
+        assert len(result) == 2
+        assert result[0]["name"] == "Schema0"
+        assert result[1]["name"] == "Schema1"
+        assert fetched == ["Schema0", "Schema1"]
 
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
     async def test_given_expired_auth_when_called_then_returns_error_list(
@@ -293,7 +319,7 @@ class TestGetJsonSchemaBody:
         # GIVEN a schema with a JSON body
         mock_get_client.return_value = MagicMock()
         body = {"$id": "schema-id", "type": "object", "properties": {}}
-        mock_schema_cls.return_value.get_body = MagicMock(return_value=body)
+        mock_schema_cls.return_value.get_body_async = AsyncMock(return_value=body)
 
         # WHEN we get the schema body without a version
         result = await SchemaOrganizationService().get_json_schema_body(
@@ -307,8 +333,8 @@ class TestGetJsonSchemaBody:
         assert result["$id"] == "schema-id"
         assert "type" in result
         assert result["type"] == "object"
-        mock_schema_cls.return_value.get_body.assert_called_once()
-        kwargs = mock_schema_cls.return_value.get_body.call_args.kwargs
+        mock_schema_cls.return_value.get_body_async.assert_awaited_once()
+        kwargs = mock_schema_cls.return_value.get_body_async.call_args.kwargs
         assert "version" in kwargs
         assert kwargs["version"] is None
 
@@ -317,10 +343,10 @@ class TestGetJsonSchemaBody:
     async def test_get_body_with_version(
         self, mock_schema_cls: MagicMock, mock_get_client: AsyncMock
     ):
-        """An explicit version argument is forwarded verbatim to JSONSchema.get_body."""
+        """An explicit version argument is forwarded verbatim to JSONSchema.get_body_async."""
         # GIVEN a request for a specific version
         mock_get_client.return_value = MagicMock()
-        mock_schema_cls.return_value.get_body = MagicMock(return_value={})
+        mock_schema_cls.return_value.get_body_async = AsyncMock(return_value={})
 
         # WHEN we get the schema body with a version
         await SchemaOrganizationService().get_json_schema_body(
@@ -331,7 +357,7 @@ class TestGetJsonSchemaBody:
         )
 
         # THEN the version is forwarded to the SDK call
-        kwargs = mock_schema_cls.return_value.get_body.call_args.kwargs
+        kwargs = mock_schema_cls.return_value.get_body_async.call_args.kwargs
         assert "version" in kwargs
         assert kwargs["version"] == "1.2.3"
 
@@ -365,14 +391,12 @@ class TestListJsonSchemaVersions:
         """list_json_schema_versions serializes each version yielded by the SDK iterator in iteration order."""
         # GIVEN a schema with multiple versions
         mock_get_client.return_value = MagicMock()
-        mock_schema_cls.return_value.get_versions = MagicMock(
-            return_value=iter(
-                [
-                    FakeVersion(semantic_version="1.0.0"),
-                    FakeVersion(semantic_version="2.0.0"),
-                ]
-            )
-        )
+
+        async def _versions(**kw):
+            yield FakeVersion(semantic_version="1.0.0")
+            yield FakeVersion(semantic_version="2.0.0")
+
+        mock_schema_cls.return_value.get_versions_async = _versions
 
         # WHEN we list versions
         result = await SchemaOrganizationService().list_json_schema_versions(
@@ -387,6 +411,36 @@ class TestListJsonSchemaVersions:
         assert result[0]["semantic_version"] == "1.0.0"
         assert "semantic_version" in result[1]
         assert result[1]["semantic_version"] == "2.0.0"
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.JSONSchema")
+    async def test_given_limit_when_listed_then_stops_at_limit(
+        self, mock_schema_cls: MagicMock, mock_get_client: AsyncMock
+    ):
+        """list_json_schema_versions honors the limit and stops iterating the SDK generator early."""
+        # GIVEN a schema that would yield four versions
+        mock_get_client.return_value = MagicMock()
+        fetched: list[str] = []
+
+        async def _versions(**kw):
+            for v in ["1.0.0", "2.0.0", "3.0.0", "4.0.0"]:
+                fetched.append(v)
+                yield FakeVersion(semantic_version=v)
+
+        mock_schema_cls.return_value.get_versions_async = _versions
+
+        # WHEN we list with limit=1
+        result = await SchemaOrganizationService().list_json_schema_versions(
+            MagicMock(),
+            organization_name="sage.example",
+            schema_name="ExampleSchema",
+            limit=1,
+        )
+
+        # THEN only one is returned AND the SDK is not iterated past the limit
+        assert len(result) == 1
+        assert result[0]["semantic_version"] == "1.0.0"
+        assert fetched == ["1.0.0"]
 
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
     async def test_given_expired_auth_when_called_then_returns_error_list(

@@ -893,11 +893,13 @@ async def get_schema_organization_acl(
     annotations=_RO,
 )
 async def list_json_schemas(
-    organization_name: str, ctx: Context
+    organization_name: str,
+    ctx: Context,
+    limit: int = 100,
 ) -> List[Dict[str, Any]]:
     """List schemas in an organization."""
     return await SchemaOrganizationService().list_json_schemas(
-        ctx, organization_name
+        ctx, organization_name, limit
     )
 
 
@@ -951,10 +953,11 @@ async def list_json_schema_versions(
     organization_name: str,
     schema_name: str,
     ctx: Context,
+    limit: int = 100,
 ) -> List[Dict[str, Any]]:
     """List versions of a JSON Schema."""
     return await SchemaOrganizationService().list_json_schema_versions(
-        ctx, organization_name, schema_name
+        ctx, organization_name, schema_name, limit
     )
 
 
