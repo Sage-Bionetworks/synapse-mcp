@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from synapse_mcp.connection_auth import ConnectionAuthError
 from synapse_mcp.services.schema_organization_service import (
     SchemaOrganizationService,
 )
@@ -115,6 +116,23 @@ class TestGetSchemaOrganization:
         assert "error" in result
         assert result["error"] == "Either organization_name or organization_id is required"
 
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    async def test_given_expired_auth_when_called_then_returns_error_dict(
+        self, mock_get_client: AsyncMock
+    ):
+        # GIVEN expired credentials
+        mock_get_client.side_effect = ConnectionAuthError("expired")
+
+        # WHEN we get the organization
+        result = await SchemaOrganizationService().get_schema_organization(
+            MagicMock(), organization_name="sage.example"
+        )
+
+        # THEN the auth error is returned with organization_name context
+        assert isinstance(result, dict)
+        assert "Authentication required" in result["error"]
+        assert result["organization_name"] == "sage.example"
+
 
 class TestGetSchemaOrganizationAcl:
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
@@ -144,6 +162,23 @@ class TestGetSchemaOrganizationAcl:
         assert "etag" in result["acl"]
         assert result["acl"]["etag"] == "acl-etag"
         mock_org_cls.assert_called_once_with(name="sage.example")
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    async def test_given_expired_auth_when_called_then_returns_error_dict(
+        self, mock_get_client: AsyncMock
+    ):
+        # GIVEN expired credentials
+        mock_get_client.side_effect = ConnectionAuthError("expired")
+
+        # WHEN we get the ACL
+        result = await SchemaOrganizationService().get_schema_organization_acl(
+            MagicMock(), organization_name="sage.example"
+        )
+
+        # THEN the auth error is returned with organization_name context
+        assert isinstance(result, dict)
+        assert "Authentication required" in result["error"]
+        assert result["organization_name"] == "sage.example"
 
 
 class TestListJsonSchemas:
@@ -175,6 +210,23 @@ class TestListJsonSchemas:
         assert result[0]["name"] == "SchemaA"
         assert "name" in result[1]
         assert result[1]["name"] == "SchemaB"
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    async def test_given_expired_auth_when_called_then_returns_error_list(
+        self, mock_get_client: AsyncMock
+    ):
+        # GIVEN expired credentials
+        mock_get_client.side_effect = ConnectionAuthError("expired")
+
+        # WHEN we list schemas
+        result = await SchemaOrganizationService().list_json_schemas(
+            MagicMock(), organization_name="sage.example"
+        )
+
+        # THEN the auth error is wrapped in a list with organization_name context
+        assert isinstance(result, list)
+        assert "Authentication required" in result[0]["error"]
+        assert result[0]["organization_name"] == "sage.example"
 
 
 class TestGetJsonSchema:
@@ -209,6 +261,26 @@ class TestGetJsonSchema:
             organization_name="sage.example",
             name="ExampleSchema",
         )
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    async def test_given_expired_auth_when_called_then_returns_error_dict(
+        self, mock_get_client: AsyncMock
+    ):
+        # GIVEN expired credentials
+        mock_get_client.side_effect = ConnectionAuthError("expired")
+
+        # WHEN we get the schema
+        result = await SchemaOrganizationService().get_json_schema(
+            MagicMock(),
+            organization_name="sage.example",
+            schema_name="ExampleSchema",
+        )
+
+        # THEN the auth error is returned with organization_name and schema_name context
+        assert isinstance(result, dict)
+        assert "Authentication required" in result["error"]
+        assert result["organization_name"] == "sage.example"
+        assert result["schema_name"] == "ExampleSchema"
 
 
 class TestGetJsonSchemaBody:
@@ -263,6 +335,26 @@ class TestGetJsonSchemaBody:
         assert "version" in kwargs
         assert kwargs["version"] == "1.2.3"
 
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    async def test_given_expired_auth_when_called_then_returns_error_dict(
+        self, mock_get_client: AsyncMock
+    ):
+        # GIVEN expired credentials
+        mock_get_client.side_effect = ConnectionAuthError("expired")
+
+        # WHEN we get the schema body
+        result = await SchemaOrganizationService().get_json_schema_body(
+            MagicMock(),
+            organization_name="sage.example",
+            schema_name="ExampleSchema",
+        )
+
+        # THEN the auth error is returned with organization_name and schema_name context
+        assert isinstance(result, dict)
+        assert "Authentication required" in result["error"]
+        assert result["organization_name"] == "sage.example"
+        assert result["schema_name"] == "ExampleSchema"
+
 
 class TestListJsonSchemaVersions:
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
@@ -295,4 +387,24 @@ class TestListJsonSchemaVersions:
         assert result[0]["semantic_version"] == "1.0.0"
         assert "semantic_version" in result[1]
         assert result[1]["semantic_version"] == "2.0.0"
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    async def test_given_expired_auth_when_called_then_returns_error_list(
+        self, mock_get_client: AsyncMock
+    ):
+        # GIVEN expired credentials
+        mock_get_client.side_effect = ConnectionAuthError("expired")
+
+        # WHEN we list versions
+        result = await SchemaOrganizationService().list_json_schema_versions(
+            MagicMock(),
+            organization_name="sage.example",
+            schema_name="ExampleSchema",
+        )
+
+        # THEN the auth error is wrapped in a list with organization_name and schema_name context
+        assert isinstance(result, list)
+        assert "Authentication required" in result[0]["error"]
+        assert result[0]["organization_name"] == "sage.example"
+        assert result[0]["schema_name"] == "ExampleSchema"
 
