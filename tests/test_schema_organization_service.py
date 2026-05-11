@@ -113,7 +113,6 @@ class TestGetSchemaOrganizationAcl:
         assert "organization_name" in result
         assert result["organization_name"] == "sage.example"
 
-
         # AND the ACL is returned
         assert "acl" in result
         assert "etag" in result["acl"]
@@ -148,7 +147,7 @@ class TestListJsonSchemas:
         # GIVEN an organization with two schemas
         mock_get_client.return_value = MagicMock()
 
-        async def _schemas(**kw):
+        async def _schemas(**_):
             yield FakeSchema(name="SchemaA")
             yield FakeSchema(name="SchemaB")
 
@@ -176,7 +175,7 @@ class TestListJsonSchemas:
         mock_get_client.return_value = MagicMock()
         fetched: list[str] = []
 
-        async def _schemas(**kw):
+        async def _schemas(**_):
             for i in range(5):
                 fetched.append(f"Schema{i}")
                 yield FakeSchema(name=f"Schema{i}")
@@ -349,7 +348,7 @@ class TestListJsonSchemaVersions:
         # GIVEN a schema with multiple versions
         mock_get_client.return_value = MagicMock()
 
-        async def _versions(**kw):
+        async def _versions(**_):
             yield FakeVersion(semantic_version="1.0.0")
             yield FakeVersion(semantic_version="2.0.0")
 
@@ -379,7 +378,7 @@ class TestListJsonSchemaVersions:
         mock_get_client.return_value = MagicMock()
         fetched: list[str] = []
 
-        async def _versions(**kw):
+        async def _versions(**_):
             for v in ["1.0.0", "2.0.0", "3.0.0", "4.0.0"]:
                 fetched.append(v)
                 yield FakeVersion(semantic_version=v)
