@@ -34,6 +34,24 @@ class FakeFormData:
     data_file_handle_id: Optional[str] = None
 
 
+def fake_list_async(captured_kwargs: Optional[dict] = None):
+    """Stand-in for FormGroup.list_async that yields two fixture submissions.
+
+    If captured_kwargs is provided, the kwargs the service forwards to the SDK
+    are recorded into it (so tests can assert on input). Returns the async
+    generator function itself, ready to assign to mock_fg.return_value.list_async.
+    """
+    async def _list_async(**kw):
+        if captured_kwargs is not None:
+            captured_kwargs.update(kw)
+        yield FakeFormData(form_data_id="fd-1")
+        yield FakeFormData(
+            form_data_id="fd-2",
+            submission_status="ACCEPTED",
+        )
+    return _list_async
+
+
 class TestListFormData:
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
     @patch(f"{SVC}.FormGroup")
@@ -42,15 +60,7 @@ class TestListFormData:
     ):
         # GIVEN a FormGroup with two submissions
         mock_get_client.return_value = MagicMock()
-
-        async def _submissions(**kw):
-            yield FakeFormData(form_data_id="fd-1")
-            yield FakeFormData(
-                form_data_id="fd-2",
-                submission_status="ACCEPTED",
-            )
-
-        mock_fg_cls.return_value.list_async = _submissions
+        mock_fg_cls.return_value.list_async = fake_list_async()
 
         # WHEN we list form data for the group
         result = await FormService().list_form_data(
@@ -74,13 +84,7 @@ class TestListFormData:
         client = MagicMock()
         mock_get_client.return_value = client
         captured_kwargs: dict = {}
-
-        async def _submissions(**kw):
-            captured_kwargs.update(kw)
-            if False:
-                yield  # pragma: no cover — make this an async generator
-
-        mock_fg_cls.return_value.list_async = _submissions
+        mock_fg_cls.return_value.list_async = fake_list_async(captured_kwargs)
 
         # WHEN we list with filter_by_state and as_reviewer
         await FormService().list_form_data(
@@ -105,9 +109,11 @@ class TestListFormData:
         # GIVEN a FormGroup with no submissions
         mock_get_client.return_value = MagicMock()
 
-        async def _submissions(**kw):
-            if False:
-                yield  # pragma: no cover — empty async generator
+        # An empty async generator: the unreachable yield is what makes
+        # Python compile this as a generator instead of a coroutine.
+        async def _submissions(**_):
+            for _ in ():
+                yield
 
         mock_fg_cls.return_value.list_async = _submissions
 
@@ -128,7 +134,11 @@ class TestListFormData:
         mock_get_client.return_value = MagicMock()
         fetched: list[str] = []
 
-        async def _submissions(**kw):
+        # Record each yield so we can distinguish "service stopped iterating
+        # at the limit" from "service consumed all five and sliced". With
+        # limit=2, fetched should contain exactly the two items pulled —
+        # if it contains all five, the service is over-fetching.
+        async def _submissions(**_):
             for i in range(5):
                 fetched.append(f"fd-{i}")
                 yield FakeFormData(form_data_id=f"fd-{i}")
