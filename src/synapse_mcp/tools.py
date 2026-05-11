@@ -979,8 +979,9 @@ async def list_form_data(
     ctx: Context,
     filter_by_state: Optional[List[str]] = None,
     as_reviewer: bool = False,
+    limit: int = 100,
 ) -> List[Dict[str, Any]]:
     """List form submissions for a FormGroup."""
     return await FormService().list_form_data(
-        ctx, group_id, filter_by_state, as_reviewer
+        ctx, group_id, filter_by_state, as_reviewer, limit
     )

@@ -5,7 +5,12 @@ from typing import Any, Optional
 from fastmcp import Context
 from synapseclient.models import FormGroup
 
-from .tool_service import error_boundary, serialize_model, synapse_client
+from .tool_service import (
+    collect_async_generator,
+    error_boundary,
+    serialize_model,
+    synapse_client,
+)
 
 
 class FormService:
@@ -21,6 +26,7 @@ class FormService:
         group_id: str,
         filter_by_state: Optional[list[str]] = None,
         as_reviewer: bool = False,
+        limit: int = 100,
     ) -> list[dict[str, Any]]:
         """List form submissions for a FormGroup.
 
@@ -30,16 +36,20 @@ class FormService:
             filter_by_state: Optional list of states
                 to filter by (e.g. SUBMITTED, ACCEPTED).
             as_reviewer: If True, list as reviewer.
+            limit: Maximum number of submissions to return.
 
         Returns:
             List of form data submission dicts.
         """
         async with synapse_client(ctx) as client:
             group = FormGroup(group_id=group_id)
-            submissions = await group.list_async(
-                filter_by_state=filter_by_state,
-                as_reviewer=as_reviewer,
-                synapse_client=client,
+            submissions = await collect_async_generator(
+                group.list_async(
+                    filter_by_state=filter_by_state,
+                    as_reviewer=as_reviewer,
+                    synapse_client=client,
+                ),
+                limit,
             )
             return [
                 serialize_model(s) for s in submissions

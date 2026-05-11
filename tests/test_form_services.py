@@ -42,15 +42,15 @@ class TestListFormData:
     ):
         # GIVEN a FormGroup with two submissions
         mock_get_client.return_value = MagicMock()
-        mock_fg_cls.return_value.list_async = AsyncMock(
-            return_value=[
-                FakeFormData(form_data_id="fd-1"),
-                FakeFormData(
-                    form_data_id="fd-2",
-                    submission_status="ACCEPTED",
-                ),
-            ]
-        )
+
+        async def _submissions(**kw):
+            yield FakeFormData(form_data_id="fd-1")
+            yield FakeFormData(
+                form_data_id="fd-2",
+                submission_status="ACCEPTED",
+            )
+
+        mock_fg_cls.return_value.list_async = _submissions
 
         # WHEN we list form data for the group
         result = await FormService().list_form_data(
@@ -73,8 +73,14 @@ class TestListFormData:
         # GIVEN a state filter and reviewer flag
         client = MagicMock()
         mock_get_client.return_value = client
-        list_async = AsyncMock(return_value=[])
-        mock_fg_cls.return_value.list_async = list_async
+        captured_kwargs: dict = {}
+
+        async def _submissions(**kw):
+            captured_kwargs.update(kw)
+            if False:
+                yield  # pragma: no cover — make this an async generator
+
+        mock_fg_cls.return_value.list_async = _submissions
 
         # WHEN we list with filter_by_state and as_reviewer
         await FormService().list_form_data(
@@ -85,11 +91,11 @@ class TestListFormData:
         )
 
         # THEN the client receives the same arguments
-        list_async.assert_awaited_once_with(
-            filter_by_state=["SUBMITTED", "ACCEPTED"],
-            as_reviewer=True,
-            synapse_client=client,
-        )
+        assert captured_kwargs == {
+            "filter_by_state": ["SUBMITTED", "ACCEPTED"],
+            "as_reviewer": True,
+            "synapse_client": client,
+        }
 
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
     @patch(f"{SVC}.FormGroup")
@@ -98,7 +104,12 @@ class TestListFormData:
     ):
         # GIVEN a FormGroup with no submissions
         mock_get_client.return_value = MagicMock()
-        mock_fg_cls.return_value.list_async = AsyncMock(return_value=[])
+
+        async def _submissions(**kw):
+            if False:
+                yield  # pragma: no cover — empty async generator
+
+        mock_fg_cls.return_value.list_async = _submissions
 
         # WHEN we list form data
         result = await FormService().list_form_data(
@@ -107,6 +118,33 @@ class TestListFormData:
 
         # THEN an empty list is returned
         assert result == []
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.FormGroup")
+    async def test_given_limit_when_listed_then_stops_at_limit(
+        self, mock_fg_cls, mock_get_client
+    ):
+        # GIVEN a FormGroup that would yield five submissions
+        mock_get_client.return_value = MagicMock()
+        fetched: list[str] = []
+
+        async def _submissions(**kw):
+            for i in range(5):
+                fetched.append(f"fd-{i}")
+                yield FakeFormData(form_data_id=f"fd-{i}")
+
+        mock_fg_cls.return_value.list_async = _submissions
+
+        # WHEN we list with limit=2
+        result = await FormService().list_form_data(
+            MagicMock(), group_id="9", limit=2
+        )
+
+        # THEN only two are returned AND the SDK is not iterated past the limit
+        assert len(result) == 2
+        assert result[0]["form_data_id"] == "fd-0"
+        assert result[1]["form_data_id"] == "fd-1"
+        assert fetched == ["fd-0", "fd-1"]
 
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
     async def test_given_expired_auth_when_listing_then_returns_error_list(
