@@ -1,6 +1,6 @@
 """Service layer for Form operations."""
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from fastmcp import Context
 from synapseclient.models import FormGroup
@@ -19,9 +19,9 @@ class FormService:
         self,
         ctx: Context,
         group_id: str,
-        filter_by_state: Optional[List[str]] = None,
+        filter_by_state: Optional[list[str]] = None,
         as_reviewer: bool = False,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """List form submissions for a FormGroup.
 
         Arguments:
