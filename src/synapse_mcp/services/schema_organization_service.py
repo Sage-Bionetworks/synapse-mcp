@@ -1,6 +1,6 @@
 """Service layer for JSON Schema Organization operations."""
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from fastmcp import Context
 from synapseclient.models import JSONSchema, SchemaOrganization
@@ -22,7 +22,7 @@ class SchemaOrganizationService:
         ctx: Context,
         organization_name: Optional[str] = None,
         organization_id: Optional[int] = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Get a Schema Organization by name or ID.
 
         Arguments:
@@ -31,24 +31,25 @@ class SchemaOrganizationService:
             organization_id: Numeric organization ID.
 
         Returns:
-            Dict with organization metadata.
+            Dict with organization metadata, or {"error": ...} if neither
+              organization_name nor organization_id is supplied.
         """
+        if organization_name is None and organization_id is None:
+            return {
+                "error": (
+                    "Either organization_name or "
+                    "organization_id is required"
+                )
+            }
         async with synapse_client(ctx) as client:
             if organization_name is not None:
                 org = await SchemaOrganization(
                     name=organization_name,
                 ).get_async(synapse_client=client)
-            elif organization_id is not None:
+            else:
                 org = await SchemaOrganization(
                     id=organization_id,
                 ).get_async(synapse_client=client)
-            else:
-                return {
-                    "error": (
-                        "Either organization_name or "
-                        "organization_id is required"
-                    )
-                }
             return serialize_model(org)
 
     @error_boundary(
@@ -56,7 +57,7 @@ class SchemaOrganizationService:
     )
     async def get_schema_organization_acl(
         self, ctx: Context, organization_name: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Get the ACL for a Schema Organization.
 
         Arguments:
@@ -82,7 +83,7 @@ class SchemaOrganizationService:
     )
     async def list_json_schemas(
         self, ctx: Context, organization_name: str
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """List all schemas in an organization.
 
         Arguments:
@@ -99,7 +100,7 @@ class SchemaOrganizationService:
             schemas = org.get_json_schemas(
                 synapse_client=client,
             )
-            return [serialize_model(s) for s in schemas]
+            return [serialize_model(schema) for schema in schemas]
 
     @error_boundary(
         error_context_keys=(
@@ -112,7 +113,7 @@ class SchemaOrganizationService:
         ctx: Context,
         organization_name: str,
         schema_name: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Get metadata for a specific JSON Schema.
 
         Arguments:
@@ -142,7 +143,7 @@ class SchemaOrganizationService:
         organization_name: str,
         schema_name: str,
         version: Optional[str] = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Get the actual JSON body of a schema.
 
         Arguments:
@@ -177,7 +178,7 @@ class SchemaOrganizationService:
         ctx: Context,
         organization_name: str,
         schema_name: str,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """List all versions of a JSON Schema.
 
         Arguments:
