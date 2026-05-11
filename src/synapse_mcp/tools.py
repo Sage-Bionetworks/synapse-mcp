@@ -789,7 +789,7 @@ async def list_my_submission_bundles(
 
 
 # ---------------------------------------------------------------------------
-# Domain 13: Curation Tasks
+# Domain 12: Curation Tasks
 # ---------------------------------------------------------------------------
 
 
@@ -844,7 +844,7 @@ async def get_curation_task_resources(
 
 
 # ---------------------------------------------------------------------------
-# Domain 12: JSON Schema Organizations
+# Domain 13: JSON Schema Organizations
 # ---------------------------------------------------------------------------
 
 

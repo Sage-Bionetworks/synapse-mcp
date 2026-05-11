@@ -67,7 +67,7 @@ class TestListFormData:
 
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
     @patch(f"{SVC}.FormGroup")
-    async def test_that_parameters_are_passed_to_client(
+    async def test_given_filter_and_reviewer_when_listed_then_forwarded_to_sdk(
         self, mock_fg_cls, mock_get_client
     ):
         # GIVEN a state filter and reviewer flag

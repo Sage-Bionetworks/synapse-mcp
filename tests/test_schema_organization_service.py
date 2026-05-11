@@ -1,7 +1,6 @@
 """Tests for SchemaOrganizationService."""
 
 from dataclasses import dataclass
-from typing import Optional
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -26,15 +25,9 @@ SVC = "synapse_mcp.services.schema_organization_service"
 @dataclass
 class FakeOrg:
     name: str = "sage.example"
-    id: int = 42
+    id: str = "42"
     created_on: str = "2025-01-01"
     created_by: str = "user1"
-
-
-@dataclass
-class FakeAcl:
-    resource_access: Optional[list] = None
-    etag: str = "acl-etag"
 
 
 @dataclass
@@ -58,14 +51,14 @@ class FakeVersion:
 class TestGetSchemaOrganization:
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
     @patch(f"{SVC}.SchemaOrganization")
-    async def test_get_schema_organization_with_name(
+    async def test_given_organization_name_when_get_then_returns_serialized_org(
         self, mock_org_cls: MagicMock, mock_get_client: AsyncMock
     ):
         """Fetching by organization_name returns the serialized org and constructs SchemaOrganization with name=."""
         # GIVEN an organization fetched by name
         mock_get_client.return_value = MagicMock()
         mock_org_cls.return_value.get_async = AsyncMock(
-            return_value=FakeOrg(name="sage.example", id=42)
+            return_value=FakeOrg(name="sage.example", id="42")
         )
 
         # WHEN we get the organization by name
@@ -77,7 +70,7 @@ class TestGetSchemaOrganization:
         assert "name" in result
         assert result["name"] == "sage.example"
         assert "id" in result
-        assert result["id"] == 42
+        assert result["id"] == "42"
         mock_org_cls.assert_called_once_with(name="sage.example")
 
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
@@ -101,14 +94,14 @@ class TestGetSchemaOrganization:
 class TestGetSchemaOrganizationAcl:
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
     @patch(f"{SVC}.SchemaOrganization")
-    async def test_get_acl(
+    async def test_given_organization_when_get_acl_then_returns_org_name_and_acl(
         self, mock_org_cls: MagicMock, mock_get_client: AsyncMock
     ):
         """get_schema_organization_acl returns the organization name alongside the serialized ACL."""
         # GIVEN an organization with an ACL
         mock_get_client.return_value = MagicMock()
         mock_org_cls.return_value.get_acl_async = AsyncMock(
-            return_value=FakeAcl(resource_access=[], etag="acl-etag")
+            return_value={"resource_access": [], "etag": "acl-etag"}
         )
 
         # WHEN we get the ACL
@@ -148,7 +141,7 @@ class TestGetSchemaOrganizationAcl:
 class TestListJsonSchemas:
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
     @patch(f"{SVC}.SchemaOrganization")
-    async def test_get_json_schemas(
+    async def test_given_organization_when_listed_then_returns_all_schemas(
         self, mock_org_cls: MagicMock, mock_get_client: AsyncMock
     ):
         """list_json_schemas serializes every schema yielded by the SDK iterator into the result list."""
@@ -222,7 +215,7 @@ class TestListJsonSchemas:
 class TestGetJsonSchema:
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
     @patch(f"{SVC}.JSONSchema")
-    async def test_get_json_schema(
+    async def test_given_organization_and_schema_name_when_get_then_returns_metadata(
         self, mock_schema_cls: MagicMock, mock_get_client: AsyncMock
     ):
         """get_json_schema returns serialized metadata and constructs JSONSchema with both organization_name and name."""
@@ -276,7 +269,7 @@ class TestGetJsonSchema:
 class TestGetJsonSchemaBody:
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
     @patch(f"{SVC}.JSONSchema")
-    async def test_get_body_without_version(
+    async def test_given_no_version_when_get_body_then_forwards_version_none(
         self, mock_schema_cls: MagicMock, mock_get_client: AsyncMock
     ):
         """get_json_schema_body returns the raw JSON body and forwards version=None when no version is given."""
@@ -304,7 +297,7 @@ class TestGetJsonSchemaBody:
 
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
     @patch(f"{SVC}.JSONSchema")
-    async def test_get_body_with_version(
+    async def test_given_version_when_get_body_then_forwards_version(
         self, mock_schema_cls: MagicMock, mock_get_client: AsyncMock
     ):
         """An explicit version argument is forwarded verbatim to JSONSchema.get_body_async."""
@@ -349,7 +342,7 @@ class TestGetJsonSchemaBody:
 class TestListJsonSchemaVersions:
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
     @patch(f"{SVC}.JSONSchema")
-    async def test_get_versions(
+    async def test_given_schema_when_list_versions_then_returns_all_in_order(
         self, mock_schema_cls: MagicMock, mock_get_client: AsyncMock
     ):
         """list_json_schema_versions serializes each version yielded by the SDK iterator in iteration order."""
