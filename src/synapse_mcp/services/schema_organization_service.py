@@ -16,45 +16,25 @@ from .tool_service import (
 class SchemaOrganizationService:
     """Orchestrates JSON schema organization read operations."""
 
-    @error_boundary(
-        error_context_keys=(
-            "organization_name",
-            "organization_id",
-        )
-    )
+    @error_boundary(error_context_keys=("organization_name",))
     async def get_schema_organization(
         self,
         ctx: Context,
-        organization_name: Optional[str] = None,
-        organization_id: Optional[int] = None,
+        organization_name: str,
     ) -> dict[str, Any]:
-        """Get a Schema Organization by name or ID.
+        """Get a Schema Organization by name.
 
         Arguments:
             ctx: The FastMCP request context.
             organization_name: Organization name string.
-            organization_id: Numeric organization ID.
 
         Returns:
-            Dict with organization metadata, or {"error": ...} if neither
-              organization_name nor organization_id is supplied.
+            Dict with organization metadata.
         """
-        if organization_name is None and organization_id is None:
-            return {
-                "error": (
-                    "Either organization_name or "
-                    "organization_id is required"
-                )
-            }
         async with synapse_client(ctx) as client:
-            if organization_name is not None:
-                org = await SchemaOrganization(
-                    name=organization_name,
-                ).get_async(synapse_client=client)
-            else:
-                org = await SchemaOrganization(
-                    id=organization_id,
-                ).get_async(synapse_client=client)
+            org = await SchemaOrganization(
+                name=organization_name,
+            ).get_async(synapse_client=client)
             return serialize_model(org)
 
     @error_boundary(

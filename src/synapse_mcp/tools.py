@@ -851,19 +851,16 @@ async def get_curation_task_resources(
 @mcp.tool(
     title="Get Schema Organization",
     description=(
-        "Get a Synapse JSON Schema Organization "
-        "by name or ID."
+        "Get a Synapse JSON Schema Organization by name."
     ),
     annotations=_RO,
 )
 async def get_schema_organization(
-    ctx: Context,
-    organization_name: Optional[str] = None,
-    organization_id: Optional[int] = None,
+    organization_name: str, ctx: Context
 ) -> Dict[str, Any]:
-    """Get a Schema Organization by name or ID."""
+    """Get a Schema Organization by name."""
     return await SchemaOrganizationService().get_schema_organization(
-        ctx, organization_name, organization_id
+        ctx, organization_name
     )
 
 

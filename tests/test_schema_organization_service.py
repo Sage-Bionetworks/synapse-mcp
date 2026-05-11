@@ -81,42 +81,6 @@ class TestGetSchemaOrganization:
         mock_org_cls.assert_called_once_with(name="sage.example")
 
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
-    @patch(f"{SVC}.SchemaOrganization")
-    async def test_get_schema_organization_with_id(
-        self, mock_org_cls: MagicMock, mock_get_client: AsyncMock
-    ):
-        """Fetching by organization_id constructs SchemaOrganization with id= and not name=."""
-        # GIVEN an organization fetched by numeric ID
-        mock_get_client.return_value = MagicMock()
-        mock_org_cls.return_value.get_async = AsyncMock(
-            return_value=FakeOrg(id=99, name="sage.other")
-        )
-
-        # WHEN we get the organization by ID
-        result = await SchemaOrganizationService().get_schema_organization(
-            MagicMock(), organization_id=99
-        )
-
-        # THEN organization metadata is returned
-        assert "name" in result
-        assert result["name"] == "sage.other"
-        assert "id" in result
-        assert result["id"] == 99
-        mock_org_cls.assert_called_once_with(id=99)
-
-    async def test_given_no_name_or_id_then_returns_error(self):
-        """Calling get_schema_organization with neither identifier returns an error dict before any SDK call."""
-        # GIVEN neither organization_name nor organization_id
-        # WHEN we call get_schema_organization
-        result = await SchemaOrganizationService().get_schema_organization(
-            MagicMock()
-        )
-
-        # THEN an error is returned
-        assert "error" in result
-        assert result["error"] == "Either organization_name or organization_id is required"
-
-    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
     async def test_given_expired_auth_when_called_then_returns_error_dict(
         self, mock_get_client: AsyncMock
     ):
