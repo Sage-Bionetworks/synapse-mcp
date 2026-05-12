@@ -64,7 +64,7 @@ class SchemaOrganizationService:
 
     @error_boundary(
         error_context_keys=("organization_name", "limit"),
-        wrap_errors=list,
+        wrap_errors=True,
     )
     async def list_json_schemas(
         self,
@@ -162,7 +162,7 @@ class SchemaOrganizationService:
             "schema_name",
             "limit",
         ),
-        wrap_errors=list,
+        wrap_errors=True,
     )
     async def list_json_schema_versions(
         self,

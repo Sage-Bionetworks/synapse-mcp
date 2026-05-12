@@ -20,12 +20,16 @@ class TeamService:
     ) -> Dict[str, Any]:
         """Get a Team by numeric ID or by name.
 
+        Exactly one of ``team_id`` or ``team_name`` must be
+        provided. If both are supplied, ``team_id`` takes
+        precedence.
+
         Arguments:
             ctx: The FastMCP request context.
-            team_id: Numeric team ID. Mutually exclusive
-                with team_name.
-            team_name: Team name string. Mutually exclusive
-                with team_id.
+            team_id: Numeric team ID. If provided, ``team_name``
+                is ignored.
+            team_name: Team name string. Only consulted when
+                ``team_id`` is not provided.
 
         Returns:
             Dict with team metadata (id, name, description,
@@ -33,22 +37,24 @@ class TeamService:
             Returns an error dict if neither argument is
             provided.
         """
+        # Validate inputs before opening the auth'd client so a
+        # misuse doesn't surface as an authentication error.
+        if team_id is None and team_name is None:
+            return {
+                "error": (
+                    "Either team_id or team_name"
+                    " is required"
+                )
+            }
         async with synapse_client(ctx) as client:
             if team_id is not None:
                 team = await Team.from_id_async(
                     id=team_id, synapse_client=client
                 )
-            elif team_name is not None:
+            else:
                 team = await Team.from_name_async(
                     name=team_name, synapse_client=client
                 )
-            else:
-                return {
-                    "error": (
-                        "Either team_id or team_name"
-                        " is required"
-                    )
-                }
             return serialize_model(team)
 
     @error_boundary(
@@ -72,12 +78,14 @@ class TeamService:
         Arguments:
             ctx: The FastMCP request context.
             team_id: Numeric team ID.
-            limit: If provided, return at most this many
-                members.
+            limit: If provided, must be non-negative; returns
+                at most this many members.
 
         Returns:
             List of team member dicts.
         """
+        if limit is not None and limit < 0:
+            raise ValueError("limit must be >= 0")
         async with synapse_client(ctx) as client:
             team = Team(id=team_id)
             members = await team.members_async(
@@ -106,12 +114,14 @@ class TeamService:
         Arguments:
             ctx: The FastMCP request context.
             team_id: Numeric team ID.
-            limit: If provided, return at most this many
-                invitations.
+            limit: If provided, must be non-negative; returns
+                at most this many invitations.
 
         Returns:
             List of invitation dicts.
         """
+        if limit is not None and limit < 0:
+            raise ValueError("limit must be >= 0")
         async with synapse_client(ctx) as client:
             team = Team(id=team_id)
             invitations = await team.open_invitations_async(
@@ -128,14 +138,14 @@ class TeamService:
         self,
         ctx: Context,
         team_id: int,
-        user_id: str,
+        user_id: int,
     ) -> Dict[str, Any]:
         """Check a user's membership status in a Team.
 
         Arguments:
             ctx: The FastMCP request context.
             team_id: Numeric team ID.
-            user_id: Synapse user ID string.
+            user_id: Numeric Synapse user ID.
 
         Returns:
             Dict with membership status flags
