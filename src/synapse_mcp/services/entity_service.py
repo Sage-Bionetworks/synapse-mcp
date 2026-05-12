@@ -9,7 +9,7 @@ legacy Synapse.get / getChildren / get_annotations).
 from typing import Any, Dict, List, Optional
 
 from fastmcp import Context
-from synapseclient.models import File, Folder, Link, Project
+from synapseclient.models import Folder
 from synapseclient.operations import get_async as operations_get_async
 from synapseclient.operations.factory_operations import (
     FileOptions,
@@ -22,6 +22,23 @@ from .tool_service import (
     serialize_model,
     synapse_client,
 )
+
+async def _resolve_entity(entity_id: str, client):
+    """Fetch an entity and return an instance of its concrete subclass.
+
+    ACL / permissions / schema methods are defined on the typed
+    subclass (Project, Folder, File, Table, ...); instantiating a
+    File for every ID is wrong when the target is a Project or
+    Folder. Resolve the concrete class via ``operations.get()``
+    once, then the caller invokes the model method on the right
+    type.
+    """
+    return await operations_get_async(
+        entity_id,
+        file_options=FileOptions(download_file=False),
+        synapse_client=client,
+    )
+
 
 # Child list attributes on Folder/Project containers.
 _CONTAINER_CHILD_ATTRS = (
@@ -153,7 +170,7 @@ class EntityService:
             of access_types (e.g. READ, UPDATE, DELETE).
         """
         async with synapse_client(ctx) as client:
-            entity = File(id=entity_id)
+            entity = await _resolve_entity(entity_id, client)
             access_types = await entity.get_acl_async(
                 principal_id=principal_id,
                 synapse_client=client,
@@ -179,7 +196,7 @@ class EntityService:
             flags (can_view, can_edit, can_download, etc.).
         """
         async with synapse_client(ctx) as client:
-            entity = File(id=entity_id)
+            entity = await _resolve_entity(entity_id, client)
             permissions = await entity.get_permissions_async(
                 synapse_client=client,
             )
@@ -208,7 +225,7 @@ class EntityService:
             descendants if recursive).
         """
         async with synapse_client(ctx) as client:
-            entity = File(id=entity_id)
+            entity = await _resolve_entity(entity_id, client)
             acl_result = await entity.list_acl_async(
                 recursive=recursive,
                 synapse_client=client,
@@ -234,7 +251,7 @@ class EntityService:
             (organization, schema name, version, etc.).
         """
         async with synapse_client(ctx) as client:
-            entity = File(id=entity_id)
+            entity = await _resolve_entity(entity_id, client)
             schema_info = await entity.get_schema_async(
                 synapse_client=client,
             )
@@ -259,7 +276,7 @@ class EntityService:
             derived_keys.
         """
         async with synapse_client(ctx) as client:
-            entity = File(id=entity_id)
+            entity = await _resolve_entity(entity_id, client)
             keys = await entity.get_schema_derived_keys_async(
                 synapse_client=client,
             )
