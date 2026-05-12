@@ -22,11 +22,17 @@ class UtilityService:
         name: str,
         parent_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Find a Synapse entity ID by name and parent.
+        """Find a Synapse entity ID by exact name and parent.
+
+        The name match is case-sensitive and must match the
+        stored entity name exactly (e.g. "Patient Record Set"
+        will not match "Patient record set"). Use
+        ``search_synapse`` for fuzzy or case-insensitive lookup.
 
         Arguments:
             ctx: The FastMCP request context.
-            name: Entity name to search for.
+            name: Entity name to search for (case-sensitive
+                exact match).
             parent_id: Optional parent container ID.
 
         Returns:

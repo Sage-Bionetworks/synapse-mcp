@@ -8,7 +8,6 @@ from .app import mcp
 from .services import (
     ActivityService,
     CurationTaskService,
-    DockerService,
     EntityService,
     EvaluationService,
     FormService,
@@ -1000,9 +999,11 @@ async def list_form_data(
 @mcp.tool(
     title="Find Entity ID",
     description=(
-        "Find a Synapse entity's ID by its name and "
-        "optional parent container. Useful when you know "
-        "the name but not the synapse ID."
+        "Find a Synapse entity's ID by its exact name "
+        "and optional parent container. The name match is "
+        "case-sensitive (e.g. 'Patient Record Set' will "
+        "not match 'Patient record set'). Use search_synapse "
+        "for fuzzy or case-insensitive lookup."
     ),
     annotations=_RO,
 )
@@ -1011,7 +1012,7 @@ async def find_entity_id(
     ctx: Context,
     parent_id: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Find an entity's Synapse ID by name and parent."""
+    """Find an entity's Synapse ID by exact name and parent."""
     return await UtilityService().find_entity_id(
         ctx, name, parent_id
     )
@@ -1047,26 +1048,3 @@ async def md5_query(
     return await UtilityService().md5_query(ctx, md5)
 
 
-# ---------------------------------------------------------------------------
-# Domain 15: DockerRepository
-# ---------------------------------------------------------------------------
-
-
-@mcp.tool(
-    title="Get Docker Repository",
-    description=(
-        "Get a Synapse DockerRepository entity by ID. "
-        "ACL and permissions use the generic entity "
-        "ACL tools."
-    ),
-    annotations=_RO,
-)
-async def get_docker_repository(
-    entity_id: str, ctx: Context
-) -> Dict[str, Any]:
-    """Get a DockerRepository entity by Synapse ID."""
-    if not validate_synapse_id(entity_id):
-        return {"error": f"Invalid Synapse ID: {entity_id}"}
-    return await DockerService().get_docker_repository(
-        ctx, entity_id
-    )
