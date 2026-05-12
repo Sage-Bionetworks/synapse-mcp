@@ -53,16 +53,27 @@ class TeamService:
 
     @error_boundary(
         error_context_keys=("team_id",),
-        wrap_errors=list,
+        wrap_errors=True,
     )
     async def get_team_members(
-        self, ctx: Context, team_id: int
+        self,
+        ctx: Context,
+        team_id: int,
+        limit: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
-        """List all members of a Team.
+        """List members of a Team.
+
+        Note: ``Team.members_async`` collects every page from
+        the Synapse API before returning, so fetch cost scales
+        with the full team size regardless of ``limit``. The
+        ``limit`` slices the final list to bound response size
+        sent back to the LLM.
 
         Arguments:
             ctx: The FastMCP request context.
             team_id: Numeric team ID.
+            limit: If provided, return at most this many
+                members.
 
         Returns:
             List of team member dicts.
@@ -72,20 +83,31 @@ class TeamService:
             members = await team.members_async(
                 synapse_client=client,
             )
+            if limit is not None:
+                members = members[:limit]
             return [serialize_model(m) for m in members]
 
     @error_boundary(
         error_context_keys=("team_id",),
-        wrap_errors=list,
+        wrap_errors=True,
     )
     async def get_team_open_invitations(
-        self, ctx: Context, team_id: int
+        self,
+        ctx: Context,
+        team_id: int,
+        limit: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         """List pending invitations for a Team.
+
+        Note: ``Team.open_invitations_async`` collects every
+        page from the Synapse API before returning. ``limit``
+        slices the final list but does not reduce API cost.
 
         Arguments:
             ctx: The FastMCP request context.
             team_id: Numeric team ID.
+            limit: If provided, return at most this many
+                invitations.
 
         Returns:
             List of invitation dicts.
@@ -95,6 +117,8 @@ class TeamService:
             invitations = await team.open_invitations_async(
                 synapse_client=client,
             )
+            if limit is not None:
+                invitations = invitations[:limit]
             return [
                 serialize_model(i) for i in invitations
             ]
