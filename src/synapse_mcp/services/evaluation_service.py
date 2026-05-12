@@ -48,7 +48,7 @@ class EvaluationService:
                 }
             return serialize_model(ev)
 
-    @error_boundary(wrap_errors=list)
+    @error_boundary(wrap_errors=True)
     async def list_evaluations(
         self,
         ctx: Context,

@@ -33,7 +33,7 @@ class SubmissionService:
 
     @error_boundary(
         error_context_keys=("evaluation_id",),
-        wrap_errors=list,
+        wrap_errors=True,
     )
     async def list_evaluation_submissions(
         self,
@@ -54,7 +54,7 @@ class SubmissionService:
 
     @error_boundary(
         error_context_keys=("evaluation_id",),
-        wrap_errors=list,
+        wrap_errors=True,
     )
     async def list_my_submissions(
         self,
@@ -99,7 +99,7 @@ class SubmissionService:
 
     @error_boundary(
         error_context_keys=("evaluation_id",),
-        wrap_errors=list,
+        wrap_errors=True,
     )
     async def list_submission_statuses(
         self,
@@ -124,7 +124,7 @@ class SubmissionService:
 
     @error_boundary(
         error_context_keys=("evaluation_id",),
-        wrap_errors=list,
+        wrap_errors=True,
     )
     async def list_evaluation_submission_bundles(
         self,
@@ -147,7 +147,7 @@ class SubmissionService:
 
     @error_boundary(
         error_context_keys=("evaluation_id",),
-        wrap_errors=list,
+        wrap_errors=True,
     )
     async def list_my_submission_bundles(
         self,

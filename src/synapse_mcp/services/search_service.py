@@ -60,7 +60,7 @@ class SearchService:
             list, facets, and the query payload used.
         """
         async with synapse_client(ctx) as client:
-            sanitized_limit = max(0, min(limit, 100))
+            sanitized_limit = max(1, min(limit, 100))
             sanitized_offset = max(0, offset)
 
             query_terms: List[str] = []
