@@ -671,9 +671,8 @@ async def get_submission(
     title="List Evaluation Submissions",
     description=(
         "List all submissions to a Synapse Evaluation "
-        "queue, optionally filtered by status. "
-        "If the result set hits the limit, call again "
-        "with a higher offset to retrieve the next page."
+        "queue, optionally filtered by status. Up to "
+        "``limit`` submissions are returned."
     ),
     annotations=_RO,
 )
