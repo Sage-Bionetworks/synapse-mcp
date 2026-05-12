@@ -4,6 +4,7 @@ import dataclasses
 import enum
 import functools
 import inspect
+import itertools
 from collections.abc import Mapping
 from contextlib import asynccontextmanager
 from datetime import date, datetime
@@ -64,12 +65,10 @@ def collect_generator(gen: Iterator, limit: int = 100) -> list:
     if limit == 0:
         return []
 
-    items: list = []
-    for item in gen:
-        if len(items) >= limit:
-            break
-        items.append(item)
-    return items
+    # islice stops pulling from ``gen`` once ``limit`` items have been
+    # yielded, so the (limit+1)th item is NOT consumed — callers that
+    # keep using ``gen`` see the next unread item.
+    return list(itertools.islice(gen, limit))
 
 
 async def collect_async_generator(gen: AsyncIterator, limit: int = 100) -> list:
@@ -150,8 +149,11 @@ def serialize_model(obj: Any) -> Any:
             for k, v in obj.items()
         }
 
-    if hasattr(obj, "to_dict"):
-        return obj.to_dict()
+    to_dict = getattr(obj, "to_dict", None)
+    if callable(to_dict):
+        # Recurse so nested datetimes/enums/dataclasses returned
+        # by ``to_dict`` still land as JSON-safe types.
+        return serialize_model(to_dict())
 
     return str(obj)
 
@@ -205,7 +207,9 @@ def error_boundary(
                     "error_type": type(exc).__name__,
                     **extra,
                 }
-                # Extract HTTP status code from SynapseHTTPError
+                # Extract HTTP status code from any exception carrying
+                # a ``response`` attribute with a ``status_code`` (the
+                # shape SynapseHTTPError and requests.HTTPError share).
                 response = getattr(exc, "response", None)
                 if response is not None:
                     status_code = getattr(

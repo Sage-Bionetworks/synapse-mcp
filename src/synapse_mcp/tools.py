@@ -311,6 +311,17 @@ async def get_activity(
     parent_version_number: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Get an Activity by ID or by parent entity."""
+    if activity_id is None and parent_id is None:
+        return {
+            "error": "Either activity_id or parent_id is required",
+        }
+    if parent_version_number is not None and parent_id is None:
+        return {
+            "error": (
+                "parent_version_number is only valid when parent_id "
+                "is provided"
+            ),
+        }
     return await ActivityService().get_activity(
         ctx, activity_id, parent_id, parent_version_number
     )
