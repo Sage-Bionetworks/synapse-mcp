@@ -3,7 +3,13 @@ from .curation_task_service import CurationTaskService
 from .entity_service import EntityService
 from .search_service import SearchService
 from .team_service import TeamService
-from .tool_service import collect_generator, dataclass_to_dict, error_boundary, synapse_client
+from .tool_service import (
+    collect_generator,
+    dataclass_to_dict,
+    error_boundary,
+    serialize_model,
+    synapse_client,
+)
 from .user_service import UserService
 from .wiki_service import WikiService
 
@@ -18,5 +24,6 @@ __all__ = [
     "collect_generator",
     "dataclass_to_dict",
     "error_boundary",
+    "serialize_model",
     "synapse_client",
 ]
