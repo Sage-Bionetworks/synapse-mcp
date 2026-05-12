@@ -795,7 +795,7 @@ async def list_my_submission_bundles(
 
 
 # ---------------------------------------------------------------------------
-# Domain 13: Curation Tasks
+# Domain 12: Curation Tasks
 # ---------------------------------------------------------------------------
 
 
@@ -850,26 +850,23 @@ async def get_curation_task_resources(
 
 
 # ---------------------------------------------------------------------------
-# Domain 12: JSON Schema Organizations
+# Domain 13: JSON Schema Organizations
 # ---------------------------------------------------------------------------
 
 
 @mcp.tool(
     title="Get Schema Organization",
     description=(
-        "Get a Synapse JSON Schema Organization "
-        "by name or ID."
+        "Get a Synapse JSON Schema Organization by name."
     ),
     annotations=_RO,
 )
 async def get_schema_organization(
-    ctx: Context,
-    organization_name: Optional[str] = None,
-    organization_id: Optional[int] = None,
+    organization_name: str, ctx: Context
 ) -> Dict[str, Any]:
-    """Get a Schema Organization by name or ID."""
+    """Get a Schema Organization by name."""
     return await SchemaOrganizationService().get_schema_organization(
-        ctx, organization_name, organization_id
+        ctx, organization_name
     )
 
 
@@ -899,11 +896,13 @@ async def get_schema_organization_acl(
     annotations=_RO,
 )
 async def list_json_schemas(
-    organization_name: str, ctx: Context
+    organization_name: str,
+    ctx: Context,
+    limit: int = 100,
 ) -> List[Dict[str, Any]]:
     """List schemas in an organization."""
     return await SchemaOrganizationService().list_json_schemas(
-        ctx, organization_name
+        ctx, organization_name, limit
     )
 
 
@@ -957,10 +956,11 @@ async def list_json_schema_versions(
     organization_name: str,
     schema_name: str,
     ctx: Context,
+    limit: int = 100,
 ) -> List[Dict[str, Any]]:
     """List versions of a JSON Schema."""
     return await SchemaOrganizationService().list_json_schema_versions(
-        ctx, organization_name, schema_name
+        ctx, organization_name, schema_name, limit
     )
 
 
@@ -982,8 +982,9 @@ async def list_form_data(
     ctx: Context,
     filter_by_state: Optional[List[str]] = None,
     as_reviewer: bool = False,
+    limit: int = 100,
 ) -> List[Dict[str, Any]]:
     """List form submissions for a FormGroup."""
     return await FormService().list_form_data(
-        ctx, group_id, filter_by_state, as_reviewer
+        ctx, group_id, filter_by_state, as_reviewer, limit
     )
