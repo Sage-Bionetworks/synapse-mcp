@@ -248,7 +248,7 @@ class TestGetTeamMembershipStatus:
         )
 
         result = await TeamService().get_team_membership_status(
-            MagicMock(), 100, "42"
+            MagicMock(), 100, 42
         )
 
         assert result["is_member"] is True
@@ -261,7 +261,7 @@ class TestGetTeamMembershipStatus:
         mock_get_client.side_effect = ConnectionAuthError("expired")
 
         result = await TeamService().get_team_membership_status(
-            MagicMock(), 100, "42"
+            MagicMock(), 100, 42
         )
 
         assert "Authentication required" in result["error"]

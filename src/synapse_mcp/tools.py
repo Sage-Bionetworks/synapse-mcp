@@ -513,7 +513,7 @@ async def get_team_open_invitations(
     annotations=_RO,
 )
 async def get_team_membership_status(
-    team_id: int, user_id: str, ctx: Context
+    team_id: int, user_id: int, ctx: Context
 ) -> Dict[str, Any]:
     """Check a user's Team membership status."""
     return await TeamService().get_team_membership_status(
