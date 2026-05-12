@@ -55,12 +55,20 @@ def collect_generator(gen: Iterator, limit: int = 100) -> list:
 
     All service methods that consume SDK generators must use this
     helper to prevent unbounded iteration.
+
+    Raises:
+        ValueError: If ``limit`` is negative.
     """
+    if limit < 0:
+        raise ValueError("limit must be >= 0")
+    if limit == 0:
+        return []
+
     items: list = []
     for item in gen:
-        items.append(item)
         if len(items) >= limit:
             break
+        items.append(item)
     return items
 
 
@@ -110,6 +118,9 @@ def serialize_model(obj: Any) -> Any:
 
     if isinstance(obj, (datetime, date)):
         return obj.isoformat()
+
+    if isinstance(obj, enum.Enum):
+        return obj.value
 
     if isinstance(obj, dict):
         return {
