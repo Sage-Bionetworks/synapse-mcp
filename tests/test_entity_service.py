@@ -181,36 +181,46 @@ class TestGetChildren:
 
 class TestGetAcl:
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
-    @patch(f"{SVC}.File")
-    async def test_given_entity_when_getting_acl_then_returns_access_types(
-        self, mock_file_cls, mock_get_client
+    @patch(f"{SVC}.operations_get_async", new_callable=AsyncMock)
+    async def test_given_project_entity_when_getting_acl_then_returns_access_types(
+        self, mock_ops_get, mock_get_client
     ):
+        # Reviewer: ACL must work on non-File entities. Resolve the
+        # concrete subclass (here a Project stand-in), then call
+        # get_acl_async on it — never hardcoded File(id=...).
         mock_get_client.return_value = MagicMock()
-        mock_file_cls.return_value.get_acl_async = AsyncMock(
+        resolved = MagicMock()
+        resolved.get_acl_async = AsyncMock(
             return_value=["READ", "UPDATE", "DELETE"]
         )
+        mock_ops_get.return_value = resolved
 
         result = await EntityService().get_acl(MagicMock(), "syn123")
 
         assert result["entity_id"] == "syn123"
         assert result["access_types"] == ["READ", "UPDATE", "DELETE"]
+        mock_ops_get.assert_called_once()
+        assert (
+            mock_ops_get.call_args[1]["file_options"].download_file
+            is False
+        )
 
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
-    @patch(f"{SVC}.File")
+    @patch(f"{SVC}.operations_get_async", new_callable=AsyncMock)
     async def test_given_principal_id_when_getting_acl_then_passes_to_sdk(
-        self, mock_file_cls, mock_get_client
+        self, mock_ops_get, mock_get_client
     ):
         mock_get_client.return_value = MagicMock()
-        mock_file_cls.return_value.get_acl_async = AsyncMock(
-            return_value=["READ"]
-        )
+        resolved = MagicMock()
+        resolved.get_acl_async = AsyncMock(return_value=["READ"])
+        mock_ops_get.return_value = resolved
 
         result = await EntityService().get_acl(
             MagicMock(), "syn123", principal_id=12345
         )
 
         assert result["principal_id"] == 12345
-        mock_file_cls.return_value.get_acl_async.assert_called_once_with(
+        resolved.get_acl_async.assert_called_once_with(
             principal_id=12345,
             synapse_client=mock_get_client.return_value,
         )
@@ -218,12 +228,13 @@ class TestGetAcl:
 
 class TestGetPermissions:
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
-    @patch(f"{SVC}.File")
+    @patch(f"{SVC}.operations_get_async", new_callable=AsyncMock)
     async def test_given_entity_when_getting_permissions_then_returns_dict(
-        self, mock_file_cls, mock_get_client
+        self, mock_ops_get, mock_get_client
     ):
         mock_get_client.return_value = MagicMock()
-        mock_file_cls.return_value.get_permissions_async = AsyncMock(
+        resolved = MagicMock()
+        resolved.get_permissions_async = AsyncMock(
             return_value=FakePermissions(
                 access_types=["READ", "DOWNLOAD"],
                 can_view=True,
@@ -231,6 +242,7 @@ class TestGetPermissions:
                 can_download=True,
             )
         )
+        mock_ops_get.return_value = resolved
 
         result = await EntityService().get_permissions(MagicMock(), "syn123")
 

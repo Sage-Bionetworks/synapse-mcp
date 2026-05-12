@@ -467,10 +467,14 @@ async def get_team(
     annotations=_RO,
 )
 async def get_team_members(
-    team_id: int, ctx: Context
+    team_id: int,
+    ctx: Context,
+    limit: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
-    """List all members of a Team."""
-    return await TeamService().get_team_members(ctx, team_id)
+    """List members of a Team."""
+    return await TeamService().get_team_members(
+        ctx, team_id, limit=limit
+    )
 
 
 @mcp.tool(
@@ -481,11 +485,13 @@ async def get_team_members(
     annotations=_RO,
 )
 async def get_team_open_invitations(
-    team_id: int, ctx: Context
+    team_id: int,
+    ctx: Context,
+    limit: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
     """List pending Team invitations."""
     return await TeamService().get_team_open_invitations(
-        ctx, team_id
+        ctx, team_id, limit=limit
     )
 
 
