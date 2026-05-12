@@ -111,3 +111,50 @@ class TestGetUserProfile:
 
         # THEN an auth error is returned
         assert "Authentication required" in result["error"]
+
+
+class TestIsUserCertified:
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.UserProfile")
+    async def test_given_certified_user_then_returns_true(
+        self, mock_up_cls, mock_get_client
+    ):
+        mock_get_client.return_value = MagicMock()
+        mock_up_cls.return_value.is_certified_async = AsyncMock(
+            return_value=True
+        )
+
+        result = await UserService().is_user_certified(
+            MagicMock(), user_id=12345
+        )
+
+        assert result == {"user_id": 12345, "is_certified": True}
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.UserProfile")
+    async def test_given_uncertified_user_then_returns_false(
+        self, mock_up_cls, mock_get_client
+    ):
+        mock_get_client.return_value = MagicMock()
+        mock_up_cls.return_value.is_certified_async = AsyncMock(
+            return_value=False
+        )
+
+        result = await UserService().is_user_certified(
+            MagicMock(), user_id=99
+        )
+
+        assert result == {"user_id": 99, "is_certified": False}
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    async def test_given_expired_auth_then_returns_error(
+        self, mock_get_client
+    ):
+        mock_get_client.side_effect = ConnectionAuthError("expired")
+
+        result = await UserService().is_user_certified(
+            MagicMock(), user_id=12345
+        )
+
+        assert "Authentication required" in result["error"]
+        assert result["user_id"] == 12345
