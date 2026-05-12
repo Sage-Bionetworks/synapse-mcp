@@ -17,7 +17,6 @@ from synapseclient.operations.factory_operations import (
 )
 
 from .tool_service import (
-    dataclass_to_dict,
     error_boundary,
     serialize_model,
     synapse_client,
