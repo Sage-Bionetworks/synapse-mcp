@@ -85,11 +85,17 @@ async def collect_async_generator(gen: AsyncIterator, limit: int = 100) -> list:
     if limit == 0:
         return []
 
+    # ``async for`` pulls the next item from ``gen`` at the top of
+    # each pass, so even with an early break the (limit+1)th item is
+    # still consumed. Stepping via ``__anext__`` lets us stop before
+    # advancing past ``limit`` items — matches the sync islice version.
     items: list = []
-    async for item in gen:
-        if len(items) >= limit:
-            break
-        items.append(item)
+    agen = gen.__aiter__()
+    try:
+        while len(items) < limit:
+            items.append(await agen.__anext__())
+    except StopAsyncIteration:
+        pass
     return items
 
 
