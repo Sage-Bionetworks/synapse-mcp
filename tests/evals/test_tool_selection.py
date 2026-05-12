@@ -21,15 +21,28 @@ from __future__ import annotations
 from typing import List, Tuple
 
 import pytest
-from fastmcp.server.transforms.search.bm25 import (
-    _BM25Index,
-    _extract_searchable_text,
-)
 
 # Importing synapse_mcp triggers @service_tool registration; by the time
 # the list below is evaluated every tool is live on the server singleton.
 import synapse_mcp  # noqa: F401
 from synapse_mcp import mcp
+
+# FastMCP's BM25 internals live behind underscore-prefixed names, so
+# they can move or be renamed across minor versions. Isolate the import
+# here and fail loudly with a clear message if the upstream API shifts
+# — otherwise a version bump would produce a cryptic ImportError deep
+# in the eval harness.
+try:
+    from fastmcp.server.transforms.search.bm25 import (
+        _BM25Index,
+        _extract_searchable_text,
+    )
+except ImportError as exc:  # pragma: no cover - version guard
+    raise ImportError(
+        "FastMCP BM25 internals moved. Update "
+        "tests/evals/test_tool_selection.py to match the new path "
+        "(see fastmcp.server.transforms.search)."
+    ) from exc
 
 pytestmark = pytest.mark.anyio("asyncio")
 

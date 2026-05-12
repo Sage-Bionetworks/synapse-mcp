@@ -469,7 +469,11 @@ def service_tool(
 
         first = _first_sentence(description).lower()
         forms = _synapse_object_forms(synapse_object)
-        if not any(f in first for f in forms):
+        # Word-boundary match so "entity" doesn't match "identity" and
+        # "team" doesn't match "steam".
+        if not any(
+            re.search(rf"\b{re.escape(f)}\b", first) for f in forms
+        ):
             raise ValueError(
                 f"Tool '{fn.__name__}' description first sentence must "
                 f"name the Synapse object '{synapse_object}' (or its "

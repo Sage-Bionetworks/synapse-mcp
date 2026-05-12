@@ -1580,8 +1580,8 @@ async def search_entity_by_name(
     description=(
         "Use this when the user has a string that looks "
         "like a Synapse ID (e.g. syn123456) and wants to "
-        "check whether the ID exist or does exist — verify "
-        "it is valid by querying the Synapse backend."
+        "check whether it exists in Synapse — verifies "
+        "validity by querying the Synapse backend."
     ),
     synonyms=(
         "exist",
