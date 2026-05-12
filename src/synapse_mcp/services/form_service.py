@@ -18,7 +18,7 @@ class FormService:
 
     @error_boundary(
         error_context_keys=("group_id",),
-        wrap_errors=list,
+        wrap_errors=True,
     )
     async def list_form_data(
         self,

@@ -20,7 +20,6 @@ def anyio_backend():
 
 
 TS = "synapse_mcp.services.tool_service"
-SVC = "synapse_mcp.services.search_service"
 
 
 class TestSearchService:

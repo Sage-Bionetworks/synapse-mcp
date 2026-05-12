@@ -139,3 +139,109 @@ class TestGetWikiHeaders:
         # THEN error is wrapped in a list
         assert isinstance(result, list)
         assert "Authentication required" in result[0]["error"]
+
+
+@dataclass
+class FakeWikiHistorySnapshot:
+    version: int = 1
+    modified_on: str = "2025-01-01"
+    modified_by: str = "user1"
+
+
+class TestGetWikiHistory:
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.WikiHistorySnapshot")
+    async def test_given_wiki_when_history_fetched_then_returns_snapshots(
+        self, mock_hist_cls, mock_get_client
+    ):
+        mock_get_client.return_value = MagicMock()
+
+        async def _snapshots(**kw):
+            yield FakeWikiHistorySnapshot(version=1)
+            yield FakeWikiHistorySnapshot(version=2)
+            yield FakeWikiHistorySnapshot(version=3)
+
+        mock_hist_cls.get_async = _snapshots
+
+        result = await WikiService().get_wiki_history(
+            MagicMock(), "syn123", "111"
+        )
+
+        assert [s["version"] for s in result] == [1, 2, 3]
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.WikiHistorySnapshot")
+    async def test_given_limit_when_history_fetched_then_truncates(
+        self, mock_hist_cls, mock_get_client
+    ):
+        mock_get_client.return_value = MagicMock()
+
+        async def _snapshots(**kw):
+            for i in range(5):
+                yield FakeWikiHistorySnapshot(version=i)
+
+        mock_hist_cls.get_async = _snapshots
+
+        result = await WikiService().get_wiki_history(
+            MagicMock(), "syn123", "111", limit=2
+        )
+
+        assert len(result) == 2
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    async def test_given_expired_auth_when_history_fetched_then_returns_error_list(
+        self, mock_get_client
+    ):
+        mock_get_client.side_effect = ConnectionAuthError("expired")
+
+        result = await WikiService().get_wiki_history(
+            MagicMock(), "syn123", "111"
+        )
+
+        assert isinstance(result, list)
+        assert "Authentication required" in result[0]["error"]
+
+
+@dataclass
+class FakeWikiOrderHint:
+    owner_id: str = "syn123"
+    id_list: List[str] = field(default_factory=list)
+    etag: str = "abc"
+
+
+class TestGetWikiOrderHint:
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.WikiOrderHint")
+    async def test_given_wiki_when_order_hint_fetched_then_returns_dict(
+        self, mock_hint_cls, mock_get_client
+    ):
+        mock_get_client.return_value = MagicMock()
+        instance = mock_hint_cls.return_value
+        instance.get_async = AsyncMock(
+            return_value=FakeWikiOrderHint(
+                owner_id="syn123",
+                id_list=["111", "222", "333"],
+                etag="abc",
+            )
+        )
+
+        result = await WikiService().get_wiki_order_hint(
+            MagicMock(), "syn123"
+        )
+
+        assert result["owner_id"] == "syn123"
+        assert result["id_list"] == ["111", "222", "333"]
+        assert result["etag"] == "abc"
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    async def test_given_expired_auth_when_order_hint_fetched_then_returns_error(
+        self, mock_get_client
+    ):
+        mock_get_client.side_effect = ConnectionAuthError("expired")
+
+        result = await WikiService().get_wiki_order_hint(
+            MagicMock(), "syn123"
+        )
+
+        assert "Authentication required" in result["error"]
+        assert result["owner_id"] == "syn123"

@@ -185,9 +185,9 @@ class TestGetAcl:
     async def test_given_project_entity_when_getting_acl_then_returns_access_types(
         self, mock_ops_get, mock_get_client
     ):
-        # Reviewer: ACL must work on non-File entities. Resolve the
-        # concrete subclass (here a Project stand-in), then call
-        # get_acl_async on it — never hardcoded File(id=...).
+        # ACL must work on non-File entities: resolve the concrete
+        # subclass (here a Project stand-in), then call get_acl_async
+        # on it — never hardcoded File(id=...).
         mock_get_client.return_value = MagicMock()
         resolved = MagicMock()
         resolved.get_acl_async = AsyncMock(
