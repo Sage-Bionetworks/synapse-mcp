@@ -76,12 +76,20 @@ async def collect_async_generator(gen: AsyncIterator, limit: int = 100) -> list:
 
     Async counterpart of ``collect_generator`` for SDK methods that
     return ``AsyncGenerator`` (e.g. ``WikiHeader.get_async``).
+
+    Raises:
+        ValueError: If ``limit`` is negative.
     """
+    if limit < 0:
+        raise ValueError("limit must be >= 0")
+    if limit == 0:
+        return []
+
     items: list = []
     async for item in gen:
-        items.append(item)
         if len(items) >= limit:
             break
+        items.append(item)
     return items
 
 
