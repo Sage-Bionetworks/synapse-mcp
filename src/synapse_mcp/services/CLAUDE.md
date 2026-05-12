@@ -2,7 +2,7 @@
 
 ## Project
 
-Service-layer modules that wrap `synapseclient` SDK calls. Each Synapse domain (entity, wiki, team, user, activity, evaluation, submission, schema, organization, form, curation, utility, docker, search) has one class here. Tool functions in `src/synapse_mcp/tools.py` delegate into these classes via `@service_tool` — they never call `synapseclient` directly.
+Service-layer modules that wrap `synapseclient` SDK calls. Each Synapse domain (entity, wiki, team, user, activity, evaluation, submission, schema, organization, form, curation, utility, search) has one class here. Tool functions in `src/synapse_mcp/tools.py` delegate into these classes via `@service_tool` — they never call `synapseclient` directly.
 
 ## Conventions
 

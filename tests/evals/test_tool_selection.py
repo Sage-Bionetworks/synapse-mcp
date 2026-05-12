@@ -111,9 +111,6 @@ QUERY_FIXTURES: List[Tuple[str, str]] = [
     ("does syn999 exist", "check_synapse_id"),
     ("find the file with md5 9e107d9d372bb6826bd81d3542a419d6", "search_entities_by_md5"),
     ("what's the synapse id of the file named sample.csv in folder syn100", "search_entity_by_name"),
-    # docker
-    ("what's the Synapse Docker repo for syn789", "get_docker_repository"),
-    ("docker image entity by synapse id syn789", "get_docker_repository"),
 ]
 
 

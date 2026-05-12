@@ -308,6 +308,18 @@ class TestSerializeModel:
         # THEN to_dict() is used
         assert result == {"legacy": True}
 
+    def test_given_enum_then_returns_value(self):
+        # GIVEN an Enum instance
+        class Status(enum.Enum):
+            ACTIVE = "active"
+            ARCHIVED = "archived"
+
+        # WHEN serialized
+        result = serialize_model(Status.ACTIVE)
+
+        # THEN the enum's .value is returned (not str(enum))
+        assert result == "active"
+
 
 # -------------------------------------------------------------------
 # dataclass_to_dict enhancements
@@ -412,6 +424,22 @@ class TestCollectGenerator:
         gen = iter([])
         result = collect_generator(gen, limit=10)
         assert result == []
+
+    def test_given_limit_zero_then_returns_empty_list_without_consuming(self):
+        gen = iter([1, 2, 3])
+        result = collect_generator(gen, limit=0)
+        assert result == []
+        # The generator must not have been consumed.
+        assert next(gen) == 1
+
+    def test_given_negative_limit_then_raises_value_error(self):
+        with pytest.raises(ValueError):
+            collect_generator(iter([1, 2]), limit=-1)
+
+    def test_given_limit_one_then_returns_exactly_one_item(self):
+        gen = iter([10, 20, 30])
+        result = collect_generator(gen, limit=1)
+        assert result == [10]
 
 
 # -------------------------------------------------------------------

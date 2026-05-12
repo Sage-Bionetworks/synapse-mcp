@@ -2,7 +2,7 @@
 
 ## Project
 
-FastMCP-based server that exposes Synapse (synapse.org) capabilities to LLMs over MCP. Tool catalog is 50+ read-only tools spanning entity, wiki, team, user, activity, evaluation, submission, schema, organization, form, curation, utility, docker, and search domains.
+FastMCP-based server that exposes Synapse (synapse.org) capabilities to LLMs over MCP. Tool catalog is 50+ read-only tools spanning entity, wiki, team, user, activity, evaluation, submission, schema, organization, form, curation, utility, and search domains.
 
 ## Stack
 

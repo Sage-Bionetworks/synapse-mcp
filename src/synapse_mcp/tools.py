@@ -18,7 +18,6 @@ from .app import mcp
 from .services import (
     ActivityService,
     CurationTaskService,
-    DockerService,
     EntityService,
     EvaluationService,
     FormService,
@@ -714,10 +713,14 @@ async def get_team(
     ),
 )
 async def get_team_members(
-    team_id: int, ctx: Context
+    team_id: int,
+    ctx: Context,
+    limit: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
-    """List all members of a Team."""
-    return await TeamService().get_team_members(ctx, team_id)
+    """List members of a Team."""
+    return await TeamService().get_team_members(
+        ctx, team_id, limit=limit
+    )
 
 
 @service_tool(
@@ -739,11 +742,13 @@ async def get_team_members(
     ),
 )
 async def get_team_open_invitations(
-    team_id: int, ctx: Context
+    team_id: int,
+    ctx: Context,
+    limit: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
     """List pending Team invitations."""
     return await TeamService().get_team_open_invitations(
-        ctx, team_id
+        ctx, team_id, limit=limit
     )
 
 
@@ -1215,7 +1220,7 @@ async def list_my_submission_bundles(
 
 
 # ---------------------------------------------------------------------------
-# Domain 13: Curation Tasks
+# Domain 12: Curation Tasks
 # ---------------------------------------------------------------------------
 
 
@@ -1298,7 +1303,7 @@ async def get_curation_task_resources(
 
 
 # ---------------------------------------------------------------------------
-# Domain 12: JSON Schema Organizations
+# Domain 13: JSON Schema Organizations
 # ---------------------------------------------------------------------------
 
 
@@ -1322,13 +1327,11 @@ async def get_curation_task_resources(
     ),
 )
 async def get_schema_organization(
-    ctx: Context,
-    organization_name: Optional[str] = None,
-    organization_id: Optional[int] = None,
+    organization_name: str, ctx: Context
 ) -> Dict[str, Any]:
-    """Get a Schema Organization by name or ID."""
+    """Get a Schema Organization by name."""
     return await SchemaOrganizationService().get_schema_organization(
-        ctx, organization_name, organization_id
+        ctx, organization_name
     )
 
 
@@ -1376,11 +1379,13 @@ async def get_schema_organization_acl(
     ),
 )
 async def list_json_schemas(
-    organization_name: str, ctx: Context
+    organization_name: str,
+    ctx: Context,
+    limit: int = 100,
 ) -> List[Dict[str, Any]]:
     """List schemas in an organization."""
     return await SchemaOrganizationService().list_json_schemas(
-        ctx, organization_name
+        ctx, organization_name, limit
     )
 
 
@@ -1468,10 +1473,11 @@ async def list_json_schema_versions(
     organization_name: str,
     schema_name: str,
     ctx: Context,
+    limit: int = 100,
 ) -> List[Dict[str, Any]]:
     """List versions of a JSON Schema."""
     return await SchemaOrganizationService().list_json_schema_versions(
-        ctx, organization_name, schema_name
+        ctx, organization_name, schema_name, limit
     )
 
 
@@ -1501,10 +1507,11 @@ async def list_form_data(
     ctx: Context,
     filter_by_state: Optional[List[str]] = None,
     as_reviewer: bool = False,
+    limit: int = 100,
 ) -> List[Dict[str, Any]]:
     """List form submissions for a FormGroup."""
     return await FormService().list_form_data(
-        ctx, group_id, filter_by_state, as_reviewer
+        ctx, group_id, filter_by_state, as_reviewer, limit
     )
 
 
@@ -1523,8 +1530,12 @@ async def list_form_data(
         "Use this when the user has a file name or Synapse "
         "entity name (and optionally its parent folder or "
         "project) but does not know the Synapse ID — "
-        "resolves a name to its Synapse ID. Parent entity "
-        "ID example: syn123456. Name example: 'sample.csv'."
+        "resolves an exact name to its Synapse ID. The name "
+        "match is case-sensitive (e.g. 'Patient Record Set' "
+        "will not match 'Patient record set'); use "
+        "search_synapse for fuzzy or case-insensitive lookup. "
+        "Parent entity ID example: syn123456. Name example: "
+        "'sample.csv'."
     ),
     synonyms=(
         "lookup",
@@ -1543,7 +1554,7 @@ async def search_entity_by_name(
     ctx: Context,
     parent_id: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Find an entity's Synapse ID by name and parent."""
+    """Find an entity's Synapse ID by exact name and parent."""
     return await UtilityService().find_entity_id(
         ctx, name, parent_id
     )
@@ -1599,47 +1610,6 @@ async def search_entities_by_md5(
 ) -> Dict[str, Any]:
     """Find entities by MD5 hash."""
     return await UtilityService().md5_query(ctx, md5)
-
-
-# ---------------------------------------------------------------------------
-# Domain 15: DockerRepository
-# ---------------------------------------------------------------------------
-
-
-@service_tool(
-    mcp,
-    service="docker",
-    operation="read",
-    synapse_object="Synapse Docker repository",
-    title="Get Docker Repository",
-    description=(
-        "Use this when the user wants a Synapse Docker "
-        "repository entity — a first-class Synapse object "
-        "that points to a Docker image stored in Synapse's "
-        "container registry. NOT a general Docker "
-        "container, NOT a container runtime, NOT a Docker "
-        "daemon — this is the Synapse metadata record for "
-        "an image. Entity ID example: syn123456. ACL and "
-        "caller permissions use the generic entity ACL "
-        "tools."
-    ),
-    synonyms=(
-        "synapse docker",
-        "docker image",
-        "image repository",
-        "container registry entity",
-    ),
-    siblings=("get_entity", "get_entity_acl"),
-)
-async def get_docker_repository(
-    entity_id: str, ctx: Context
-) -> Dict[str, Any]:
-    """Get a DockerRepository entity by Synapse ID."""
-    if not validate_synapse_id(entity_id):
-        return {"error": f"Invalid Synapse ID: {entity_id}"}
-    return await DockerService().get_docker_repository(
-        ctx, entity_id
-    )
 
 
 # ---------------------------------------------------------------------------
