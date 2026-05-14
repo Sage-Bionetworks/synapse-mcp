@@ -94,10 +94,10 @@ class TestGetSchemaOrganization:
 class TestGetSchemaOrganizationAcl:
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
     @patch(f"{SVC}.SchemaOrganization")
-    async def test_given_organization_when_get_acl_then_returns_org_name_and_acl(
+    async def test_given_organization_when_get_acl_then_returns_serialized_acl(
         self, mock_org_cls: MagicMock, mock_get_client: AsyncMock
     ):
-        """get_schema_organization_acl returns the organization name alongside the serialized ACL."""
+        """get_schema_organization_acl returns the serialized ACL directly."""
         # GIVEN an organization with an ACL
         mock_get_client.return_value = MagicMock()
         mock_org_cls.return_value.get_async = AsyncMock(
@@ -112,14 +112,11 @@ class TestGetSchemaOrganizationAcl:
             MagicMock(), organization_name="sage.example"
         )
 
-        # THEN organization name is returned
-        assert "organization_name" in result
-        assert result["organization_name"] == "sage.example"
-
-        # AND the ACL is returned
-        assert "acl" in result
-        assert "etag" in result["acl"]
-        assert result["acl"]["etag"] == "acl-etag"
+        # THEN the ACL fields are returned at the top level
+        assert "etag" in result
+        assert result["etag"] == "acl-etag"
+        assert "resource_access" in result
+        assert result["resource_access"] == []
         mock_org_cls.assert_called_once_with(name="sage.example")
 
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)

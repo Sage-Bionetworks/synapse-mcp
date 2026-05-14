@@ -56,10 +56,7 @@ class SchemaOrganizationService:
             org = SchemaOrganization(name=organization_name)
             await org.get_async(synapse_client=client)
             acl = await org.get_acl_async(synapse_client=client)
-            return {
-                "organization_name": organization_name,
-                "acl": serialize_model(acl),
-            }
+            return serialize_model(acl)
 
     @error_boundary(
         error_context_keys=("organization_name", "limit"),
