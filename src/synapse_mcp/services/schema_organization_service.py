@@ -37,9 +37,7 @@ class SchemaOrganizationService:
             ).get_async(synapse_client=client)
             return serialize_model(org)
 
-    @error_boundary(
-        error_context_keys=("organization_name",)
-    )
+    @error_boundary(error_context_keys=("organization_name",))
     async def get_schema_organization_acl(
         self, ctx: Context, organization_name: str
     ) -> dict[str, Any]:
@@ -88,12 +86,7 @@ class SchemaOrganizationService:
             )
             return [serialize_model(schema) for schema in schemas]
 
-    @error_boundary(
-        error_context_keys=(
-            "organization_name",
-            "schema_name",
-        )
-    )
+    @error_boundary(error_context_keys=("organization_name", "schema_name"))
     async def get_json_schema(
         self,
         ctx: Context,
@@ -117,12 +110,7 @@ class SchemaOrganizationService:
             ).get_async(synapse_client=client)
             return serialize_model(schema)
 
-    @error_boundary(
-        error_context_keys=(
-            "organization_name",
-            "schema_name",
-        )
-    )
+    @error_boundary(error_context_keys=("organization_name", "schema_name"))
     async def get_json_schema_body(
         self,
         ctx: Context,
@@ -153,11 +141,7 @@ class SchemaOrganizationService:
             return serialize_model(body)
 
     @error_boundary(
-        error_context_keys=(
-            "organization_name",
-            "schema_name",
-            "limit",
-        ),
+        error_context_keys=("organization_name", "schema_name", "limit"),
         wrap_errors=list,
     )
     async def list_json_schema_versions(
