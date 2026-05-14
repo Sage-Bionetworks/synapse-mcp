@@ -53,9 +53,8 @@ class SchemaOrganizationService:
             Dict with ACL information.
         """
         async with synapse_client(ctx) as client:
-            org = SchemaOrganization(
-                name=organization_name,
-            )
+            org = SchemaOrganization(name=organization_name)
+            await org.get_async(synapse_client=client)
             acl = await org.get_acl_async(synapse_client=client)
             return {
                 "organization_name": organization_name,

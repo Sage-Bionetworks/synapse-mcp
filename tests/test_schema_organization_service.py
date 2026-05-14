@@ -100,6 +100,9 @@ class TestGetSchemaOrganizationAcl:
         """get_schema_organization_acl returns the organization name alongside the serialized ACL."""
         # GIVEN an organization with an ACL
         mock_get_client.return_value = MagicMock()
+        mock_org_cls.return_value.get_async = AsyncMock(
+            return_value=FakeOrg(name="sage.example", id="42")
+        )
         mock_org_cls.return_value.get_acl_async = AsyncMock(
             return_value={"resource_access": [], "etag": "acl-etag"}
         )
