@@ -17,7 +17,7 @@ class FormService:
     """Orchestrates form read operations."""
 
     @error_boundary(
-        error_context_keys=("group_id",),
+        error_context_keys=("group_id", "filter_by_state", "as_reviewer"),
         wrap_errors=list,
     )
     async def list_form_data(
