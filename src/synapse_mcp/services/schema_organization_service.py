@@ -52,6 +52,7 @@ class SchemaOrganizationService:
         """
         async with synapse_client(ctx) as client:
             org = SchemaOrganization(name=organization_name)
+            # get_async populates org.id, which get_acl_async needs for the API call.
             await org.get_async(synapse_client=client)
             acl = await org.get_acl_async(synapse_client=client)
             return serialize_model(acl)

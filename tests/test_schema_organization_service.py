@@ -118,6 +118,8 @@ class TestGetSchemaOrganizationAcl:
         assert "resource_access" in result
         assert result["resource_access"] == []
         mock_org_cls.assert_called_once_with(name="sage.example")
+        # get_async must be called before get_acl_async to populate org.id
+        mock_org_cls.return_value.get_async.assert_awaited_once()
 
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
     async def test_given_expired_auth_when_called_then_returns_error_dict(
