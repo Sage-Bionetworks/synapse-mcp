@@ -90,13 +90,13 @@ class TestListFormData:
         await FormService().list_form_data(
             MagicMock(),
             group_id="9",
-            filter_by_state=["SUBMITTED", "ACCEPTED"],
+            filter_by_state=["submitted_waiting_for_review", "accepted"],
             as_reviewer=True,
         )
 
         # THEN the client receives the same arguments
         assert captured_kwargs == {
-            "filter_by_state": ["SUBMITTED", "ACCEPTED"],
+            "filter_by_state": ["submitted_waiting_for_review", "accepted"],
             "as_reviewer": True,
             "synapse_client": client,
         }

@@ -33,8 +33,11 @@ class FormService:
         Arguments:
             ctx: The FastMCP request context.
             group_id: FormGroup ID string.
-            filter_by_state: Optional list of states
-                to filter by (e.g. SUBMITTED, ACCEPTED).
+            filter_by_state: Optional list of submission states to
+                filter by. Valid values: "waiting_for_submission",
+                "submitted_waiting_for_review", "accepted",
+                "rejected". When as_reviewer=True,
+                "waiting_for_submission" is not allowed.
             as_reviewer: If True, list as reviewer.
             limit: Maximum number of submissions to return.
 

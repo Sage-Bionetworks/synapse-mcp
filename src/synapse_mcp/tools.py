@@ -966,8 +966,13 @@ async def list_json_schema_versions(
 @mcp.tool(
     title="List Form Data",
     description=(
-        "List form submissions for a Synapse FormGroup, "
-        "optionally filtered by state."
+        "List form submissions for a Synapse FormGroup, optionally "
+        "filtered by submission state. Valid filter_by_state values: "
+        "'waiting_for_submission', 'submitted_waiting_for_review', "
+        "'accepted', 'rejected'. When as_reviewer=True, the caller "
+        "lists submissions they can review ('waiting_for_submission' "
+        "is not allowed in this mode); when False (default), lists "
+        "submissions the caller owns."
     ),
     annotations=_RO,
 )
