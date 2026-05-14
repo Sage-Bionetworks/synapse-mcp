@@ -4,6 +4,7 @@ import dataclasses
 import enum
 import functools
 import inspect
+import itertools
 from collections.abc import Mapping
 from contextlib import asynccontextmanager
 from datetime import date, datetime
@@ -55,26 +56,46 @@ def collect_generator(gen: Iterator, limit: int = 100) -> list:
 
     All service methods that consume SDK generators must use this
     helper to prevent unbounded iteration.
+
+    Raises:
+        ValueError: If ``limit`` is negative.
     """
-    items: list = []
-    for item in gen:
-        items.append(item)
-        if len(items) >= limit:
-            break
-    return items
+    if limit < 0:
+        raise ValueError("limit must be >= 0")
+    if limit == 0:
+        return []
+
+    # islice stops pulling from ``gen`` once ``limit`` items have been
+    # yielded, so the (limit+1)th item is NOT consumed — callers that
+    # keep using ``gen`` see the next unread item.
+    return list(itertools.islice(gen, limit))
 
 
 async def collect_async_generator(gen: AsyncIterator, limit: int = 100) -> list:
     """Collect up to *limit* items from an async generator.
 
     Async counterpart of ``collect_generator`` for SDK methods that
-    return ``AsyncGenerator``.
+    return ``AsyncGenerator`` (e.g. ``WikiHeader.get_async``).
+
+    Raises:
+        ValueError: If ``limit`` is negative.
     """
+    if limit < 0:
+        raise ValueError("limit must be >= 0")
+    if limit == 0:
+        return []
+
+    # ``async for`` pulls the next item from ``gen`` at the top of
+    # each pass, so even with an early break the (limit+1)th item is
+    # still consumed. Stepping via ``__anext__`` lets us stop before
+    # advancing past ``limit`` items — matches the sync islice version.
     items: list = []
-    async for item in gen:
-        items.append(item)
-        if len(items) >= limit:
-            break
+    agen = gen.__aiter__()
+    try:
+        while len(items) < limit:
+            items.append(await agen.__anext__())
+    except StopAsyncIteration:
+        pass
     return items
 
 
@@ -111,6 +132,9 @@ def serialize_model(obj: Any) -> Any:
     if isinstance(obj, (datetime, date)):
         return obj.isoformat()
 
+    if isinstance(obj, enum.Enum):
+        return obj.value
+
     if isinstance(obj, dict):
         return {
             k: serialize_model(v) for k, v in obj.items()
@@ -139,8 +163,11 @@ def serialize_model(obj: Any) -> Any:
             for k, v in obj.items()
         }
 
-    if hasattr(obj, "to_dict"):
-        return obj.to_dict()
+    to_dict = getattr(obj, "to_dict", None)
+    if callable(to_dict):
+        # Recurse so nested datetimes/enums/dataclasses returned
+        # by ``to_dict`` still land as JSON-safe types.
+        return serialize_model(to_dict())
 
     return str(obj)
 
@@ -194,7 +221,9 @@ def error_boundary(
                     "error_type": type(exc).__name__,
                     **extra,
                 }
-                # Extract HTTP status code from SynapseHTTPError
+                # Extract HTTP status code from any exception carrying
+                # a ``response`` attribute with a ``status_code`` (the
+                # shape SynapseHTTPError and requests.HTTPError share).
                 response = getattr(exc, "response", None)
                 if response is not None:
                     status_code = getattr(

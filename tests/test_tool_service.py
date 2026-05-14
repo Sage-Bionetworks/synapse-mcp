@@ -304,6 +304,92 @@ class TestSerializeModel:
         # THEN to_dict() is used
         assert result == {"legacy": True}
 
+    def test_given_enum_then_returns_value(self):
+        # GIVEN an Enum instance
+        class Status(enum.Enum):
+            ACTIVE = "active"
+            ARCHIVED = "archived"
+
+        # WHEN serialized
+        result = serialize_model(Status.ACTIVE)
+
+        # THEN the enum's .value is returned (not str(enum))
+        assert result == "active"
+
+    def test_given_custom_mapping_then_serializes_values(self):
+        # GIVEN a non-dict Mapping subclass (legacy synapseclient entities
+        # are MutableMapping, not dict)
+        from collections.abc import Mapping
+
+        class FakeEntityMapping(Mapping):
+            def __init__(self, data):
+                self._data = data
+
+            def __getitem__(self, key):
+                return self._data[key]
+
+            def __iter__(self):
+                return iter(self._data)
+
+            def __len__(self):
+                return len(self._data)
+
+        mapping = FakeEntityMapping(
+            {"id": "syn1", "created": datetime(2025, 1, 15, 12, 0, 0)}
+        )
+
+        # WHEN serialized
+        result = serialize_model(mapping)
+
+        # THEN values serialize recursively (datetime -> isoformat)
+        assert result == {"id": "syn1", "created": "2025-01-15T12:00:00"}
+
+    def test_given_to_dict_returning_nested_types_then_recurses(self):
+        # GIVEN an object whose to_dict() returns non-JSON-safe nested types
+        class Status(enum.Enum):
+            ACTIVE = "active"
+
+        class Legacy:
+            def to_dict(self):
+                return {
+                    "status": Status.ACTIVE,
+                    "created": datetime(2025, 3, 15, 9, 0),
+                }
+
+        # WHEN serialized
+        result = serialize_model(Legacy())
+
+        # THEN the nested Enum/datetime values are also serialized
+        assert result == {
+            "status": "active",
+            "created": "2025-03-15T09:00:00",
+        }
+
+    def test_given_non_callable_to_dict_attribute_then_falls_back_to_str(self):
+        # GIVEN an object with a ``to_dict`` attribute that isn't a method
+        class WeirdAttr:
+            to_dict = "not callable"
+
+        obj = WeirdAttr()
+
+        # WHEN serialized
+        result = serialize_model(obj)
+
+        # THEN str fallback is used (the attribute is not invoked)
+        assert result == str(obj)
+
+    def test_given_unserializable_object_then_falls_back_to_str(self):
+        # GIVEN an object with no dataclass, Mapping, or to_dict support
+        class Plain:
+            def __str__(self):
+                return "plain-repr"
+
+        # WHEN serialized
+        result = serialize_model(Plain())
+
+        # THEN str() is used
+        assert result == "plain-repr"
+
 
 # -------------------------------------------------------------------
 # dataclass_to_dict enhancements
@@ -408,6 +494,31 @@ class TestCollectGenerator:
         gen = iter([])
         result = collect_generator(gen, limit=10)
         assert result == []
+
+    def test_given_limit_zero_then_returns_empty_list_without_consuming(self):
+        gen = iter([1, 2, 3])
+        result = collect_generator(gen, limit=0)
+        assert result == []
+        # The generator must not have been consumed.
+        assert next(gen) == 1
+
+    def test_given_negative_limit_then_raises_value_error(self):
+        with pytest.raises(ValueError):
+            collect_generator(iter([1, 2]), limit=-1)
+
+    def test_given_limit_one_then_returns_exactly_one_item(self):
+        gen = iter([10, 20, 30])
+        result = collect_generator(gen, limit=1)
+        assert result == [10]
+
+    def test_given_limit_truncates_then_does_not_overconsume(self):
+        # Regression: the previous `for item in gen; append; check`
+        # pattern pulled limit+1 items from the iterator.
+        gen = iter([1, 2, 3, 4, 5])
+        result = collect_generator(gen, limit=2)
+        assert result == [1, 2]
+        # The next unread item should still be reachable.
+        assert next(gen) == 3
 
 
 # -------------------------------------------------------------------

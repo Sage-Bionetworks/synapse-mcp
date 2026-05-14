@@ -317,6 +317,17 @@ async def get_activity(
     parent_version_number: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Get an Activity by ID or by parent entity."""
+    if activity_id is None and parent_id is None:
+        return {
+            "error": "Either activity_id or parent_id is required",
+        }
+    if parent_version_number is not None and parent_id is None:
+        return {
+            "error": (
+                "parent_version_number is only valid when parent_id "
+                "is provided"
+            ),
+        }
     return await ActivityService().get_activity(
         ctx, activity_id, parent_id, parent_version_number
     )
@@ -469,10 +480,14 @@ async def get_team(
     annotations=_RO,
 )
 async def get_team_members(
-    team_id: int, ctx: Context
+    team_id: int,
+    ctx: Context,
+    limit: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
-    """List all members of a Team."""
-    return await TeamService().get_team_members(ctx, team_id)
+    """List members of a Team."""
+    return await TeamService().get_team_members(
+        ctx, team_id, limit=limit
+    )
 
 
 @mcp.tool(
@@ -483,11 +498,13 @@ async def get_team_members(
     annotations=_RO,
 )
 async def get_team_open_invitations(
-    team_id: int, ctx: Context
+    team_id: int,
+    ctx: Context,
+    limit: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
     """List pending Team invitations."""
     return await TeamService().get_team_open_invitations(
-        ctx, team_id
+        ctx, team_id, limit=limit
     )
 
 
@@ -500,7 +517,7 @@ async def get_team_open_invitations(
     annotations=_RO,
 )
 async def get_team_membership_status(
-    team_id: int, user_id: str, ctx: Context
+    team_id: int, user_id: int, ctx: Context
 ) -> Dict[str, Any]:
     """Check a user's Team membership status."""
     return await TeamService().get_team_membership_status(
@@ -656,9 +673,8 @@ async def get_submission(
     title="List Evaluation Submissions",
     description=(
         "List all submissions to a Synapse Evaluation "
-        "queue, optionally filtered by status. "
-        "If the result set hits the limit, call again "
-        "with a higher offset to retrieve the next page."
+        "queue, optionally filtered by status. Up to "
+        "``limit`` submissions are returned."
     ),
     annotations=_RO,
 )
