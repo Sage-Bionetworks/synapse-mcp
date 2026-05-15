@@ -110,53 +110,101 @@ class FakeMember:
 
 class TestGetTeamMembers:
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
-    @patch(f"{SVC}.Team")
-    async def test_given_team_when_listed_then_returns_members(
-        self, mock_team_cls, mock_get_client
+    @patch(f"{SVC}.rest_get_paginated_async")
+    async def test_given_team_when_listed_then_paginates_with_limit_offset(
+        self, mock_paginate, mock_get_client
     ):
+        # GIVEN the team-members endpoint will yield two members
         mock_get_client.return_value = MagicMock()
-        instance = mock_team_cls.return_value
-        instance.members_async = AsyncMock(
-            return_value=[FakeMember(member_id=1), FakeMember(member_id=2)]
+        captured = {}
+
+        async def _fake(uri, *, limit, offset, synapse_client):
+            captured["uri"] = uri
+            captured["limit"] = limit
+            captured["offset"] = offset
+            for i in (1, 2):
+                # Match the REST shape: teamId/member/isAdmin so
+                # TeamMember.fill_from_dict can construct a typed
+                # member object.
+                yield {
+                    "teamId": "100",
+                    "member": {"ownerId": str(i), "userName": f"u{i}"},
+                    "isAdmin": False,
+                }
+
+        mock_paginate.side_effect = _fake
+
+        # WHEN we list members
+        result = await TeamService.get_team_members(
+            MagicMock(), 100, offset=10, limit=2
         )
 
-        result = await TeamService().get_team_members(MagicMock(), 100)
-
-        assert isinstance(result, list)
-        assert [m["member_id"] for m in result] == [1, 2]
+        # THEN limit/offset reach the wire and members come back as the
+        # same typed shape that Team.members_async would have produced
+        # (team_id/member/is_admin keys, not the raw REST camelCase).
+        assert captured["uri"] == "/teamMembers/100"
+        assert captured["limit"] == 2
+        assert captured["offset"] == 10
+        assert [m["team_id"] for m in result] == [100, 100]
+        assert [m["is_admin"] for m in result] == [False, False]
+        assert [m["member"]["owner_id"] for m in result] == ["1", "2"]
 
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
-    @patch(f"{SVC}.Team")
+    @patch(f"{SVC}.rest_get_paginated_async")
     async def test_given_empty_team_when_listed_then_returns_empty_list(
-        self, mock_team_cls, mock_get_client
+        self, mock_paginate, mock_get_client
     ):
         mock_get_client.return_value = MagicMock()
-        instance = mock_team_cls.return_value
-        instance.members_async = AsyncMock(return_value=[])
 
-        result = await TeamService().get_team_members(MagicMock(), 100)
+        async def _fake(*args, **kwargs):
+            if False:
+                yield  # pragma: no cover
+
+        mock_paginate.side_effect = _fake
+
+        result = await TeamService.get_team_members(MagicMock(), 100)
 
         assert result == []
 
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
-    @patch(f"{SVC}.Team")
-    async def test_given_limit_when_listed_then_truncates(
-        self, mock_team_cls, mock_get_client
+    @patch(f"{SVC}.rest_get_paginated_async")
+    async def test_given_limit_when_listed_then_caps_results(
+        self, mock_paginate, mock_get_client
     ):
         mock_get_client.return_value = MagicMock()
-        instance = mock_team_cls.return_value
-        instance.members_async = AsyncMock(
-            return_value=[
-                FakeMember(member_id=i) for i in range(5)
-            ]
-        )
 
-        result = await TeamService().get_team_members(
+        async def _fake(*args, **kwargs):
+            for i in range(5):
+                yield {
+                    "teamId": "100",
+                    "member": {"ownerId": str(i)},
+                    "isAdmin": False,
+                }
+
+        mock_paginate.side_effect = _fake
+
+        result = await TeamService.get_team_members(
             MagicMock(), 100, limit=2
         )
 
         assert len(result) == 2
-        assert [m["member_id"] for m in result] == [0, 1]
+        assert [m["member"]["owner_id"] for m in result] == ["0", "1"]
+
+    async def test_given_negative_limit_then_returns_wrapped_error(self):
+        # GIVEN a misuse — negative limit
+        # WHEN listing members the service raises and the wrapper catches
+        result = await TeamService.get_team_members(
+            MagicMock(), 100, limit=-1
+        )
+        assert isinstance(result, list)
+        assert "limit must be" in result[0]["error"]
+
+    async def test_given_zero_limit_then_returns_empty_without_calling_api(self):
+        # GIVEN an explicit 0 cap, no API call should fire.
+        result = await TeamService.get_team_members(
+            MagicMock(), 100, limit=0
+        )
+        assert result == []
 
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
     async def test_given_expired_auth_then_returns_wrapped_error(
@@ -164,7 +212,7 @@ class TestGetTeamMembers:
     ):
         mock_get_client.side_effect = ConnectionAuthError("expired")
 
-        result = await TeamService().get_team_members(MagicMock(), 100)
+        result = await TeamService.get_team_members(MagicMock(), 100)
 
         assert isinstance(result, list)
         assert "Authentication required" in result[0]["error"]
@@ -179,34 +227,45 @@ class FakeInvitation:
 
 class TestGetTeamOpenInvitations:
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
-    @patch(f"{SVC}.Team")
-    async def test_given_team_when_listed_then_returns_invitations(
-        self, mock_team_cls, mock_get_client
+    @patch(f"{SVC}.rest_get_paginated_async")
+    async def test_given_team_when_listed_then_paginates_with_limit_offset(
+        self, mock_paginate, mock_get_client
     ):
         mock_get_client.return_value = MagicMock()
-        instance = mock_team_cls.return_value
-        instance.open_invitations_async = AsyncMock(
-            return_value=[FakeInvitation(id="inv1"), FakeInvitation(id="inv2")]
+        captured = {}
+
+        async def _fake(uri, *, limit, offset, synapse_client):
+            captured["uri"] = uri
+            captured["limit"] = limit
+            captured["offset"] = offset
+            for invite_id in ("inv1", "inv2"):
+                yield {"id": invite_id}
+
+        mock_paginate.side_effect = _fake
+
+        result = await TeamService.get_team_open_invitations(
+            MagicMock(), 100, offset=5, limit=2
         )
 
-        result = await TeamService().get_team_open_invitations(
-            MagicMock(), 100
-        )
-
+        assert captured["uri"] == "/team/100/openInvitation"
+        assert captured["limit"] == 2
+        assert captured["offset"] == 5
         assert [i["id"] for i in result] == ["inv1", "inv2"]
 
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
-    @patch(f"{SVC}.Team")
-    async def test_given_limit_when_listed_then_truncates(
-        self, mock_team_cls, mock_get_client
+    @patch(f"{SVC}.rest_get_paginated_async")
+    async def test_given_limit_when_listed_then_caps_results(
+        self, mock_paginate, mock_get_client
     ):
         mock_get_client.return_value = MagicMock()
-        instance = mock_team_cls.return_value
-        instance.open_invitations_async = AsyncMock(
-            return_value=[FakeInvitation(id=f"inv{i}") for i in range(4)]
-        )
 
-        result = await TeamService().get_team_open_invitations(
+        async def _fake(*args, **kwargs):
+            for i in range(4):
+                yield {"id": f"inv{i}"}
+
+        mock_paginate.side_effect = _fake
+
+        result = await TeamService.get_team_open_invitations(
             MagicMock(), 100, limit=1
         )
 
@@ -219,7 +278,7 @@ class TestGetTeamOpenInvitations:
     ):
         mock_get_client.side_effect = ConnectionAuthError("expired")
 
-        result = await TeamService().get_team_open_invitations(
+        result = await TeamService.get_team_open_invitations(
             MagicMock(), 100
         )
 

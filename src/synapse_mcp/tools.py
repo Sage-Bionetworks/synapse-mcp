@@ -448,40 +448,48 @@ async def get_team(
     team_name: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Get a Synapse Team by ID or name."""
-    return await TeamService().get_team(ctx, team_id, team_name)
+    return await TeamService.get_team(ctx, team_id, team_name)
 
 
 @mcp.tool(
     title="Get Team Members",
-    description="List all members of a Synapse Team.",
+    description=(
+        "List members of a Synapse Team. Pages through "
+        "the team membership API; pass an increased "
+        "``offset`` to fetch the next batch."
+    ),
     annotations=_RO,
 )
 async def get_team_members(
     team_id: int,
     ctx: Context,
-    limit: Optional[int] = None,
+    offset: int = 0,
+    limit: int = 50,
 ) -> List[Dict[str, Any]]:
     """List members of a Team."""
-    return await TeamService().get_team_members(
-        ctx, team_id, limit=limit
+    return await TeamService.get_team_members(
+        ctx, team_id, offset=offset, limit=limit
     )
 
 
 @mcp.tool(
     title="Get Team Open Invitations",
     description=(
-        "List pending invitations for a Synapse Team."
+        "List pending invitations for a Synapse Team. "
+        "Pages through the open-invitation API; pass an "
+        "increased ``offset`` to fetch the next batch."
     ),
     annotations=_RO,
 )
 async def get_team_open_invitations(
     team_id: int,
     ctx: Context,
-    limit: Optional[int] = None,
+    offset: int = 0,
+    limit: int = 50,
 ) -> List[Dict[str, Any]]:
     """List pending Team invitations."""
-    return await TeamService().get_team_open_invitations(
-        ctx, team_id, limit=limit
+    return await TeamService.get_team_open_invitations(
+        ctx, team_id, offset=offset, limit=limit
     )
 
 
@@ -497,7 +505,7 @@ async def get_team_membership_status(
     team_id: int, user_id: int, ctx: Context
 ) -> Dict[str, Any]:
     """Check a user's Team membership status."""
-    return await TeamService().get_team_membership_status(
+    return await TeamService.get_team_membership_status(
         ctx, team_id, user_id
     )
 
@@ -517,7 +525,7 @@ async def get_user_profile(
     username: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Get a Synapse user profile."""
-    return await UserService().get_user_profile(
+    return await UserService.get_user_profile(
         ctx, user_id, username
     )
 
@@ -533,7 +541,7 @@ async def is_user_certified(
     user_id: int, ctx: Context
 ) -> Dict[str, Any]:
     """Check if a user is certified."""
-    return await UserService().is_user_certified(ctx, user_id)
+    return await UserService.is_user_certified(ctx, user_id)
 
 
 # ---------------------------------------------------------------------------
