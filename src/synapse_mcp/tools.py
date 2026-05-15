@@ -47,7 +47,7 @@ async def get_entity(
     """Return Synapse entity metadata by ID."""
     if not validate_synapse_id(entity_id):
         return {"error": f"Invalid Synapse ID: {entity_id}"}
-    return await EntityService().get_entity(ctx, entity_id)
+    return await EntityService.get_entity(ctx, entity_id)
 
 
 @mcp.tool(
@@ -65,25 +65,39 @@ async def get_entity_annotations(
     """Return custom annotations for a Synapse entity."""
     if not validate_synapse_id(entity_id):
         return {"error": f"Invalid Synapse ID: {entity_id}"}
-    return await EntityService().get_annotations(ctx, entity_id)
+    return await EntityService.get_annotations(ctx, entity_id)
 
 
 @mcp.tool(
     title="Fetch Entity Provenance",
     description=(
-        "Return provenance (activity) metadata for a "
-        "Synapse entity, including inputs and code executed."
+        "Return the provenance record (also called the "
+        "Activity in Synapse) for an entity: the inputs "
+        "consumed and the code that produced it. Look up "
+        "by entity ID (with optional version) or by "
+        "Activity ID directly."
     ),
     annotations=_RO,
 )
 async def get_entity_provenance(
-    entity_id: str,
     ctx: Context,
+    entity_id: Optional[str] = None,
     version: Optional[int] = None,
+    activity_id: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Return activity metadata for a Synapse entity."""
-    if not validate_synapse_id(entity_id):
+    """Return provenance/activity metadata for a Synapse entity."""
+    if entity_id is None and activity_id is None:
+        return {
+            "error": "Either entity_id or activity_id is required",
+        }
+    if entity_id is not None and not validate_synapse_id(entity_id):
         return {"error": f"Invalid Synapse ID: {entity_id}"}
+    if version is not None and entity_id is None:
+        return {
+            "error": (
+                "version is only valid when entity_id is provided"
+            ),
+        }
     if version is not None:
         try:
             version = int(version)
@@ -97,8 +111,11 @@ async def get_entity_provenance(
                 "error": f"Invalid version number: {version}",
                 "entity_id": entity_id,
             }
-    return await ActivityService().get_provenance(
-        ctx, entity_id, version
+    return await ActivityService.get_provenance(
+        ctx,
+        entity_id=entity_id,
+        version=version,
+        activity_id=activity_id,
     )
 
 
@@ -118,7 +135,7 @@ async def get_entity_children(
     """List children for Synapse container entities."""
     if not validate_synapse_id(entity_id):
         return [{"error": f"Invalid Synapse ID: {entity_id}"}]
-    return await EntityService().get_children(ctx, entity_id)
+    return await EntityService.get_children(ctx, entity_id)
 
 
 @mcp.tool(
@@ -140,7 +157,7 @@ async def search_synapse(
     offset: int = 0,
 ) -> Dict[str, Any]:
     """Search Synapse entities using keyword queries."""
-    return await SearchService().search(
+    return await SearchService.search(
         ctx,
         query_term=query_term,
         name=name,
@@ -173,7 +190,7 @@ async def get_entity_acl(
     """Get the ACL for a Synapse entity."""
     if not validate_synapse_id(entity_id):
         return {"error": f"Invalid Synapse ID: {entity_id}"}
-    return await EntityService().get_acl(
+    return await EntityService.get_acl(
         ctx, entity_id, principal_id
     )
 
@@ -192,7 +209,7 @@ async def get_entity_permissions(
     """Get current user's permissions on a Synapse entity."""
     if not validate_synapse_id(entity_id):
         return {"error": f"Invalid Synapse ID: {entity_id}"}
-    return await EntityService().get_permissions(ctx, entity_id)
+    return await EntityService.get_permissions(ctx, entity_id)
 
 
 @mcp.tool(
@@ -211,7 +228,7 @@ async def list_entity_acl(
     """List all ACLs under an entity."""
     if not validate_synapse_id(entity_id):
         return {"error": f"Invalid Synapse ID: {entity_id}"}
-    return await EntityService().list_acl(
+    return await EntityService.list_acl(
         ctx, entity_id, recursive
     )
 
@@ -234,7 +251,7 @@ async def get_entity_schema(
     """Get bound JSON schema info for an entity."""
     if not validate_synapse_id(entity_id):
         return {"error": f"Invalid Synapse ID: {entity_id}"}
-    return await EntityService().get_schema(ctx, entity_id)
+    return await EntityService.get_schema(ctx, entity_id)
 
 
 @mcp.tool(
@@ -251,7 +268,7 @@ async def get_entity_schema_derived_keys(
     """Get derived annotation keys from a bound schema."""
     if not validate_synapse_id(entity_id):
         return {"error": f"Invalid Synapse ID: {entity_id}"}
-    return await EntityService().get_schema_derived_keys(
+    return await EntityService.get_schema_derived_keys(
         ctx, entity_id
     )
 
@@ -270,7 +287,7 @@ async def get_entity_schema_validation_statistics(
     """Get schema validation stats for a container."""
     if not validate_synapse_id(entity_id):
         return {"error": f"Invalid Synapse ID: {entity_id}"}
-    return await EntityService().get_schema_validation_statistics(
+    return await EntityService.get_schema_validation_statistics(
         ctx, entity_id
     )
 
@@ -289,50 +306,14 @@ async def get_entity_schema_invalid_validations(
     """Get invalid validation results for a container."""
     if not validate_synapse_id(entity_id):
         return [{"error": f"Invalid Synapse ID: {entity_id}"}]
-    return await EntityService().get_schema_invalid_validations(
+    return await EntityService.get_schema_invalid_validations(
         ctx, entity_id
     )
 
 
 
 # ---------------------------------------------------------------------------
-# Domain 6: Activity (Provenance)
-# ---------------------------------------------------------------------------
-
-
-@mcp.tool(
-    title="Get Activity",
-    description=(
-        "Get a provenance Activity by its own ID, "
-        "or by parent entity ID and optional version."
-    ),
-    annotations=_RO,
-)
-async def get_activity(
-    ctx: Context,
-    activity_id: Optional[str] = None,
-    parent_id: Optional[str] = None,
-    parent_version_number: Optional[int] = None,
-) -> Dict[str, Any]:
-    """Get an Activity by ID or by parent entity."""
-    if activity_id is None and parent_id is None:
-        return {
-            "error": "Either activity_id or parent_id is required",
-        }
-    if parent_version_number is not None and parent_id is None:
-        return {
-            "error": (
-                "parent_version_number is only valid when parent_id "
-                "is provided"
-            ),
-        }
-    return await ActivityService().get_activity(
-        ctx, activity_id, parent_id, parent_version_number
-    )
-
-
-# ---------------------------------------------------------------------------
-# Domain 7: Link
+# Domain 6: Link
 # ---------------------------------------------------------------------------
 
 
@@ -352,7 +333,7 @@ async def get_link(
     """Resolve a Link entity."""
     if not validate_synapse_id(entity_id):
         return {"error": f"Invalid Synapse ID: {entity_id}"}
-    return await EntityService().get_link(
+    return await EntityService.get_link(
         ctx, entity_id, follow_link
     )
 
@@ -379,7 +360,7 @@ async def get_wiki_page(
     """Get a wiki page's content and metadata."""
     if not validate_synapse_id(owner_id):
         return {"error": f"Invalid Synapse ID: {owner_id}"}
-    return await WikiService().get_wiki_page(
+    return await WikiService.get_wiki_page(
         ctx, owner_id, wiki_id
     )
 
@@ -403,7 +384,7 @@ async def get_wiki_headers(
     """Get the wiki table of contents for an entity."""
     if not validate_synapse_id(owner_id):
         return [{"error": f"Invalid Synapse ID: {owner_id}"}]
-    return await WikiService().get_wiki_headers(
+    return await WikiService.get_wiki_headers(
         ctx, owner_id, offset, limit
     )
 
@@ -428,7 +409,7 @@ async def get_wiki_history(
     """Get revision history of a wiki page."""
     if not validate_synapse_id(owner_id):
         return [{"error": f"Invalid Synapse ID: {owner_id}"}]
-    return await WikiService().get_wiki_history(
+    return await WikiService.get_wiki_history(
         ctx, owner_id, wiki_id, offset, limit
     )
 
@@ -447,7 +428,7 @@ async def get_wiki_order_hint(
     """Get wiki page display ordering."""
     if not validate_synapse_id(owner_id):
         return {"error": f"Invalid Synapse ID: {owner_id}"}
-    return await WikiService().get_wiki_order_hint(ctx, owner_id)
+    return await WikiService.get_wiki_order_hint(ctx, owner_id)
 
 
 # ---------------------------------------------------------------------------
@@ -469,40 +450,48 @@ async def get_team(
     team_name: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Get a Synapse Team by ID or name."""
-    return await TeamService().get_team(ctx, team_id, team_name)
+    return await TeamService.get_team(ctx, team_id, team_name)
 
 
 @mcp.tool(
     title="Get Team Members",
-    description="List all members of a Synapse Team.",
+    description=(
+        "List members of a Synapse Team. Pages through "
+        "the team membership API; pass an increased "
+        "``offset`` to fetch the next batch."
+    ),
     annotations=_RO,
 )
 async def get_team_members(
     team_id: int,
     ctx: Context,
-    limit: Optional[int] = None,
+    offset: int = 0,
+    limit: int = 50,
 ) -> List[Dict[str, Any]]:
     """List members of a Team."""
-    return await TeamService().get_team_members(
-        ctx, team_id, limit=limit
+    return await TeamService.get_team_members(
+        ctx, team_id, offset=offset, limit=limit
     )
 
 
 @mcp.tool(
     title="Get Team Open Invitations",
     description=(
-        "List pending invitations for a Synapse Team."
+        "List pending invitations for a Synapse Team. "
+        "Pages through the open-invitation API; pass an "
+        "increased ``offset`` to fetch the next batch."
     ),
     annotations=_RO,
 )
 async def get_team_open_invitations(
     team_id: int,
     ctx: Context,
-    limit: Optional[int] = None,
+    offset: int = 0,
+    limit: int = 50,
 ) -> List[Dict[str, Any]]:
     """List pending Team invitations."""
-    return await TeamService().get_team_open_invitations(
-        ctx, team_id, limit=limit
+    return await TeamService.get_team_open_invitations(
+        ctx, team_id, offset=offset, limit=limit
     )
 
 
@@ -518,7 +507,7 @@ async def get_team_membership_status(
     team_id: int, user_id: int, ctx: Context
 ) -> Dict[str, Any]:
     """Check a user's Team membership status."""
-    return await TeamService().get_team_membership_status(
+    return await TeamService.get_team_membership_status(
         ctx, team_id, user_id
     )
 
@@ -538,7 +527,7 @@ async def get_user_profile(
     username: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Get a Synapse user profile."""
-    return await UserService().get_user_profile(
+    return await UserService.get_user_profile(
         ctx, user_id, username
     )
 
@@ -554,7 +543,7 @@ async def is_user_certified(
     user_id: int, ctx: Context
 ) -> Dict[str, Any]:
     """Check if a user is certified."""
-    return await UserService().is_user_certified(ctx, user_id)
+    return await UserService.is_user_certified(ctx, user_id)
 
 
 # ---------------------------------------------------------------------------
@@ -821,7 +810,7 @@ async def list_curation_tasks(
     """List all curation tasks for a given project."""
     if not validate_synapse_id(project_id):
         return [{"error": f"Invalid Synapse ID: {project_id}"}]
-    return await CurationTaskService().list_tasks(ctx, project_id)
+    return await CurationTaskService.list_tasks(ctx, project_id)
 
 
 @mcp.tool(
@@ -836,7 +825,7 @@ async def get_curation_task(
     task_id: int, ctx: Context
 ) -> Dict[str, Any]:
     """Get a specific curation task by its task ID."""
-    return await CurationTaskService().get_task(ctx, task_id)
+    return await CurationTaskService.get_task(ctx, task_id)
 
 
 @mcp.tool(
@@ -852,6 +841,6 @@ async def get_curation_task_resources(
     task_id: int, ctx: Context
 ) -> Dict[str, Any]:
     """Get resources associated with a curation task."""
-    return await CurationTaskService().get_task_resources(
+    return await CurationTaskService.get_task_resources(
         ctx, task_id
     )
