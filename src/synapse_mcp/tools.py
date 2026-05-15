@@ -329,7 +329,7 @@ async def list_curation_tasks(project_id: str, ctx: Context) -> List[Dict[str, A
     if not validate_synapse_id(project_id):
         return [{"error": f"Invalid Synapse ID: {project_id}"}]
 
-    return await CurationTaskService().list_tasks(ctx, project_id)
+    return await CurationTaskService.list_tasks(ctx, project_id)
 
 
 @mcp.tool(
@@ -347,7 +347,7 @@ async def list_curation_tasks(project_id: str, ctx: Context) -> List[Dict[str, A
 )
 async def get_curation_task(task_id: int, ctx: Context) -> Dict[str, Any]:
     """Get a specific curation task by its task ID."""
-    return await CurationTaskService().get_task(ctx, task_id)
+    return await CurationTaskService.get_task(ctx, task_id)
 
 
 @mcp.tool(
@@ -370,7 +370,7 @@ async def get_curation_task_resources(task_id: int, ctx: Context) -> Dict[str, A
     For file-based tasks: returns upload folder and file view info.
     For record-based tasks: returns record set info.
     """
-    return await CurationTaskService().get_task_resources(ctx, task_id)
+    return await CurationTaskService.get_task_resources(ctx, task_id)
 
 
 __all__ = [

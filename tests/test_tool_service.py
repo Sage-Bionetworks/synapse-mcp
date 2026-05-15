@@ -68,39 +68,36 @@ class TestSynapseClient:
 class TestErrorBoundary:
     async def test_given_successful_method_when_called_then_returns_result_unchanged(self):
         # GIVEN a service method that succeeds
-        class Svc:
-            @error_boundary()
-            async def do_thing(self, ctx):
-                return {"data": 42}
+        @error_boundary()
+        async def do_thing(ctx):
+            return {"data": 42}
 
         # WHEN the method is called
-        result = await Svc().do_thing(MagicMock())
+        result = await do_thing(MagicMock())
 
         # THEN the original return value passes through
         assert result == {"data": 42}
 
     async def test_given_auth_error_when_called_then_returns_error_dict(self):
         # GIVEN a service method that raises ConnectionAuthError
-        class Svc:
-            @error_boundary()
-            async def do_thing(self, ctx):
-                raise ConnectionAuthError("expired")
+        @error_boundary()
+        async def do_thing(ctx):
+            raise ConnectionAuthError("expired")
 
         # WHEN the method is called
-        result = await Svc().do_thing(MagicMock())
+        result = await do_thing(MagicMock())
 
         # THEN it returns an error dict with "Authentication required" message
         assert "Authentication required" in result["error"]
 
     async def test_given_generic_exception_when_called_then_returns_error_with_type(self):
         # GIVEN a service method that raises a ValueError
-        class Svc:
-            @error_boundary()
-            async def do_thing(self, ctx):
-                raise ValueError("bad input")
+        @error_boundary()
+        async def do_thing(ctx):
+            raise ValueError("bad input")
 
         # WHEN the method is called
-        result = await Svc().do_thing(MagicMock())
+        result = await do_thing(MagicMock())
 
         # THEN it returns an error dict that includes the exception type
         assert result["error"] == "bad input"
@@ -110,13 +107,12 @@ class TestErrorBoundary:
         self,
     ):
         # GIVEN a service method decorated with error_context_keys=("project_id",)
-        class Svc:
-            @error_boundary(error_context_keys=("project_id",))
-            async def do_thing(self, ctx, project_id):
-                raise RuntimeError("boom")
+        @error_boundary(error_context_keys=("project_id",))
+        async def do_thing(ctx, project_id):
+            raise RuntimeError("boom")
 
         # WHEN it raises and project_id was passed as a positional arg
-        result = await Svc().do_thing(MagicMock(), "syn123")
+        result = await do_thing(MagicMock(), "syn123")
 
         # THEN the error response includes the project_id for debugging
         assert result["project_id"] == "syn123"
@@ -126,26 +122,24 @@ class TestErrorBoundary:
         self,
     ):
         # GIVEN a service method decorated with error_context_keys=("task_id",)
-        class Svc:
-            @error_boundary(error_context_keys=("task_id",))
-            async def do_thing(self, ctx, task_id):
-                raise RuntimeError("boom")
+        @error_boundary(error_context_keys=("task_id",))
+        async def do_thing(ctx, task_id):
+            raise RuntimeError("boom")
 
         # WHEN it raises and task_id was passed as a keyword arg
-        result = await Svc().do_thing(MagicMock(), task_id=7)
+        result = await do_thing(MagicMock(), task_id=7)
 
         # THEN the error response includes the task_id for debugging
         assert result["task_id"] == 7
 
     async def test_given_wrap_errors_list_when_error_then_wraps_error_dict_in_list(self):
         # GIVEN a service method decorated with wrap_errors=True
-        class Svc:
-            @error_boundary(wrap_errors=True)
-            async def do_thing(self, ctx):
-                raise RuntimeError("boom")
+        @error_boundary(wrap_errors=True)
+        async def do_thing(ctx):
+            raise RuntimeError("boom")
 
         # WHEN the method raises
-        result = await Svc().do_thing(MagicMock())
+        result = await do_thing(MagicMock())
 
         # THEN the error dict is wrapped in a list
         assert isinstance(result, list)
@@ -155,16 +149,15 @@ class TestErrorBoundary:
         self,
     ):
         # GIVEN a list-returning service method with context keys
-        class Svc:
-            @error_boundary(
-                error_context_keys=("project_id",),
-                wrap_errors=True,
-            )
-            async def do_thing(self, ctx, project_id):
-                raise ConnectionAuthError("expired")
+        @error_boundary(
+            error_context_keys=("project_id",),
+            wrap_errors=True,
+        )
+        async def do_thing(ctx, project_id):
+            raise ConnectionAuthError("expired")
 
         # WHEN it raises a ConnectionAuthError
-        result = await Svc().do_thing(MagicMock(), "syn123")
+        result = await do_thing(MagicMock(), "syn123")
 
         # THEN the error is wrapped in a list and includes context
         assert isinstance(result, list)
@@ -173,16 +166,32 @@ class TestErrorBoundary:
 
     async def test_given_wrap_errors_list_when_success_then_returns_list_unwrapped(self):
         # GIVEN a service method that returns a list successfully
-        class Svc:
-            @error_boundary(wrap_errors=True)
-            async def do_thing(self, ctx):
-                return [{"data": 1}, {"data": 2}]
+        @error_boundary(wrap_errors=True)
+        async def do_thing(ctx):
+            return [{"data": 1}, {"data": 2}]
 
         # WHEN the method succeeds
-        result = await Svc().do_thing(MagicMock())
+        result = await do_thing(MagicMock())
 
         # THEN the original list is returned as-is (not double-wrapped)
         assert result == [{"data": 1}, {"data": 2}]
+
+    async def test_given_static_method_on_class_when_called_then_passes_args_through(self):
+        # GIVEN a service-shaped class that uses @staticmethod with @error_boundary
+        # (this is the production pattern since DPE-1623 — services hold no state).
+        class Svc:
+            @staticmethod
+            @error_boundary(error_context_keys=("project_id",))
+            async def do_thing(ctx, project_id):
+                return {"project_id": project_id, "data": "ok"}
+
+        # WHEN called via the class (no instance) and via an instance
+        result_via_class = await Svc.do_thing(MagicMock(), "syn123")
+        result_via_instance = await Svc().do_thing(MagicMock(), "syn456")
+
+        # THEN both invocation styles work and the wrapper does NOT swallow ctx as self
+        assert result_via_class == {"project_id": "syn123", "data": "ok"}
+        assert result_via_instance == {"project_id": "syn456", "data": "ok"}
 
 
 # -------------------------------------------------------------------
@@ -531,23 +540,21 @@ class TestErrorBoundarySynapseHTTPError:
         class FakeResponse:
             status_code = 404
 
-        class Svc:
-            @error_boundary()
-            async def do_thing(self, ctx):
-                exc = RuntimeError("Not Found")
-                exc.response = FakeResponse()
-                raise exc
+        @error_boundary()
+        async def do_thing(ctx):
+            exc = RuntimeError("Not Found")
+            exc.response = FakeResponse()
+            raise exc
 
-        result = await Svc().do_thing(MagicMock())
+        result = await do_thing(MagicMock())
         assert result["status_code"] == 404
         assert result["error"] == "Not Found"
 
     async def test_given_exception_without_response_then_no_status_code(self):
-        class Svc:
-            @error_boundary()
-            async def do_thing(self, ctx):
-                raise ValueError("bad input")
+        @error_boundary()
+        async def do_thing(ctx):
+            raise ValueError("bad input")
 
-        result = await Svc().do_thing(MagicMock())
+        result = await do_thing(MagicMock())
         assert "status_code" not in result
         assert result["error"] == "bad input"
