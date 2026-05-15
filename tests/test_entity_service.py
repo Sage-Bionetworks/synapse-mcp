@@ -138,6 +138,7 @@ class TestGetChildren:
         container.datasetcollections = []
         container.materializedviews = []
         container.virtualtables = []
+        container.dockerrepos = []
 
         result = await EntityService().get_children(MagicMock(), "syn789")
 
@@ -160,12 +161,38 @@ class TestGetChildren:
         container.sync_from_synapse_async = AsyncMock()
         for attr in ("files", "folders", "tables", "entityviews",
                      "submissionviews", "datasets", "datasetcollections",
-                     "materializedviews", "virtualtables"):
+                     "materializedviews", "virtualtables", "dockerrepos"):
             setattr(container, attr, [])
 
         result = await EntityService().get_children(MagicMock(), "syn100")
 
         assert result == []
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.Folder")
+    async def test_given_container_with_docker_repo_when_listed_then_includes_docker_repo(
+        self, mock_folder_cls, mock_get_client
+    ):
+        # GIVEN a project that contains a Docker repository child.
+        # sync_from_synapse_async populates ``dockerrepos`` (one of the
+        # SDK default include-types). Regression for the missing
+        # attribute in _CONTAINER_CHILD_ATTRS.
+        mock_get_client.return_value = MagicMock()
+        container = mock_folder_cls.return_value
+        container.sync_from_synapse_async = AsyncMock()
+        for attr in ("files", "folders", "tables", "entityviews",
+                     "submissionviews", "datasets", "datasetcollections",
+                     "materializedviews", "virtualtables"):
+            setattr(container, attr, [])
+        container.dockerrepos = [
+            FakeEntityHeader(id="syn555", name="repo1", type="dockerrepo"),
+        ]
+
+        # WHEN children are listed
+        result = await EntityService.get_children(MagicMock(), "syn789")
+
+        # THEN the Docker repository surfaces in the response
+        assert {r["id"] for r in result} == {"syn555"}
 
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
     async def test_given_expired_auth_when_listing_then_returns_error_list(
