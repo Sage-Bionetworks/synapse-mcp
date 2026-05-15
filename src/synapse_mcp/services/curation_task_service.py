@@ -43,12 +43,13 @@ def _format_task(task: CurationTask) -> Dict[str, Any]:
 class CurationTaskService:
     """Orchestrates curation task operations and shapes tool responses."""
 
+    @staticmethod
     @error_boundary(
         error_context_keys=("project_id",),
         wrap_errors=True,
     )
     async def list_tasks(
-        self, ctx: Context, project_id: str
+        ctx: Context, project_id: str
     ) -> List[Dict[str, Any]]:
         """List all curation tasks for a project.
 
@@ -65,9 +66,10 @@ class CurationTaskService:
                 )
             ]
 
+    @staticmethod
     @error_boundary(error_context_keys=("task_id",))
     async def get_task(
-        self, ctx: Context, task_id: int
+        ctx: Context, task_id: int
     ) -> Dict[str, Any]:
         """Retrieve a single curation task by ID.
 
@@ -81,9 +83,10 @@ class CurationTaskService:
             )
             return _format_task(task)
 
+    @staticmethod
     @error_boundary(error_context_keys=("task_id",))
     async def get_task_resources(
-        self, ctx: Context, task_id: int
+        ctx: Context, task_id: int
     ) -> Dict[str, Any]:
         """Retrieve a curation task and its associated resources.
 
