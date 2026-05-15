@@ -356,7 +356,7 @@ async def get_wiki_page(
     """Get a wiki page's content and metadata."""
     if not validate_synapse_id(owner_id):
         return {"error": f"Invalid Synapse ID: {owner_id}"}
-    return await WikiService().get_wiki_page(
+    return await WikiService.get_wiki_page(
         ctx, owner_id, wiki_id
     )
 
@@ -380,7 +380,7 @@ async def get_wiki_headers(
     """Get the wiki table of contents for an entity."""
     if not validate_synapse_id(owner_id):
         return [{"error": f"Invalid Synapse ID: {owner_id}"}]
-    return await WikiService().get_wiki_headers(
+    return await WikiService.get_wiki_headers(
         ctx, owner_id, offset, limit
     )
 
@@ -405,7 +405,7 @@ async def get_wiki_history(
     """Get revision history of a wiki page."""
     if not validate_synapse_id(owner_id):
         return [{"error": f"Invalid Synapse ID: {owner_id}"}]
-    return await WikiService().get_wiki_history(
+    return await WikiService.get_wiki_history(
         ctx, owner_id, wiki_id, offset, limit
     )
 
@@ -424,7 +424,7 @@ async def get_wiki_order_hint(
     """Get wiki page display ordering."""
     if not validate_synapse_id(owner_id):
         return {"error": f"Invalid Synapse ID: {owner_id}"}
-    return await WikiService().get_wiki_order_hint(ctx, owner_id)
+    return await WikiService.get_wiki_order_hint(ctx, owner_id)
 
 
 # ---------------------------------------------------------------------------
