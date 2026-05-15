@@ -29,9 +29,9 @@ def _normalize_fields(fields: Optional[List[str]]) -> List[str]:
 class SearchService:
     """Orchestrates Synapse search operations."""
 
+    @staticmethod
     @error_boundary()
     async def search(
-        self,
         ctx: Context,
         query_term: Optional[str] = None,
         name: Optional[str] = None,

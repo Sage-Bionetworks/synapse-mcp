@@ -9,7 +9,6 @@ from .context_helpers import (
 )
 from .resources import synapse_blog_feed
 from .tools import (
-    get_activity,
     get_curation_task,
     get_curation_task_resources,
     get_entity,
@@ -32,7 +31,6 @@ __all__ = [
     "auth",
     "ConnectionAuthError",
     "first_successful_result",
-    "get_activity",
     "get_curation_task",
     "get_curation_task_resources",
     "get_entity",
