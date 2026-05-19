@@ -881,7 +881,7 @@ async def get_schema_organization(
     organization_name: str, ctx: Context
 ) -> Dict[str, Any]:
     """Get a Schema Organization by name."""
-    return await SchemaOrganizationService().get_schema_organization(
+    return await SchemaOrganizationService.get_schema_organization(
         ctx, organization_name
     )
 
@@ -898,7 +898,7 @@ async def get_schema_organization_acl(
     organization_name: str, ctx: Context
 ) -> Dict[str, Any]:
     """Get ACL for a Schema Organization."""
-    return await SchemaOrganizationService().get_schema_organization_acl(
+    return await SchemaOrganizationService.get_schema_organization_acl(
         ctx, organization_name
     )
 
@@ -906,19 +906,23 @@ async def get_schema_organization_acl(
 @mcp.tool(
     title="List JSON Schemas",
     description=(
-        "List all JSON Schemas in a Synapse "
-        "Schema Organization."
+        "List JSON Schemas in a Synapse Schema Organization, one "
+        "page at a time. The Synapse list endpoint paginates with a "
+        "``nextPageToken`` (no limit/offset): the response includes "
+        "``next_page_token``; pass it back as the next call's "
+        "``next_page_token`` argument to fetch the following page. "
+        "``next_page_token`` is null on the final page."
     ),
     annotations=_RO,
 )
 async def list_json_schemas(
     organization_name: str,
     ctx: Context,
-    limit: int = 100,
-) -> List[Dict[str, Any]]:
-    """List schemas in an organization."""
-    return await SchemaOrganizationService().list_json_schemas(
-        ctx, organization_name, limit
+    next_page_token: Optional[str] = None,
+) -> Dict[str, Any]:
+    """List schemas in an organization (token-paginated)."""
+    return await SchemaOrganizationService.list_json_schemas(
+        ctx, organization_name, next_page_token
     )
 
 
@@ -936,7 +940,7 @@ async def get_json_schema(
     ctx: Context,
 ) -> Dict[str, Any]:
     """Get metadata for a JSON Schema."""
-    return await SchemaOrganizationService().get_json_schema(
+    return await SchemaOrganizationService.get_json_schema(
         ctx, organization_name, schema_name
     )
 
@@ -956,7 +960,7 @@ async def get_json_schema_body(
     version: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Get the raw JSON schema document."""
-    return await SchemaOrganizationService().get_json_schema_body(
+    return await SchemaOrganizationService.get_json_schema_body(
         ctx, organization_name, schema_name, version
     )
 
@@ -964,7 +968,9 @@ async def get_json_schema_body(
 @mcp.tool(
     title="List JSON Schema Versions",
     description=(
-        "List all versions of a Synapse JSON Schema."
+        "List versions of a Synapse JSON Schema, one page at a time. "
+        "Token-paginated like list_json_schemas: pass the returned "
+        "``next_page_token`` back to fetch the next page."
     ),
     annotations=_RO,
 )
@@ -972,11 +978,11 @@ async def list_json_schema_versions(
     organization_name: str,
     schema_name: str,
     ctx: Context,
-    limit: int = 100,
-) -> List[Dict[str, Any]]:
-    """List versions of a JSON Schema."""
-    return await SchemaOrganizationService().list_json_schema_versions(
-        ctx, organization_name, schema_name, limit
+    next_page_token: Optional[str] = None,
+) -> Dict[str, Any]:
+    """List versions of a JSON Schema (token-paginated)."""
+    return await SchemaOrganizationService.list_json_schema_versions(
+        ctx, organization_name, schema_name, next_page_token
     )
 
 
@@ -994,7 +1000,9 @@ async def list_json_schema_versions(
         "'accepted', 'rejected'. When as_reviewer=True, the caller "
         "lists submissions they can review ('waiting_for_submission' "
         "is not allowed in this mode); when False (default), lists "
-        "submissions the caller owns."
+        "submissions the caller owns. "
+        "Token-paginated: response includes ``next_page_token``; "
+        "pass it back to fetch the next page (null on final page)."
     ),
     annotations=_RO,
 )
@@ -1003,9 +1011,9 @@ async def list_form_data(
     ctx: Context,
     filter_by_state: Optional[List[str]] = None,
     as_reviewer: bool = False,
-    limit: int = 100,
-) -> List[Dict[str, Any]]:
-    """List form submissions for a FormGroup."""
-    return await FormService().list_form_data(
-        ctx, group_id, filter_by_state, as_reviewer, limit
+    next_page_token: Optional[str] = None,
+) -> Dict[str, Any]:
+    """List form submissions for a FormGroup (token-paginated)."""
+    return await FormService.list_form_data(
+        ctx, group_id, filter_by_state, as_reviewer, next_page_token
     )

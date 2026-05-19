@@ -8,7 +8,7 @@ import itertools
 from collections.abc import Mapping
 from contextlib import asynccontextmanager
 from datetime import date, datetime
-from typing import Any, AsyncIterator, Callable, Dict, Iterator, Tuple
+from typing import Any, Callable, Dict, Iterator, Tuple
 
 from fastmcp import Context
 
@@ -69,34 +69,6 @@ def collect_generator(gen: Iterator, limit: int = 100) -> list:
     # yielded, so the (limit+1)th item is NOT consumed — callers that
     # keep using ``gen`` see the next unread item.
     return list(itertools.islice(gen, limit))
-
-
-async def collect_async_generator(gen: AsyncIterator, limit: int = 100) -> list:
-    """Collect up to *limit* items from an async generator.
-
-    Async counterpart of ``collect_generator`` for SDK methods that
-    return ``AsyncGenerator`` (e.g. ``WikiHeader.get_async``).
-
-    Raises:
-        ValueError: If ``limit`` is negative.
-    """
-    if limit < 0:
-        raise ValueError("limit must be >= 0")
-    if limit == 0:
-        return []
-
-    # ``async for`` pulls the next item from ``gen`` at the top of
-    # each pass, so even with an early break the (limit+1)th item is
-    # still consumed. Stepping via ``__anext__`` lets us stop before
-    # advancing past ``limit`` items — matches the sync islice version.
-    items: list = []
-    agen = gen.__aiter__()
-    try:
-        while len(items) < limit:
-            items.append(await agen.__anext__())
-    except StopAsyncIteration:
-        pass
-    return items
 
 
 @asynccontextmanager
