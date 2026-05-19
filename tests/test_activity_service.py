@@ -100,6 +100,7 @@ class TestGetProvenance:
 
         # THEN the version is passed and included in response
         mock_activity_cls.get_async.assert_called_once_with(
+            activity_id=None,
             parent_id="syn456",
             parent_version_number=3,
             synapse_client=mock_get_client.return_value,
@@ -123,3 +124,37 @@ class TestGetProvenance:
         # THEN an auth error is returned
         assert "Authentication required" in result["error"]
         assert result["entity_id"] == "syn456"
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.Activity")
+    async def test_given_activity_id_when_fetched_then_routes_to_direct_lookup(
+        self, mock_activity_cls, mock_get_client
+    ):
+        # GIVEN provenance can also be looked up by Activity ID directly
+        mock_get_client.return_value = MagicMock()
+        mock_activity_cls.get_async = AsyncMock(return_value=FakeActivity())
+
+        # WHEN we look up by activity_id
+        result = await ActivityService.get_provenance(
+            MagicMock(), activity_id="987"
+        )
+
+        # THEN the SDK call uses activity_id and the response carries it
+        mock_activity_cls.get_async.assert_called_once_with(
+            activity_id="987",
+            parent_id=None,
+            parent_version_number=None,
+            synapse_client=mock_get_client.return_value,
+        )
+        assert result["activity_id"] == "987"
+        assert result["activity"]["id"] == "act123"
+
+    async def test_given_no_selectors_when_fetched_then_returns_error(self):
+        # GIVEN neither entity_id nor activity_id
+        # WHEN we call get_provenance with no selector
+        result = await ActivityService.get_provenance(MagicMock())
+
+        # THEN a clear error is returned without touching the SDK
+        assert (
+            "Either entity_id or activity_id is required" in result["error"]
+        )

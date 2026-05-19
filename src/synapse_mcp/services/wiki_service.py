@@ -10,15 +10,15 @@ from synapseclient.models import (
     WikiPage,
 )
 
-from .tool_service import collect_async_generator, error_boundary, serialize_model, synapse_client
+from .tool_service import error_boundary, serialize_model, synapse_client
 
 
 class WikiService:
     """Orchestrates wiki read operations."""
 
+    @staticmethod
     @error_boundary(error_context_keys=("owner_id",))
     async def get_wiki_page(
-        self,
         ctx: Context,
         owner_id: str,
         wiki_id: Optional[str] = None,
@@ -38,19 +38,19 @@ class WikiService:
         """
         async with synapse_client(ctx) as client:
             if wiki_id is None:
-                # SDK requires id or title — find root page
-                # from the wiki header tree.
-                headers = await collect_async_generator(
-                    WikiHeader.get_async(
-                        owner_id=owner_id,
-                        synapse_client=client,
-                    )
-                )
+                # SDK requires id or title — find the root page from the
+                # wiki header tree. Limit the page size to keep root
+                # discovery cheap; we only need the parent_id == None
+                # entry, which lives in the first page.
                 root = None
-                for h in headers:
-                    pid = getattr(h, "parent_id", None)
-                    if pid is None:
-                        root = h
+                async for header in WikiHeader.get_async(
+                    owner_id=owner_id,
+                    offset=0,
+                    limit=50,
+                    synapse_client=client,
+                ):
+                    if getattr(header, "parent_id", None) is None:
+                        root = header
                         break
                 if root is None:
                     return {
@@ -67,12 +67,12 @@ class WikiService:
             ).get_async(synapse_client=client)
             return serialize_model(page)
 
+    @staticmethod
     @error_boundary(
         error_context_keys=("owner_id",),
         wrap_errors=True,
     )
     async def get_wiki_headers(
-        self,
         ctx: Context,
         owner_id: str,
         offset: int = 0,
@@ -92,25 +92,29 @@ class WikiService:
             for each wiki page in the hierarchy.
         """
         async with synapse_client(ctx) as client:
-            headers = await collect_async_generator(
-                WikiHeader.get_async(
-                    owner_id=owner_id,
-                    offset=offset,
-                    limit=limit,
-                    synapse_client=client,
-                ),
-                limit,
-            )
-            return [
-                serialize_model(h) for h in headers
-            ]
+            # ``WikiHeader.get_async`` forwards limit/offset into the
+            # paginated REST call. The async generator continues across
+            # pages until exhausted, so we cap manually at ``limit``
+            # items to keep response sizes bounded; callers paginate
+            # further by passing a larger ``offset``.
+            results: List[Dict[str, Any]] = []
+            async for header in WikiHeader.get_async(
+                owner_id=owner_id,
+                offset=offset,
+                limit=limit,
+                synapse_client=client,
+            ):
+                if len(results) >= limit:
+                    break
+                results.append(serialize_model(header))
+            return results
 
+    @staticmethod
     @error_boundary(
         error_context_keys=("owner_id",),
         wrap_errors=True,
     )
     async def get_wiki_history(
-        self,
         ctx: Context,
         owner_id: str,
         wiki_id: str,
@@ -131,23 +135,23 @@ class WikiService:
             and modified_by for each revision.
         """
         async with synapse_client(ctx) as client:
-            snapshots = await collect_async_generator(
-                WikiHistorySnapshot.get_async(
-                    owner_id=owner_id,
-                    id=wiki_id,
-                    offset=offset,
-                    limit=limit,
-                    synapse_client=client,
-                ),
-                limit,
-            )
-            return [
-                serialize_model(s) for s in snapshots
-            ]
+            results: List[Dict[str, Any]] = []
+            async for snap in WikiHistorySnapshot.get_async(
+                owner_id=owner_id,
+                id=wiki_id,
+                offset=offset,
+                limit=limit,
+                synapse_client=client,
+            ):
+                if len(results) >= limit:
+                    break
+                results.append(serialize_model(snap))
+            return results
 
+    @staticmethod
     @error_boundary(error_context_keys=("owner_id",))
     async def get_wiki_order_hint(
-        self, ctx: Context, owner_id: str
+        ctx: Context, owner_id: str
     ) -> Dict[str, Any]:
         """Get the display ordering of wiki sub-pages.
 

@@ -186,19 +186,19 @@ def error_boundary(
             return type stays consistent for list-returning service methods.
     """
     def decorator(method: Callable) -> Callable:
-        # Pre-compute parameter positions at decoration time.
-        # Slice past ``self`` and ``ctx`` (the first two params) to get
-        # only the business-logic parameters whose values may be included
-        # in error responses via ``error_context_keys``.
+        # Pre-compute parameter positions at decoration time. Slice past
+        # ``ctx`` (the first parameter) to get only the business-logic
+        # parameters whose values may be included in error responses via
+        # ``error_context_keys``.
         sig = inspect.signature(method)
-        param_names = list(sig.parameters.keys())[2:]
+        param_names = list(sig.parameters.keys())[1:]
         context_positions = {
             name: i for i, name in enumerate(param_names)
             if name in error_context_keys
         }
 
         @functools.wraps(method)
-        async def wrapper(self, ctx, *args, **kwargs):
+        async def wrapper(ctx, *args, **kwargs):
             extra: Dict[str, Any] = {}
             for name, pos in context_positions.items():
                 if pos < len(args):
@@ -207,7 +207,7 @@ def error_boundary(
                     extra[name] = kwargs[name]
 
             try:
-                return await method(self, ctx, *args, **kwargs)
+                return await method(ctx, *args, **kwargs)
             except ConnectionAuthError as exc:
                 err = {
                     "error": f"Authentication required: {exc}",
@@ -221,9 +221,10 @@ def error_boundary(
                     "error_type": type(exc).__name__,
                     **extra,
                 }
-                # Extract HTTP status code from any exception carrying
-                # a ``response`` attribute with a ``status_code`` (the
-                # shape SynapseHTTPError and requests.HTTPError share).
+                # Surface any HTTP status code attached to the exception.
+                # SynapseHTTPError, requests.HTTPError, and httpx.HTTPError
+                # all share the ``exc.response.status_code`` shape; this
+                # branch fires for any of them.
                 response = getattr(exc, "response", None)
                 if response is not None:
                     status_code = getattr(

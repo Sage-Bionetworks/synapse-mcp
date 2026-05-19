@@ -39,7 +39,14 @@ async def _resolve_entity(entity_id: str, client):
     )
 
 
-# Child list attributes on Folder/Project containers.
+# Child list attributes on Folder/Project containers populated by
+# ``sync_from_synapse_async``. Mirrors the SDK default include-types in
+# ``synapseclient/models/storable_container.py``; if the SDK adds a new
+# concrete type to that default, the corresponding attribute name must be
+# appended here. The authoritative server-side enum lives at
+# https://rest-docs.synapse.org/rest/org/sagebionetworks/repo/model/EntityType.html
+# but is not exported as a Python constant by the SDK, so we keep this
+# tuple manually synced.
 _CONTAINER_CHILD_ATTRS = (
     "files",
     "folders",
@@ -50,15 +57,17 @@ _CONTAINER_CHILD_ATTRS = (
     "datasetcollections",
     "materializedviews",
     "virtualtables",
+    "dockerrepos",
 )
 
 
 class EntityService:
     """Orchestrates entity read operations."""
 
+    @staticmethod
     @error_boundary(error_context_keys=("entity_id",))
     async def get_entity(
-        self, ctx: Context, entity_id: str
+        ctx: Context, entity_id: str
     ) -> Dict[str, Any]:
         """Get entity metadata by Synapse ID.
 
@@ -84,9 +93,10 @@ class EntityService:
             )
             return serialize_model(entity)
 
+    @staticmethod
     @error_boundary(error_context_keys=("entity_id",))
     async def get_annotations(
-        self, ctx: Context, entity_id: str
+        ctx: Context, entity_id: str
     ) -> Dict[str, Any]:
         """Get custom annotations for an entity.
 
@@ -114,12 +124,13 @@ class EntityService:
                 return {}
             return serialize_model(annotations)
 
+    @staticmethod
     @error_boundary(
         error_context_keys=("entity_id",),
         wrap_errors=True,
     )
     async def get_children(
-        self, ctx: Context, entity_id: str
+        ctx: Context, entity_id: str
     ) -> List[Dict[str, Any]]:
         """List all immediate children of a container entity.
 
@@ -149,9 +160,9 @@ class EntityService:
                     children.append(serialize_model(item))
             return children
 
+    @staticmethod
     @error_boundary(error_context_keys=("entity_id",))
     async def get_acl(
-        self,
         ctx: Context,
         entity_id: str,
         principal_id: Optional[int] = None,
@@ -180,9 +191,10 @@ class EntityService:
                 "access_types": access_types,
             }
 
+    @staticmethod
     @error_boundary(error_context_keys=("entity_id",))
     async def get_permissions(
-        self, ctx: Context, entity_id: str
+        ctx: Context, entity_id: str
     ) -> Dict[str, Any]:
         """Get current user's permissions on an entity.
 
@@ -203,9 +215,9 @@ class EntityService:
             result["entity_id"] = entity_id
             return result
 
+    @staticmethod
     @error_boundary(error_context_keys=("entity_id",))
     async def list_acl(
-        self,
         ctx: Context,
         entity_id: str,
         recursive: bool = False,
@@ -234,9 +246,10 @@ class EntityService:
                 result["entity_id"] = entity_id
             return result
 
+    @staticmethod
     @error_boundary(error_context_keys=("entity_id",))
     async def get_schema(
-        self, ctx: Context, entity_id: str
+        ctx: Context, entity_id: str
     ) -> Dict[str, Any]:
         """Get the bound JSON schema for an entity.
 
@@ -259,9 +272,10 @@ class EntityService:
                 result["entity_id"] = entity_id
             return result
 
+    @staticmethod
     @error_boundary(error_context_keys=("entity_id",))
     async def get_schema_derived_keys(
-        self, ctx: Context, entity_id: str
+        ctx: Context, entity_id: str
     ) -> Dict[str, Any]:
         """Get derived annotation keys from a bound schema.
 
@@ -284,9 +298,10 @@ class EntityService:
                 "derived_keys": serialize_model(keys),
             }
 
+    @staticmethod
     @error_boundary(error_context_keys=("entity_id",))
     async def get_schema_validation_statistics(
-        self, ctx: Context, entity_id: str
+        ctx: Context, entity_id: str
     ) -> Dict[str, Any]:
         """Get schema validation stats for a container.
 
@@ -309,12 +324,13 @@ class EntityService:
                 result["entity_id"] = entity_id
             return result
 
+    @staticmethod
     @error_boundary(
         error_context_keys=("entity_id",),
         wrap_errors=True,
     )
     async def get_schema_invalid_validations(
-        self, ctx: Context, entity_id: str
+        ctx: Context, entity_id: str
     ) -> List[Dict[str, Any]]:
         """Get invalid validation results for a container.
 
@@ -336,9 +352,9 @@ class EntityService:
                 serialize_model(item) for item in results
             ]
 
+    @staticmethod
     @error_boundary(error_context_keys=("entity_id",))
     async def get_link(
-        self,
         ctx: Context,
         entity_id: str,
         follow_link: bool = True,
