@@ -565,7 +565,7 @@ async def get_evaluation(
     evaluation_name: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Get an Evaluation by ID or name."""
-    return await EvaluationService().get_evaluation(
+    return await EvaluationService.get_evaluation(
         ctx, evaluation_id, evaluation_name
     )
 
@@ -591,7 +591,7 @@ async def list_evaluations(
     limit: int = 20,
 ) -> List[Dict[str, Any]]:
     """List evaluations with filters."""
-    return await EvaluationService().list_evaluations(
+    return await EvaluationService.list_evaluations(
         ctx,
         project_id=project_id,
         access_type=access_type,
@@ -606,8 +606,13 @@ async def list_evaluations(
 @mcp.tool(
     title="Get Evaluation ACL",
     description=(
-        "Get the access control list for a Synapse "
-        "Evaluation queue."
+        "Get the resource-level access control list for a "
+        "Synapse Evaluation queue: which principals (users "
+        "and teams) hold which access types on the queue. "
+        "Use this for queue-administration questions like "
+        "\"who can score submissions\". Distinct from "
+        "get_evaluation_permissions, which reports the "
+        "caller's own effective permissions."
     ),
     annotations=_RO,
 )
@@ -615,7 +620,7 @@ async def get_evaluation_acl(
     evaluation_id: str, ctx: Context
 ) -> Dict[str, Any]:
     """Get ACL for an Evaluation queue."""
-    return await EvaluationService().get_evaluation_acl(
+    return await EvaluationService.get_evaluation_acl(
         ctx, evaluation_id
     )
 
@@ -623,8 +628,12 @@ async def get_evaluation_acl(
 @mcp.tool(
     title="Get Evaluation Permissions",
     description=(
-        "Get the current user's permissions on a "
-        "Synapse Evaluation queue."
+        "Get the current authenticated user's effective "
+        "permissions on a Synapse Evaluation queue (can_view, "
+        "can_edit, can_submit, etc.). Use this for "
+        "self-permission checks. Distinct from "
+        "get_evaluation_acl, which lists the queue's full "
+        "ACL across every principal."
     ),
     annotations=_RO,
 )
@@ -632,7 +641,7 @@ async def get_evaluation_permissions(
     evaluation_id: str, ctx: Context
 ) -> Dict[str, Any]:
     """Get permissions on an Evaluation queue."""
-    return await EvaluationService().get_evaluation_permissions(
+    return await EvaluationService.get_evaluation_permissions(
         ctx, evaluation_id
     )
 
@@ -651,7 +660,7 @@ async def get_submission(
     submission_id: str, ctx: Context
 ) -> Dict[str, Any]:
     """Get a Submission by ID."""
-    return await SubmissionService().get_submission(
+    return await SubmissionService.get_submission(
         ctx, submission_id
     )
 
@@ -659,9 +668,10 @@ async def get_submission(
 @mcp.tool(
     title="List Evaluation Submissions",
     description=(
-        "List all submissions to a Synapse Evaluation "
-        "queue, optionally filtered by status. Up to "
-        "``limit`` submissions are returned."
+        "List submissions to a Synapse Evaluation queue, "
+        "optionally filtered by status. Pages through the "
+        "queue's submission list; pass an increased "
+        "``offset`` to fetch the next batch."
     ),
     annotations=_RO,
 )
@@ -669,11 +679,12 @@ async def list_evaluation_submissions(
     evaluation_id: str,
     ctx: Context,
     status: Optional[str] = None,
+    offset: int = 0,
     limit: int = 50,
 ) -> List[Dict[str, Any]]:
     """List submissions to an Evaluation."""
-    return await SubmissionService().list_evaluation_submissions(
-        ctx, evaluation_id, status, limit
+    return await SubmissionService.list_evaluation_submissions(
+        ctx, evaluation_id, status, offset, limit
     )
 
 
@@ -681,18 +692,20 @@ async def list_evaluation_submissions(
     title="List My Submissions",
     description=(
         "List the current user's submissions to a "
-        "Synapse Evaluation queue."
+        "Synapse Evaluation queue. Pass an increased "
+        "``offset`` to page beyond the first batch."
     ),
     annotations=_RO,
 )
 async def list_my_submissions(
     evaluation_id: str,
     ctx: Context,
+    offset: int = 0,
     limit: int = 50,
 ) -> List[Dict[str, Any]]:
     """List current user's submissions."""
-    return await SubmissionService().list_my_submissions(
-        ctx, evaluation_id, limit
+    return await SubmissionService.list_my_submissions(
+        ctx, evaluation_id, offset, limit
     )
 
 
@@ -708,7 +721,7 @@ async def get_submission_count(
     evaluation_id: str, ctx: Context
 ) -> Dict[str, Any]:
     """Get submission count for an Evaluation."""
-    return await SubmissionService().get_submission_count(
+    return await SubmissionService.get_submission_count(
         ctx, evaluation_id
     )
 
@@ -724,7 +737,7 @@ async def get_submission_status(
     submission_id: str, ctx: Context
 ) -> Dict[str, Any]:
     """Get status of a Submission."""
-    return await SubmissionService().get_submission_status(
+    return await SubmissionService.get_submission_status(
         ctx, submission_id
     )
 
@@ -747,7 +760,7 @@ async def list_submission_statuses(
     offset: int = 0,
 ) -> List[Dict[str, Any]]:
     """List submission statuses for an Evaluation."""
-    return await SubmissionService().list_submission_statuses(
+    return await SubmissionService.list_submission_statuses(
         ctx, evaluation_id, status, limit, offset
     )
 
@@ -756,7 +769,8 @@ async def list_submission_statuses(
     title="List Evaluation Submission Bundles",
     description=(
         "List submission+status bundles for a Synapse "
-        "Evaluation queue."
+        "Evaluation queue. Pass an increased ``offset`` "
+        "to fetch the next batch."
     ),
     annotations=_RO,
 )
@@ -764,11 +778,12 @@ async def list_evaluation_submission_bundles(
     evaluation_id: str,
     ctx: Context,
     status: Optional[str] = None,
+    offset: int = 0,
     limit: int = 50,
 ) -> List[Dict[str, Any]]:
     """List submission bundles for an Evaluation."""
-    return await SubmissionService().list_evaluation_submission_bundles(
-        ctx, evaluation_id, status, limit
+    return await SubmissionService.list_evaluation_submission_bundles(
+        ctx, evaluation_id, status, offset, limit
     )
 
 
@@ -776,18 +791,20 @@ async def list_evaluation_submission_bundles(
     title="List My Submission Bundles",
     description=(
         "List the current user's submission bundles "
-        "for a Synapse Evaluation queue."
+        "for a Synapse Evaluation queue. Pass an "
+        "increased ``offset`` to fetch the next batch."
     ),
     annotations=_RO,
 )
 async def list_my_submission_bundles(
     evaluation_id: str,
     ctx: Context,
+    offset: int = 0,
     limit: int = 50,
 ) -> List[Dict[str, Any]]:
     """List current user's submission bundles."""
-    return await SubmissionService().list_my_submission_bundles(
-        ctx, evaluation_id, limit
+    return await SubmissionService.list_my_submission_bundles(
+        ctx, evaluation_id, offset, limit
     )
 
 

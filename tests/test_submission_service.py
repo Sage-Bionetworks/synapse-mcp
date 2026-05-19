@@ -65,40 +65,59 @@ class TestGetSubmission:
 
 class TestListEvaluationSubmissions:
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
-    @patch(f"{SVC}.Submission")
-    async def test_given_queue_then_returns_submissions(
-        self, mock_sub_cls, mock_get_client
+    @patch(f"{SVC}.rest_get_paginated_async")
+    async def test_given_queue_then_paginates_with_limit_offset(
+        self, mock_paginate, mock_get_client
     ):
+        # GIVEN the queue's submission endpoint will yield two
+        # raw REST dicts (server-side camelCase, not yet typed).
         mock_get_client.return_value = MagicMock()
-        mock_sub_cls.get_evaluation_submissions_async = MagicMock(
-            return_value=_agen(
-                [FakeSubmission(id="1"), FakeSubmission(id="2")]
-            )
+        captured = {}
+
+        async def _fake(uri, *, limit, offset, synapse_client):
+            captured["uri"] = uri
+            captured["limit"] = limit
+            captured["offset"] = offset
+            for sid in ("1", "2"):
+                yield {"id": sid, "evaluationId": "9600001"}
+
+        mock_paginate.side_effect = _fake
+
+        # WHEN we list submissions with a status filter and offset
+        result = await SubmissionService.list_evaluation_submissions(
+            MagicMock(), "9600001", status="SCORED", offset=10, limit=2
         )
 
-        result = await SubmissionService().list_evaluation_submissions(
-            MagicMock(), "9600001"
+        # THEN limit/offset reach the wire, status appends to the URI,
+        # and dicts come back in the typed Submission shape.
+        assert (
+            captured["uri"]
+            == "/evaluation/9600001/submission/all?status=SCORED"
         )
-
+        assert captured["limit"] == 2
+        assert captured["offset"] == 10
         assert [s["id"] for s in result] == ["1", "2"]
+        assert [s["evaluation_id"] for s in result] == ["9600001", "9600001"]
 
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
-    @patch(f"{SVC}.Submission")
-    async def test_given_limit_then_truncates_results(
-        self, mock_sub_cls, mock_get_client
+    @patch(f"{SVC}.rest_get_paginated_async")
+    async def test_given_limit_then_caps_results(
+        self, mock_paginate, mock_get_client
     ):
         mock_get_client.return_value = MagicMock()
-        mock_sub_cls.get_evaluation_submissions_async = MagicMock(
-            return_value=_agen(
-                [FakeSubmission(id=str(i)) for i in range(5)]
-            )
-        )
 
-        result = await SubmissionService().list_evaluation_submissions(
+        async def _fake(*args, **kwargs):
+            for i in range(5):
+                yield {"id": str(i), "evaluationId": "9600001"}
+
+        mock_paginate.side_effect = _fake
+
+        result = await SubmissionService.list_evaluation_submissions(
             MagicMock(), "9600001", limit=2
         )
 
         assert len(result) == 2
+        assert [s["id"] for s in result] == ["0", "1"]
 
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
     async def test_given_expired_auth_then_returns_wrapped_error(
@@ -106,7 +125,7 @@ class TestListEvaluationSubmissions:
     ):
         mock_get_client.side_effect = ConnectionAuthError("expired")
 
-        result = await SubmissionService().list_evaluation_submissions(
+        result = await SubmissionService.list_evaluation_submissions(
             MagicMock(), "9600001"
         )
 
@@ -187,35 +206,58 @@ class TestListSubmissionStatuses:
 
 class TestListEvaluationSubmissionBundles:
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
-    @patch(f"{SVC}.SubmissionBundle")
-    async def test_given_queue_then_returns_bundles(
-        self, mock_bundle_cls, mock_get_client
+    @patch(f"{SVC}.rest_get_paginated_async")
+    async def test_given_queue_then_paginates_with_limit_offset(
+        self, mock_paginate, mock_get_client
     ):
         mock_get_client.return_value = MagicMock()
-        mock_bundle_cls.get_evaluation_submission_bundles_async = (
-            MagicMock(return_value=_agen([FakeBundle(), FakeBundle()]))
+        captured = {}
+
+        async def _fake(uri, *, limit, offset, synapse_client):
+            captured["uri"] = uri
+            captured["limit"] = limit
+            captured["offset"] = offset
+            for sid in ("a", "b"):
+                yield {
+                    "submission": {"id": sid, "evaluationId": "9600001"},
+                    "submissionStatus": {"id": sid, "status": "SCORED"},
+                }
+
+        mock_paginate.side_effect = _fake
+
+        result = await SubmissionService.list_evaluation_submission_bundles(
+            MagicMock(), "9600001", offset=20, limit=2
         )
 
-        result = await SubmissionService().list_evaluation_submission_bundles(
-            MagicMock(), "9600001"
-        )
-
+        assert captured["uri"] == "/evaluation/9600001/submission/bundle/all"
+        assert captured["limit"] == 2
+        assert captured["offset"] == 20
         assert len(result) == 2
+        assert [b["submission"]["id"] for b in result] == ["a", "b"]
 
 
 class TestListMySubmissionBundles:
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
-    @patch(f"{SVC}.SubmissionBundle")
+    @patch(f"{SVC}.rest_get_paginated_async")
     async def test_given_queue_then_returns_bundles(
-        self, mock_bundle_cls, mock_get_client
+        self, mock_paginate, mock_get_client
     ):
         mock_get_client.return_value = MagicMock()
-        mock_bundle_cls.get_user_submission_bundles_async = MagicMock(
-            return_value=_agen([FakeBundle()])
-        )
+        captured = {}
 
-        result = await SubmissionService().list_my_submission_bundles(
+        async def _fake(uri, *, limit, offset, synapse_client):
+            captured["uri"] = uri
+            yield {
+                "submission": {"id": "777"},
+                "submissionStatus": {"status": "SCORED"},
+            }
+
+        mock_paginate.side_effect = _fake
+
+        result = await SubmissionService.list_my_submission_bundles(
             MagicMock(), "9600001"
         )
 
+        assert captured["uri"] == "/evaluation/9600001/submission/bundle"
         assert len(result) == 1
+        assert result[0]["submission"]["id"] == "777"
