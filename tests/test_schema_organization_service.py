@@ -94,12 +94,15 @@ class TestGetSchemaOrganization:
 class TestGetSchemaOrganizationAcl:
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
     @patch(f"{SVC}.SchemaOrganization")
-    async def test_given_organization_when_get_acl_then_returns_org_name_and_acl(
+    async def test_given_organization_when_get_acl_then_returns_serialized_acl(
         self, mock_org_cls: MagicMock, mock_get_client: AsyncMock
     ):
-        """get_schema_organization_acl returns the organization name alongside the serialized ACL."""
+        """get_schema_organization_acl returns the serialized ACL directly."""
         # GIVEN an organization with an ACL
         mock_get_client.return_value = MagicMock()
+        mock_org_cls.return_value.get_async = AsyncMock(
+            return_value=FakeOrg(name="sage.example", id="42")
+        )
         mock_org_cls.return_value.get_acl_async = AsyncMock(
             return_value={"resource_access": [], "etag": "acl-etag"}
         )
@@ -109,15 +112,14 @@ class TestGetSchemaOrganizationAcl:
             MagicMock(), organization_name="sage.example"
         )
 
-        # THEN organization name is returned
-        assert "organization_name" in result
-        assert result["organization_name"] == "sage.example"
-
-        # AND the ACL is returned
-        assert "acl" in result
-        assert "etag" in result["acl"]
-        assert result["acl"]["etag"] == "acl-etag"
+        # THEN the ACL fields are returned at the top level
+        assert "etag" in result
+        assert result["etag"] == "acl-etag"
+        assert "resource_access" in result
+        assert result["resource_access"] == []
         mock_org_cls.assert_called_once_with(name="sage.example")
+        # get_async must be called before get_acl_async to populate org.id
+        mock_org_cls.return_value.get_async.assert_awaited_once()
 
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
     async def test_given_expired_auth_when_called_then_returns_error_dict(
@@ -139,76 +141,86 @@ class TestGetSchemaOrganizationAcl:
 
 class TestListJsonSchemas:
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
-    @patch(f"{SVC}.SchemaOrganization")
-    async def test_given_organization_when_listed_then_returns_all_schemas(
-        self, mock_org_cls: MagicMock, mock_get_client: AsyncMock
+    async def test_given_organization_when_listed_then_returns_one_page_with_token(
+        self, mock_get_client: AsyncMock
     ):
-        """list_json_schemas serializes every schema yielded by the SDK iterator into the result list."""
-        # GIVEN an organization with two schemas
-        mock_get_client.return_value = MagicMock()
+        # GIVEN /schema/list returns a page plus a continuation token.
+        client = MagicMock()
+        client.rest_post_async = AsyncMock(
+            return_value={
+                "page": [
+                    {"organizationName": "sage.example", "schemaName": "SchemaA"},
+                    {"organizationName": "sage.example", "schemaName": "SchemaB"},
+                ],
+                "nextPageToken": "tok-2",
+            }
+        )
+        mock_get_client.return_value = client
 
-        async def _schemas(**_):
-            yield FakeSchema(name="SchemaA")
-            yield FakeSchema(name="SchemaB")
-
-        mock_org_cls.return_value.get_json_schemas_async = _schemas
-
-        # WHEN we list schemas
-        result = await SchemaOrganizationService().list_json_schemas(
+        # WHEN we list the first page
+        result = await SchemaOrganizationService.list_json_schemas(
             MagicMock(), organization_name="sage.example"
         )
 
-        # THEN both schemas are returned as dicts
-        assert len(result) == 2
-        assert "name" in result[0]
-        assert result[0]["name"] == "SchemaA"
-        assert "name" in result[1]
-        assert result[1]["name"] == "SchemaB"
+        # THEN we get a one-page response shape with the continuation
+        # token surfaced for the caller to ask for the next page.
+        assert result["organization_name"] == "sage.example"
+        assert result["next_page_token"] == "tok-2"
+        assert [r["schemaName"] for r in result["results"]] == [
+            "SchemaA",
+            "SchemaB",
+        ]
+        # Body should NOT include nextPageToken on the first call.
+        body = client.rest_post_async.call_args.kwargs["body"]
+        import json as _json
+        assert _json.loads(body) == {"organizationName": "sage.example"}
 
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
-    @patch(f"{SVC}.SchemaOrganization")
-    async def test_given_limit_when_listed_then_stops_at_limit(
-        self, mock_org_cls: MagicMock, mock_get_client: AsyncMock
+    async def test_given_token_when_listed_then_forwards_in_body(
+        self, mock_get_client: AsyncMock
     ):
-        """list_json_schemas honors the limit and stops iterating the SDK generator early."""
-        # GIVEN an organization that would yield five schemas
-        mock_get_client.return_value = MagicMock()
-        fetched: list[str] = []
+        # GIVEN a caller paginating with a previous page's token
+        client = MagicMock()
+        client.rest_post_async = AsyncMock(
+            return_value={"page": [], "nextPageToken": None}
+        )
+        mock_get_client.return_value = client
 
-        async def _schemas(**_):
-            for i in range(5):
-                fetched.append(f"Schema{i}")
-                yield FakeSchema(name=f"Schema{i}")
-
-        mock_org_cls.return_value.get_json_schemas_async = _schemas
-
-        # WHEN we list with limit=2
-        result = await SchemaOrganizationService().list_json_schemas(
-            MagicMock(), organization_name="sage.example", limit=2
+        # WHEN we ask for the next page
+        result = await SchemaOrganizationService.list_json_schemas(
+            MagicMock(),
+            organization_name="sage.example",
+            next_page_token="tok-2",
         )
 
-        # THEN only two are returned AND the SDK is not iterated past the limit
-        assert len(result) == 2
-        assert result[0]["name"] == "Schema0"
-        assert result[1]["name"] == "Schema1"
-        assert fetched == ["Schema0", "Schema1"]
+        # THEN the token rides in the request body and the response
+        # surfaces a null next_page_token (signalling end of pagination).
+        body = client.rest_post_async.call_args.kwargs["body"]
+        import json as _json
+        assert _json.loads(body) == {
+            "organizationName": "sage.example",
+            "nextPageToken": "tok-2",
+        }
+        assert result["next_page_token"] is None
+        assert result["results"] == []
 
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
-    async def test_given_expired_auth_when_called_then_returns_error_list(
+    async def test_given_expired_auth_when_called_then_returns_error_dict(
         self, mock_get_client: AsyncMock
     ):
         # GIVEN expired credentials
         mock_get_client.side_effect = ConnectionAuthError("expired")
 
         # WHEN we list schemas
-        result = await SchemaOrganizationService().list_json_schemas(
+        result = await SchemaOrganizationService.list_json_schemas(
             MagicMock(), organization_name="sage.example"
         )
 
-        # THEN the auth error is wrapped in a list with organization_name context
-        assert isinstance(result, list)
-        assert "Authentication required" in result[0]["error"]
-        assert result[0]["organization_name"] == "sage.example"
+        # THEN the auth error is returned as a single error dict
+        # (no list-wrapping — the response shape is a dict, not a list).
+        assert isinstance(result, dict)
+        assert "Authentication required" in result["error"]
+        assert result["organization_name"] == "sage.example"
 
 
 class TestGetJsonSchema:
@@ -340,81 +352,84 @@ class TestGetJsonSchemaBody:
 
 class TestListJsonSchemaVersions:
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
-    @patch(f"{SVC}.JSONSchema")
-    async def test_given_schema_when_list_versions_then_returns_all_in_order(
-        self, mock_schema_cls: MagicMock, mock_get_client: AsyncMock
-    ):
-        """list_json_schema_versions serializes each version yielded by the SDK iterator in iteration order."""
-        # GIVEN a schema with multiple versions
-        mock_get_client.return_value = MagicMock()
-
-        async def _versions(**_):
-            yield FakeVersion(semantic_version="1.0.0")
-            yield FakeVersion(semantic_version="2.0.0")
-
-        mock_schema_cls.return_value.get_versions_async = _versions
-
-        # WHEN we list versions
-        result = await SchemaOrganizationService().list_json_schema_versions(
-            MagicMock(),
-            organization_name="sage.example",
-            schema_name="ExampleSchema",
-        )
-
-        # THEN all versions are returned in order
-        assert len(result) == 2
-        assert "semantic_version" in result[0]
-        assert result[0]["semantic_version"] == "1.0.0"
-        assert "semantic_version" in result[1]
-        assert result[1]["semantic_version"] == "2.0.0"
-
-    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
-    @patch(f"{SVC}.JSONSchema")
-    async def test_given_limit_when_listed_then_stops_at_limit(
-        self, mock_schema_cls: MagicMock, mock_get_client: AsyncMock
-    ):
-        """list_json_schema_versions honors the limit and stops iterating the SDK generator early."""
-        # GIVEN a schema that would yield four versions
-        mock_get_client.return_value = MagicMock()
-        fetched: list[str] = []
-
-        async def _versions(**_):
-            for v in ["1.0.0", "2.0.0", "3.0.0", "4.0.0"]:
-                fetched.append(v)
-                yield FakeVersion(semantic_version=v)
-
-        mock_schema_cls.return_value.get_versions_async = _versions
-
-        # WHEN we list with limit=1
-        result = await SchemaOrganizationService().list_json_schema_versions(
-            MagicMock(),
-            organization_name="sage.example",
-            schema_name="ExampleSchema",
-            limit=1,
-        )
-
-        # THEN only one is returned AND the SDK is not iterated past the limit
-        assert len(result) == 1
-        assert result[0]["semantic_version"] == "1.0.0"
-        assert fetched == ["1.0.0"]
-
-    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
-    async def test_given_expired_auth_when_called_then_returns_error_list(
+    async def test_given_schema_when_list_versions_then_returns_one_page(
         self, mock_get_client: AsyncMock
     ):
-        # GIVEN expired credentials
-        mock_get_client.side_effect = ConnectionAuthError("expired")
+        # GIVEN /schema/version/list returns a page plus a token
+        client = MagicMock()
+        client.rest_post_async = AsyncMock(
+            return_value={
+                "page": [
+                    {"semanticVersion": "1.0.0"},
+                    {"semanticVersion": "2.0.0"},
+                ],
+                "nextPageToken": "v-2",
+            }
+        )
+        mock_get_client.return_value = client
 
         # WHEN we list versions
-        result = await SchemaOrganizationService().list_json_schema_versions(
+        result = await SchemaOrganizationService.list_json_schema_versions(
             MagicMock(),
             organization_name="sage.example",
             schema_name="ExampleSchema",
         )
 
-        # THEN the auth error is wrapped in a list with organization_name and schema_name context
-        assert isinstance(result, list)
-        assert "Authentication required" in result[0]["error"]
-        assert result[0]["organization_name"] == "sage.example"
-        assert result[0]["schema_name"] == "ExampleSchema"
+        # THEN the page surfaces with the continuation token
+        assert result["organization_name"] == "sage.example"
+        assert result["schema_name"] == "ExampleSchema"
+        assert result["next_page_token"] == "v-2"
+        assert [v["semanticVersion"] for v in result["results"]] == [
+            "1.0.0",
+            "2.0.0",
+        ]
+        # First call should not include nextPageToken in the request body.
+        import json as _json
+        body = _json.loads(client.rest_post_async.call_args.kwargs["body"])
+        assert body == {
+            "organizationName": "sage.example",
+            "schemaName": "ExampleSchema",
+        }
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    async def test_given_token_when_listed_then_forwards_in_body(
+        self, mock_get_client: AsyncMock
+    ):
+        client = MagicMock()
+        client.rest_post_async = AsyncMock(
+            return_value={"page": [], "nextPageToken": None}
+        )
+        mock_get_client.return_value = client
+
+        await SchemaOrganizationService.list_json_schema_versions(
+            MagicMock(),
+            organization_name="sage.example",
+            schema_name="ExampleSchema",
+            next_page_token="v-2",
+        )
+
+        import json as _json
+        body = _json.loads(client.rest_post_async.call_args.kwargs["body"])
+        assert body == {
+            "organizationName": "sage.example",
+            "schemaName": "ExampleSchema",
+            "nextPageToken": "v-2",
+        }
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    async def test_given_expired_auth_when_called_then_returns_error_dict(
+        self, mock_get_client: AsyncMock
+    ):
+        mock_get_client.side_effect = ConnectionAuthError("expired")
+
+        result = await SchemaOrganizationService.list_json_schema_versions(
+            MagicMock(),
+            organization_name="sage.example",
+            schema_name="ExampleSchema",
+        )
+
+        assert isinstance(result, dict)
+        assert "Authentication required" in result["error"]
+        assert result["organization_name"] == "sage.example"
+        assert result["schema_name"] == "ExampleSchema"
 
