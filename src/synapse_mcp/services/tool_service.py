@@ -11,7 +11,6 @@ from contextlib import asynccontextmanager
 from datetime import date, datetime
 from typing import (
     Any,
-    AsyncIterator,
     Callable,
     Dict,
     Iterable,
@@ -80,34 +79,6 @@ def collect_generator(gen: Iterator, limit: int = 100) -> list:
     # yielded, so the (limit+1)th item is NOT consumed — callers that
     # keep using ``gen`` see the next unread item.
     return list(itertools.islice(gen, limit))
-
-
-async def collect_async_generator(gen: AsyncIterator, limit: int = 100) -> list:
-    """Collect up to *limit* items from an async generator.
-
-    Async counterpart of ``collect_generator`` for SDK methods that
-    return ``AsyncGenerator`` (e.g. ``WikiHeader.get_async``).
-
-    Raises:
-        ValueError: If ``limit`` is negative.
-    """
-    if limit < 0:
-        raise ValueError("limit must be >= 0")
-    if limit == 0:
-        return []
-
-    # ``async for`` pulls the next item from ``gen`` at the top of
-    # each pass, so even with an early break the (limit+1)th item is
-    # still consumed. Stepping via ``__anext__`` lets us stop before
-    # advancing past ``limit`` items — matches the sync islice version.
-    items: list = []
-    agen = gen.__aiter__()
-    try:
-        while len(items) < limit:
-            items.append(await agen.__anext__())
-    except StopAsyncIteration:
-        pass
-    return items
 
 
 @asynccontextmanager
@@ -197,19 +168,19 @@ def error_boundary(
             return type stays consistent for list-returning service methods.
     """
     def decorator(method: Callable) -> Callable:
-        # Pre-compute parameter positions at decoration time.
-        # Slice past ``self`` and ``ctx`` (the first two params) to get
-        # only the business-logic parameters whose values may be included
-        # in error responses via ``error_context_keys``.
+        # Pre-compute parameter positions at decoration time. Slice past
+        # ``ctx`` (the first parameter) to get only the business-logic
+        # parameters whose values may be included in error responses via
+        # ``error_context_keys``.
         sig = inspect.signature(method)
-        param_names = list(sig.parameters.keys())[2:]
+        param_names = list(sig.parameters.keys())[1:]
         context_positions = {
             name: i for i, name in enumerate(param_names)
             if name in error_context_keys
         }
 
         @functools.wraps(method)
-        async def wrapper(self, ctx, *args, **kwargs):
+        async def wrapper(ctx, *args, **kwargs):
             extra: Dict[str, Any] = {}
             for name, pos in context_positions.items():
                 if pos < len(args):
@@ -218,7 +189,7 @@ def error_boundary(
                     extra[name] = kwargs[name]
 
             try:
-                return await method(self, ctx, *args, **kwargs)
+                return await method(ctx, *args, **kwargs)
             except ConnectionAuthError as exc:
                 err = {
                     "error": f"Authentication required: {exc}",
@@ -232,9 +203,10 @@ def error_boundary(
                     "error_type": type(exc).__name__,
                     **extra,
                 }
-                # Extract HTTP status code from any exception carrying
-                # a ``response`` attribute with a ``status_code`` (the
-                # shape SynapseHTTPError and requests.HTTPError share).
+                # Surface any HTTP status code attached to the exception.
+                # SynapseHTTPError, requests.HTTPError, and httpx.HTTPError
+                # all share the ``exc.response.status_code`` shape; this
+                # branch fires for any of them.
                 response = getattr(exc, "response", None)
                 if response is not None:
                     status_code = getattr(

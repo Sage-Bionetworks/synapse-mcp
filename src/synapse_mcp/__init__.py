@@ -11,7 +11,6 @@ from .resources import synapse_blog_feed
 from .tools import (
     check_synapse_id,
     check_user_certified,
-    get_activity,
     get_curation_task,
     get_curation_task_resources,
     get_entity,
@@ -66,7 +65,6 @@ __all__ = [
     "check_user_certified",
     "ConnectionAuthError",
     "first_successful_result",
-    "get_activity",
     "get_curation_task",
     "get_curation_task_resources",
     "get_entity",

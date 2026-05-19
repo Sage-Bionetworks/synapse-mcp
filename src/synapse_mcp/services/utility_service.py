@@ -15,9 +15,9 @@ from .tool_service import (
 class UtilityService:
     """Orchestrates utility read operations."""
 
+    @staticmethod
     @error_boundary(error_context_keys=("name",))
     async def find_entity_id(
-        self,
         ctx: Context,
         name: str,
         parent_id: Optional[str] = None,
@@ -51,9 +51,10 @@ class UtilityService:
                 "parent_id": parent_id,
             }
 
+    @staticmethod
     @error_boundary(error_context_keys=("syn_id",))
     async def is_synapse_id(
-        self, ctx: Context, syn_id: str
+        ctx: Context, syn_id: str
     ) -> Dict[str, Any]:
         """Check whether a Synapse ID exists.
 
@@ -74,9 +75,10 @@ class UtilityService:
                 "is_valid": valid,
             }
 
+    @staticmethod
     @error_boundary(error_context_keys=("md5",))
     async def md5_query(
-        self, ctx: Context, md5: str
+        ctx: Context, md5: str
     ) -> Dict[str, Any]:
         """Find entities by MD5 hash of their file.
 

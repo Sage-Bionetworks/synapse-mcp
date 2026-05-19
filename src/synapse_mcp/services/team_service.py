@@ -3,7 +3,9 @@
 from typing import Any, Dict, List, Optional
 
 from fastmcp import Context
+from synapseclient.api.api_client import rest_get_paginated_async
 from synapseclient.models import Team
+from synapseclient.models.team import TeamMember
 
 from .tool_service import error_boundary, serialize_model, synapse_client
 
@@ -11,9 +13,9 @@ from .tool_service import error_boundary, serialize_model, synapse_client
 class TeamService:
     """Orchestrates team read operations."""
 
+    @staticmethod
     @error_boundary(error_context_keys=("team_id", "team_name"))
     async def get_team(
-        self,
         ctx: Context,
         team_id: Optional[int] = None,
         team_name: Optional[str] = None,
@@ -57,85 +59,113 @@ class TeamService:
                 )
             return serialize_model(team)
 
+    @staticmethod
     @error_boundary(
         error_context_keys=("team_id",),
         wrap_errors=True,
     )
     async def get_team_members(
-        self,
         ctx: Context,
         team_id: int,
-        limit: Optional[int] = None,
+        offset: int = 0,
+        limit: int = 50,
     ) -> List[Dict[str, Any]]:
         """List members of a Team.
 
-        Note: ``Team.members_async`` collects every page from
-        the Synapse API before returning, so fetch cost scales
-        with the full team size regardless of ``limit``. The
-        ``limit`` slices the final list to bound response size
-        sent back to the LLM.
+        Pagination reaches the wire via ``rest_get_paginated_async``
+        against ``/teamMembers/{team_id}``: ``limit`` controls the
+        page size and acts as the response cap, ``offset`` skips that
+        many members from the start of the list. The high-level
+        ``Team.members_async`` wrapper is intentionally bypassed
+        because it collects every page exhaustively before returning.
 
         Arguments:
             ctx: The FastMCP request context.
             team_id: Numeric team ID.
-            limit: If provided, must be non-negative; returns
-                at most this many members.
+            offset: Index of the first member to return (default 0).
+            limit: Maximum members to return (default 50). Must be
+                non-negative.
 
         Returns:
             List of team member dicts.
         """
-        if limit is not None and limit < 0:
+        if limit < 0:
             raise ValueError("limit must be >= 0")
+        if offset < 0:
+            raise ValueError("offset must be >= 0")
+        if limit == 0:
+            return []
         async with synapse_client(ctx) as client:
-            team = Team(id=team_id)
-            members = await team.members_async(
+            results: List[Dict[str, Any]] = []
+            async for raw in rest_get_paginated_async(
+                uri=f"/teamMembers/{team_id}",
+                limit=limit,
+                offset=offset,
                 synapse_client=client,
-            )
-            if limit is not None:
-                members = members[:limit]
-            return [serialize_model(m) for m in members]
+            ):
+                if len(results) >= limit:
+                    break
+                # Mirror the response shape produced by
+                # ``Team.members_async``: REST dicts go through
+                # ``TeamMember.fill_from_dict`` and then the standard
+                # ``serialize_model`` so callers see ``team_id``,
+                # ``member``, and ``is_admin`` keys (not the camelCase
+                # API representation).
+                member = TeamMember().fill_from_dict(
+                    synapse_team_member=raw,
+                )
+                results.append(serialize_model(member))
+            return results
 
+    @staticmethod
     @error_boundary(
         error_context_keys=("team_id",),
         wrap_errors=True,
     )
     async def get_team_open_invitations(
-        self,
         ctx: Context,
         team_id: int,
-        limit: Optional[int] = None,
+        offset: int = 0,
+        limit: int = 50,
     ) -> List[Dict[str, Any]]:
         """List pending invitations for a Team.
 
-        Note: ``Team.open_invitations_async`` collects every
-        page from the Synapse API before returning. ``limit``
-        slices the final list but does not reduce API cost.
+        Same pagination strategy as ``get_team_members`` — talks to
+        ``/team/{team_id}/openInvitation`` directly via
+        ``rest_get_paginated_async`` so ``limit``/``offset`` reach
+        the REST API rather than slicing a fully-collected list.
 
         Arguments:
             ctx: The FastMCP request context.
             team_id: Numeric team ID.
-            limit: If provided, must be non-negative; returns
-                at most this many invitations.
+            offset: Index of the first invitation to return.
+            limit: Maximum invitations to return (default 50).
 
         Returns:
             List of invitation dicts.
         """
-        if limit is not None and limit < 0:
+        if limit < 0:
             raise ValueError("limit must be >= 0")
+        if offset < 0:
+            raise ValueError("offset must be >= 0")
+        if limit == 0:
+            return []
         async with synapse_client(ctx) as client:
-            team = Team(id=team_id)
-            invitations = await team.open_invitations_async(
+            results: List[Dict[str, Any]] = []
+            async for invitation in rest_get_paginated_async(
+                uri=f"/team/{team_id}/openInvitation",
+                limit=limit,
+                offset=offset,
                 synapse_client=client,
-            )
-            if limit is not None:
-                invitations = invitations[:limit]
-            return [
-                serialize_model(i) for i in invitations
-            ]
+            ):
+                if len(results) >= limit:
+                    break
+                results.append(serialize_model(invitation))
+            return results
 
+    @staticmethod
     @error_boundary(error_context_keys=("team_id",))
     async def get_team_membership_status(
-        self,
         ctx: Context,
         team_id: int,
         user_id: int,

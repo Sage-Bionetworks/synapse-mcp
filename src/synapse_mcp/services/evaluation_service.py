@@ -11,11 +11,11 @@ from .tool_service import error_boundary, serialize_model, synapse_client
 class EvaluationService:
     """Orchestrates evaluation read operations."""
 
+    @staticmethod
     @error_boundary(
         error_context_keys=("evaluation_id", "evaluation_name")
     )
     async def get_evaluation(
-        self,
         ctx: Context,
         evaluation_id: Optional[str] = None,
         evaluation_name: Optional[str] = None,
@@ -48,9 +48,9 @@ class EvaluationService:
                 }
             return serialize_model(ev)
 
+    @staticmethod
     @error_boundary(wrap_errors=True)
     async def list_evaluations(
-        self,
         ctx: Context,
         project_id: Optional[str] = None,
         access_type: Optional[str] = None,
@@ -106,9 +106,10 @@ class EvaluationService:
                 )
             return [serialize_model(e) for e in evals]
 
+    @staticmethod
     @error_boundary(error_context_keys=("evaluation_id",))
     async def get_evaluation_acl(
-        self, ctx: Context, evaluation_id: str
+        ctx: Context, evaluation_id: str
     ) -> Dict[str, Any]:
         """Get the ACL for an Evaluation queue.
 
@@ -127,9 +128,10 @@ class EvaluationService:
                 "acl": serialize_model(acl),
             }
 
+    @staticmethod
     @error_boundary(error_context_keys=("evaluation_id",))
     async def get_evaluation_permissions(
-        self, ctx: Context, evaluation_id: str
+        ctx: Context, evaluation_id: str
     ) -> Dict[str, Any]:
         """Get current user's permissions on an Evaluation.
 

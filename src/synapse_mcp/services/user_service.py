@@ -11,9 +11,9 @@ from .tool_service import error_boundary, serialize_model, synapse_client
 class UserService:
     """Orchestrates user profile read operations."""
 
+    @staticmethod
     @error_boundary(error_context_keys=("user_id", "username"))
     async def get_user_profile(
-        self,
         ctx: Context,
         user_id: Optional[int] = None,
         username: Optional[str] = None,
@@ -48,9 +48,10 @@ class UserService:
                 )
             return serialize_model(profile)
 
+    @staticmethod
     @error_boundary(error_context_keys=("user_id",))
     async def is_user_certified(
-        self, ctx: Context, user_id: int
+        ctx: Context, user_id: int
     ) -> Dict[str, Any]:
         """Check if a Synapse user is certified.
 

@@ -71,7 +71,7 @@ QUERY_FIXTURES: List[Tuple[str, str]] = [
     ("what produced this file syn456", "get_entity_provenance"),
     ("show me the lineage of syn123", "get_entity_provenance"),
     ("data history for syn999", "get_entity_provenance"),
-    ("look up activity 9660001", "get_activity"),
+    ("look up activity 9660001", "get_entity_provenance"),
     # entity schema
     ("what JSON schema is bound to syn777", "get_entity_schema"),
     ("validation compliance summary for project syn444", "get_entity_schema_validation_statistics"),
