@@ -215,8 +215,12 @@ async def get_entity_permissions(
 @mcp.tool(
     title="List Entity ACL",
     description=(
-        "Recursively list all ACLs for an entity and "
-        "optionally its descendants."
+        "List ACLs for an entity and optionally its "
+        "descendants. Set include_container_content=True "
+        "to include files/folders inside containers; "
+        "recursive=True (which requires "
+        "include_container_content=True) walks into child "
+        "containers as well."
     ),
     annotations=_RO,
 )
@@ -224,12 +228,18 @@ async def list_entity_acl(
     entity_id: str,
     ctx: Context,
     recursive: bool = False,
+    include_container_content: bool = False,
+    target_entity_types: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """List all ACLs under an entity."""
     if not validate_synapse_id(entity_id):
         return {"error": f"Invalid Synapse ID: {entity_id}"}
     return await EntityService.list_acl(
-        ctx, entity_id, recursive
+        ctx,
+        entity_id,
+        recursive,
+        include_container_content,
+        target_entity_types,
     )
 
 

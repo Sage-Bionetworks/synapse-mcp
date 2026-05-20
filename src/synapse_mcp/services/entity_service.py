@@ -221,24 +221,45 @@ class EntityService:
         ctx: Context,
         entity_id: str,
         recursive: bool = False,
+        include_container_content: bool = False,
+        target_entity_types: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
-        """Recursively list all ACLs under an entity.
+        """List ACLs for an entity (and optionally its descendants).
 
         Arguments:
             ctx: The FastMCP request context.
             entity_id: Synapse ID (e.g. ``"syn123"``).
-            recursive: If True, list ACLs for all
-                descendants. Defaults to False.
+            recursive: If True, walk into child containers.
+                Must be paired with ``include_container_content=True``;
+                the SDK raises ``ValueError`` otherwise.
+            include_container_content: If True, include ACLs from
+                files/folders directly inside container entities.
+                Required for ``recursive`` to have any effect.
+            target_entity_types: Optional list of entity types to
+                include (e.g. ``["folder", "file"]``). Defaults to
+                folders + files when ``None``.
 
         Returns:
-            Dict with entity_acl (current entity's ACL
-            entries) and all_entity_acls (includes
-            descendants if recursive).
+            Dict with entity_acl (current entity's ACL entries) and
+            all_entity_acls (descendants if recursive). On error a
+            single error dict is returned.
         """
+        # Pre-validate the recursive/include_container_content combo so
+        # the caller sees a clear error dict rather than a generic
+        # ValueError from the SDK boundary.
+        if recursive and not include_container_content:
+            return {
+                "error": (
+                    "recursive=True requires include_container_content=True"
+                ),
+                "entity_id": entity_id,
+            }
         async with synapse_client(ctx) as client:
             entity = await _resolve_entity(entity_id, client)
             acl_result = await entity.list_acl_async(
                 recursive=recursive,
+                include_container_content=include_container_content,
+                target_entity_types=target_entity_types,
                 synapse_client=client,
             )
             result = serialize_model(acl_result)
@@ -345,11 +366,14 @@ class EntityService:
         """
         async with synapse_client(ctx) as client:
             container = Folder(id=entity_id)
-            results = await container.get_invalid_validation_async(
-                synapse_client=client,
-            )
+            # ``get_invalid_validation_async`` is an AsyncGenerator,
+            # not a coroutine — drive it with ``async for`` rather
+            # than awaiting it.
             return [
-                serialize_model(item) for item in results
+                serialize_model(item)
+                async for item in container.get_invalid_validation_async(
+                    synapse_client=client,
+                )
             ]
 
     @staticmethod
