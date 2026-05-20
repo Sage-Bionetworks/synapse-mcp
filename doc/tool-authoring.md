@@ -144,6 +144,22 @@ When in doubt, prefer the narrower operation — `destructive` over
 `write`, `admin` over `destructive` — so the MCP annotations
 correctly signal the effect of the call to clients.
 
+The four MCP-spec annotation hints `@service_tool` knows how to set
+are:
+
+| Key                | Meaning                                                                 |
+|--------------------|-------------------------------------------------------------------------|
+| `readOnlyHint`     | Tool does not modify any state when invoked.                            |
+| `idempotentHint`   | Repeated invocations with the same args have no additional effect.      |
+| `destructiveHint`  | Tool deletes or otherwise irrevocably modifies state.                   |
+| `openWorldHint`    | Tool reaches an external service whose state is outside the model's control. |
+
+The default sets above cover every Synapse tool we ship today. If a
+specific tool needs to override one hint (e.g. an upsert that's
+idempotent under `write`, or a tool that only touches local state and
+should set `openWorldHint=False`), pass an `annotations=` dict to
+`@service_tool` and it wins over the operation default.
+
 ## Canonical example
 
 ```python
