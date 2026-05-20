@@ -297,3 +297,94 @@ class TestGetLink:
         call_kwargs = mock_ops_get.call_args
         assert call_kwargs[1]["link_options"].follow_link is True
         assert call_kwargs[1]["file_options"].download_file is False
+
+
+@dataclass
+class FakeAclResult:
+    entity_acl: Optional[dict] = None
+    all_entity_acls: Optional[list] = None
+
+
+class TestListAcl:
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.operations_get_async", new_callable=AsyncMock)
+    async def test_given_recursive_without_container_content_then_returns_error(
+        self, mock_ops_get, mock_get_client
+    ):
+        # GIVEN the SDK requires include_container_content=True alongside
+        # recursive=True (otherwise it raises ValueError). We surface that
+        # constraint as a clear error dict before the auth'd client is even
+        # opened.
+        # WHEN the caller asks for recursive without include_container_content
+        result = await EntityService.list_acl(
+            MagicMock(), "syn123", recursive=True
+        )
+        # THEN we get the explanatory error dict, no SDK call fires
+        assert "include_container_content=True" in result["error"]
+        assert result["entity_id"] == "syn123"
+        mock_ops_get.assert_not_called()
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.operations_get_async", new_callable=AsyncMock)
+    async def test_given_recursive_and_container_content_then_forwards_both(
+        self, mock_ops_get, mock_get_client
+    ):
+        # GIVEN a Folder with a nested-ACL response
+        mock_get_client.return_value = MagicMock()
+        resolved = MagicMock()
+        resolved.list_acl_async = AsyncMock(
+            return_value=FakeAclResult(
+                entity_acl={"acl_entries": []},
+                all_entity_acls=[{"entity_id": "syn123", "acl_entries": []}],
+            )
+        )
+        mock_ops_get.return_value = resolved
+
+        # WHEN we list ACLs recursively with include_container_content
+        await EntityService.list_acl(
+            MagicMock(),
+            "syn123",
+            recursive=True,
+            include_container_content=True,
+            target_entity_types=["folder", "file"],
+        )
+
+        # THEN both flags + target_entity_types reach the SDK
+        kwargs = resolved.list_acl_async.call_args.kwargs
+        assert kwargs["recursive"] is True
+        assert kwargs["include_container_content"] is True
+        assert kwargs["target_entity_types"] == ["folder", "file"]
+
+
+@dataclass
+class FakeInvalidValidation:
+    entity_id: str = "syn999"
+    is_valid: bool = False
+
+
+class TestGetSchemaInvalidValidations:
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.Folder")
+    async def test_given_failing_entities_when_listed_then_drives_async_generator(
+        self, mock_folder_cls, mock_get_client
+    ):
+        # GIVEN the SDK exposes get_invalid_validation_async as an async
+        # generator (NOT an awaitable). Awaiting it directly used to leak
+        # an async_generator_asend object; this test guards against that
+        # regression by yielding two records and checking both come back.
+        mock_get_client.return_value = MagicMock()
+        container = mock_folder_cls.return_value
+
+        async def _invalid(**kw):
+            yield FakeInvalidValidation(entity_id="syn1")
+            yield FakeInvalidValidation(entity_id="syn2")
+
+        container.get_invalid_validation_async = _invalid
+
+        # WHEN the service collects invalid validations
+        result = await EntityService.get_schema_invalid_validations(
+            MagicMock(), "syn100"
+        )
+
+        # THEN every yielded record surfaces as a serialized dict
+        assert [r["entity_id"] for r in result] == ["syn1", "syn2"]
