@@ -327,13 +327,13 @@ async def get_entity_permissions(
     title="List Entity ACL",
     description=(
         "Use this when the user wants every ACL on a Synapse "
-        "entity and, optionally, on its descendants — useful "
-        "for auditing sharing across a project subtree. Set "
+        "entity and, with recursive=True, on all its "
+        "descendants — useful for auditing sharing recursively "
+        "across a project subtree. Set "
         "include_container_content=True to include files and "
-        "folders directly inside containers; recursive=True "
-        "(which requires include_container_content=True) "
-        "walks into child containers as well. Entity ID "
-        "example: syn123456."
+        "folders inside containers; recursive=True requires "
+        "include_container_content=True and walks into child "
+        "containers as well. Entity ID example: syn123456."
     ),
     synonyms=_ACL_SYNONYMS + ("audit", "recursive"),
     siblings=("get_entity_acl", "get_entity_permissions"),
