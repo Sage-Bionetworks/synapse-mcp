@@ -24,8 +24,8 @@ class WikiService:
         owner_id: str,
         wiki_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Get a wiki page's content and metadata. 
-        If wiki_id is omitted, returns the root wiki page for the given owner_id. 
+        """Get a wiki page's content and metadata.
+        If wiki_id is omitted, returns the root wiki page for the given owner_id.
         If wiki_id is provided, returns the wiki page with the given id.
 
         Arguments:
@@ -42,9 +42,7 @@ class WikiService:
         """
         if not owner_id:
             return {
-                "error": (
-                    "The owner_id is required to get a wiki page"
-                ),
+                "error": ("The owner_id is required to get a wiki page"),
             }
         async with synapse_client(ctx) as client:
             if wiki_id is None:
@@ -103,9 +101,7 @@ class WikiService:
         """
         if not owner_id:
             return {
-                "error": (
-                    "The owner_id is required to get the wiki header tree"
-                ),
+                "error": ("The owner_id is required to get the wiki header tree"),
             }
         async with synapse_client(ctx) as client:
             # ``WikiHeader.get_async`` forwards limit/offset into the
@@ -125,15 +121,13 @@ class WikiService:
                 results.append(serialize_model(header))
             if not results:
                 return {
-                    "error": (
-                        "No wiki headers found for the given owner_id"
-                    ),
+                    "error": ("No wiki headers found for the given owner_id"),
                 }
             return results
 
     @staticmethod
     @error_boundary(
-        error_context_keys=("owner_id","wiki_id"),
+        error_context_keys=("owner_id", "wiki_id"),
         wrap_errors=True,
     )
     async def get_wiki_history(
@@ -153,7 +147,7 @@ class WikiService:
             limit: Max snapshots to return (default 50).
 
         Returns:
-            List of dicts with version, modified_on 
+            List of dicts with version, modified_on
             and modified_by for each snapshot in the history.
         """
         if not owner_id or not wiki_id:
@@ -178,12 +172,9 @@ class WikiService:
 
     @staticmethod
     @error_boundary(error_context_keys=("owner_id",))
-    async def get_wiki_order_hint(
-        ctx: Context, 
-        owner_id: str
-    ) -> Dict[str, Any]:
+    async def get_wiki_order_hint(ctx: Context, owner_id: str) -> Dict[str, Any]:
         """Get the display ordering of wiki sub-pages.
-        The wiki order hint is empty by default. 
+        The wiki order hint is empty by default.
         This function returns the current wiki order hint for the given owner_id if set
 
         Arguments:
@@ -197,9 +188,7 @@ class WikiService:
         """
         if not owner_id:
             return {
-                "error": (
-                    "The owner_id is required to get the wiki order hint"
-                ),
+                "error": ("The owner_id is required to get the wiki order hint"),
             }
         async with synapse_client(ctx) as client:
             hint = await WikiOrderHint(
@@ -207,8 +196,6 @@ class WikiService:
             ).get_async(synapse_client=client)
             if not hint:
                 return {
-                    "error": (
-                        "The wiki order hint is not set for the given owner_id."
-                    ),
+                    "error": ("The wiki order hint is not set for the given owner_id."),
                 }
             return serialize_model(hint)
