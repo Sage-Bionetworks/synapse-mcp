@@ -71,28 +71,6 @@ def collect_generator(gen: Iterator, limit: int = 100) -> list:
     return list(itertools.islice(gen, limit))
 
 
-async def collect_async_generator(gen: AsyncIterator, limit: int = 100) -> list:
-    """Collect up to *limit* items from an async generator.
-
-    Async counterpart of ``collect_generator`` for SDK methods that
-    return ``AsyncGenerator`` (e.g. ``WikiHeader.get_async``).
-
-    Raises:
-        ValueError: If ``limit`` is negative.
-    """
-    if limit < 0:
-        raise ValueError("limit must be >= 0")
-    if limit == 0:
-        return []
-
-    items: list = []
-    async for item in gen:
-        if len(items) >= limit:
-            break
-        items.append(item)
-    return items
-
-
 @asynccontextmanager
 async def synapse_client(ctx: Context):
     """Yield an authenticated Synapse client for the given request context.
@@ -130,16 +108,12 @@ def serialize_model(obj: Any) -> Any:
         return obj.value
 
     if isinstance(obj, dict):
-        return {
-            k: serialize_model(v) for k, v in obj.items()
-        }
+        return {k: serialize_model(v) for k, v in obj.items()}
 
     if isinstance(obj, (list, tuple)):
         return [serialize_model(item) for item in obj]
 
-    if dataclasses.is_dataclass(obj) and not isinstance(
-        obj, type
-    ):
+    if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
         result: Dict[str, Any] = {}
         for field in dataclasses.fields(obj):
             if not field.repr or field.name.startswith("_"):
@@ -152,10 +126,7 @@ def serialize_model(obj: Any) -> Any:
     # These are MutableMapping subclasses (dict-like)
     # returned by synapseclient.Synapse.get().
     if isinstance(obj, Mapping):
-        return {
-            k: serialize_model(v)
-            for k, v in obj.items()
-        }
+        return {k: serialize_model(v) for k, v in obj.items()}
 
     to_dict = getattr(obj, "to_dict", None)
     if callable(to_dict):
@@ -179,6 +150,7 @@ def error_boundary(
         wrap_errors: If ``True``, wraps error dicts in a list so the
             return type stays consistent for list-returning service methods.
     """
+
     def decorator(method: Callable) -> Callable:
         # Pre-compute parameter positions at decoration time. Slice past
         # ``ctx`` (the first parameter) to get only the business-logic
@@ -187,8 +159,7 @@ def error_boundary(
         sig = inspect.signature(method)
         param_names = list(sig.parameters.keys())[1:]
         context_positions = {
-            name: i for i, name in enumerate(param_names)
-            if name in error_context_keys
+            name: i for i, name in enumerate(param_names) if name in error_context_keys
         }
 
         @functools.wraps(method)
@@ -221,12 +192,11 @@ def error_boundary(
                 # branch fires for any of them.
                 response = getattr(exc, "response", None)
                 if response is not None:
-                    status_code = getattr(
-                        response, "status_code", None
-                    )
+                    status_code = getattr(response, "status_code", None)
                     if status_code is not None:
                         err["status_code"] = status_code
                 return [err] if wrap_errors else err
 
         return wrapper
+
     return decorator
