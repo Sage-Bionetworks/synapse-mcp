@@ -20,10 +20,15 @@ class UserService:
     ) -> Dict[str, Any]:
         """Get a user profile by ID, username, or self.
 
+        If both user_id and username are provided, user_id
+        takes precedence and username is ignored.
+
         Arguments:
             ctx: The FastMCP request context.
-            user_id: Numeric Synapse user ID.
-            username: Synapse username string.
+            user_id: Numeric Synapse user ID. If provided,
+                username is ignored.
+            username: Synapse username string. Only consulted
+                when user_id is not provided.
 
         Returns:
             Dict with profile fields (id, username,
