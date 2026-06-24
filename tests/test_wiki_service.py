@@ -146,6 +146,28 @@ class TestGetWikiPage:
         assert result["error"] == "No root wiki page found for syn123"
         assert result["owner_id"] == "syn123"
 
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.WikiHeader")
+    async def test_given_non_404_http_error_when_fetched_then_re_raises(
+        self, mock_wh_cls, mock_get_client
+    ):
+        mock_get_client.return_value = MagicMock()
+
+        async def _raise_403(**_):
+            exc = SynapseHTTPError("403 Client Error: Forbidden")
+            exc.response = MagicMock(status_code=403)
+            raise exc
+            if False:
+                yield
+
+        mock_wh_cls.get_async = _raise_403
+
+        result = await WikiService().get_wiki_page(MagicMock(), "syn123")
+
+        assert result["error_type"] == "SynapseHTTPError"
+        assert result["status_code"] == 403
+        assert result["owner_id"] == "syn123"
+
 
 class TestGetWikiHeaders:
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
@@ -330,7 +352,9 @@ class TestGetWikiOrderHint:
         self, mock_hint_cls, mock_get_client
     ):
         mock_get_client.return_value = MagicMock()
-        mock_hint_cls.return_value.get_async = AsyncMock(return_value=None)
+        mock_hint_cls.return_value.get_async = AsyncMock(
+            return_value=FakeWikiOrderHint(id_list=[])
+        )
 
         result = await WikiService().get_wiki_order_hint(MagicMock(), "syn123")
 
