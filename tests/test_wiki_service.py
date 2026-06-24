@@ -39,7 +39,8 @@ class FakeWikiPage:
     wiki_version: str = "1"
     markdown_file_handle_id: Optional[str] = "abcd"
     attachment_file_handle_ids: Optional[List[str]] = None
-    
+
+
 @dataclass
 class FakeWikiHeader:
     id: str = "1"
@@ -55,6 +56,7 @@ class TestGetWikiPage:
         self, mock_wh_cls, mock_wp_cls, mock_get_client
     ):
         mock_get_client.return_value = MagicMock()
+
         async def _wiki_headers(**kw):
             yield FakeWikiHeader(id="111", title="Home", parent_id=None)
             yield FakeWikiHeader(id="222", title="Methods", parent_id="111")
@@ -65,7 +67,7 @@ class TestGetWikiPage:
         )
 
         result = await WikiService().get_wiki_page(MagicMock(), "syn123")
- 
+
         mock_wp_cls.assert_called_once_with(owner_id="syn123", id="111")
 
         assert result["id"] == "111"
@@ -80,7 +82,7 @@ class TestGetWikiPage:
         assert result["modified_on"] == "2025-01-02"
         assert result["modified_by"] == "user2"
         assert result["markdown"] == "# Project Wiki\nMain page."
-        
+
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
     @patch(f"{SVC}.WikiPage")
     async def test_given_wiki_id_when_fetched_then_passes_to_sdk(
@@ -144,6 +146,7 @@ class TestGetWikiPage:
         assert result["error"] == "No root wiki page found for syn123"
         assert result["owner_id"] == "syn123"
 
+
 class TestGetWikiHeaders:
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
     @patch(f"{SVC}.WikiHeader")
@@ -151,6 +154,7 @@ class TestGetWikiHeaders:
         self, mock_wh_cls, mock_get_client
     ):
         mock_get_client.return_value = MagicMock()
+
         async def _wiki_headers(**kw):
             yield FakeWikiHeader(id="1", title="Home", parent_id=None)
             yield FakeWikiHeader(id="2", title="subpage 1", parent_id="1")
@@ -197,10 +201,12 @@ class TestGetWikiHeaders:
 
         assert result["error"] == "No wiki headers found for the given owner_id"
 
+
 @dataclass
 class FakeWikiHistorySnapshot:
     version: int = 1
     modified_on: str = "2025-01-01"
+
 
 class TestGetWikiHistory:
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
@@ -217,9 +223,7 @@ class TestGetWikiHistory:
 
         mock_hist_cls.get_async = _snapshots
 
-        result = await WikiService().get_wiki_history(
-            MagicMock(), "syn123", "111"
-        )
+        result = await WikiService().get_wiki_history(MagicMock(), "syn123", "111")
 
         assert [s["version"] for s in result] == [1, 2, 3]
 
@@ -249,9 +253,7 @@ class TestGetWikiHistory:
     ):
         mock_get_client.side_effect = ConnectionAuthError("expired")
 
-        result = await WikiService().get_wiki_history(
-            MagicMock(), "syn123", "111"
-        )
+        result = await WikiService().get_wiki_history(MagicMock(), "syn123", "111")
 
         assert isinstance(result, list)
         assert "Authentication required" in result[0]["error"]
@@ -259,12 +261,19 @@ class TestGetWikiHistory:
     async def test_given_missing_owner_id_when_history_fetched_then_returns_error(self):
         result = await WikiService().get_wiki_history(MagicMock(), "", "111")
 
-        assert result["error"] == "Both the owner_id and wiki_id are required to get the wiki history"
+        assert (
+            result["error"]
+            == "Both the owner_id and wiki_id are required to get the wiki history"
+        )
 
     async def test_given_missing_wiki_id_when_history_fetched_then_returns_error(self):
         result = await WikiService().get_wiki_history(MagicMock(), "syn123", "")
 
-        assert result["error"] == "Both the owner_id and wiki_id are required to get the wiki history"
+        assert (
+            result["error"]
+            == "Both the owner_id and wiki_id are required to get the wiki history"
+        )
+
 
 @dataclass
 class FakeWikiOrderHint:
@@ -272,6 +281,7 @@ class FakeWikiOrderHint:
     owner_object_type: str = "entity"
     id_list: List[str] = field(default_factory=list)
     etag: str = "abc"
+
 
 class TestGetWikiOrderHint:
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
@@ -302,14 +312,14 @@ class TestGetWikiOrderHint:
     ):
         mock_get_client.side_effect = ConnectionAuthError("expired")
 
-        result = await WikiService().get_wiki_order_hint(
-            MagicMock(), "syn123"
-        )
+        result = await WikiService().get_wiki_order_hint(MagicMock(), "syn123")
 
         assert "Authentication required" in result["error"]
         assert result["owner_id"] == "syn123"
 
-    async def test_given_missing_owner_id_when_order_hint_fetched_then_returns_error(self):
+    async def test_given_missing_owner_id_when_order_hint_fetched_then_returns_error(
+        self,
+    ):
         result = await WikiService().get_wiki_order_hint(MagicMock(), "")
 
         assert result["error"] == "The owner_id is required to get the wiki order hint"
@@ -324,4 +334,6 @@ class TestGetWikiOrderHint:
 
         result = await WikiService().get_wiki_order_hint(MagicMock(), "syn123")
 
-        assert result["error"] == "The wiki order hint is not set for the given owner_id."
+        assert (
+            result["error"] == "The wiki order hint is not set for the given owner_id."
+        )
