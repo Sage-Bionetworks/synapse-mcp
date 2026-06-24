@@ -38,7 +38,8 @@ class WikiService:
         Returns:
             Dict with page id, title, parent_id, owner_id, wiki_version,
             markdown_file_handle_id, attachment_file_handle_ids, and timestamps.
-            If the root wiki page is not found, returns an error.
+            Or if owner_id is not provided or the root wiki page is not found,
+            returns a dict with an error key and message.
         """
         if not owner_id:
             return {
@@ -98,6 +99,8 @@ class WikiService:
         Returns:
             List of dicts with id, title, and parent_id
             for each wiki page in the hierarchy.
+            Or if owner_id is not provided or the wiki header tree is not found,
+            returns a dict with an error key and message.
         """
         if not owner_id:
             return {
@@ -149,6 +152,7 @@ class WikiService:
         Returns:
             List of dicts with version, modified_on
             and modified_by for each snapshot in the history.
+            Or if owner_id and wiki_id are not provided, returns a dict with an error key and message.
         """
         if not owner_id or not wiki_id:
             return {
@@ -184,7 +188,7 @@ class WikiService:
         Returns:
             Dict with owner_id, owner_object_type, id_list (page ordering),
             and etag.
-            If the wiki order hint is not set, returns an error.
+            Or if the wiki order hint is not set, returns an error.
         """
         if not owner_id:
             return {
@@ -194,7 +198,7 @@ class WikiService:
             hint = await WikiOrderHint(
                 owner_id=owner_id,
             ).get_async(synapse_client=client)
-            if not hint:
+            if not hint.id_list:
                 return {
                     "error": ("The wiki order hint is not set for the given owner_id."),
                 }
