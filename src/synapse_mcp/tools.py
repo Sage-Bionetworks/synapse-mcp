@@ -354,7 +354,8 @@ async def get_link(
     description=(
         "Get a wiki page's content (markdown) and "
         "metadata for any Synapse entity. If wiki_id "
-        "is omitted, returns the root wiki page."
+        "is omitted, returns the root wiki page. "
+        "If wiki_id is provided, returns the wiki page with the given id."
     ),
     annotations=_RO,
 )
@@ -424,7 +425,7 @@ async def get_wiki_history(
     title="Get Wiki Order Hint",
     description=(
         "Get the display ordering of wiki sub-pages "
-        "for a Synapse entity."
+        "for a Synapse entity. If no explicit ordering is set, the order hint is empty by default."
     ),
     annotations=_RO,
 )
