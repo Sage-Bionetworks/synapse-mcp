@@ -8,7 +8,7 @@ import itertools
 from collections.abc import Mapping
 from contextlib import asynccontextmanager
 from datetime import date, datetime
-from typing import Any, AsyncIterator, Callable, Dict, Iterator, Tuple
+from typing import Any, Callable, Dict, Iterator, Tuple
 
 from fastmcp import Context
 
