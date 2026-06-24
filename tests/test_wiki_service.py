@@ -209,6 +209,24 @@ class TestGetWikiHeaders:
 
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
     @patch(f"{SVC}.WikiHeader")
+    async def test_given_limit_when_headers_fetched_then_truncates(
+        self, mock_wh_cls, mock_get_client
+    ):
+        mock_get_client.return_value = MagicMock()
+
+        async def _headers(**_):
+            for i in range(5):
+                yield FakeWikiHeader(id=str(i), title=f"Page {i}", parent_id=None)
+
+        mock_wh_cls.get_async = _headers
+
+        result = await WikiService().get_wiki_headers(MagicMock(), "syn123", limit=2)
+
+        assert len(result) == 2
+        assert [h["id"] for h in result] == ["0", "1"]
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.WikiHeader")
     async def test_given_entity_with_no_wiki_then_returns_error(
         self, mock_wh_cls, mock_get_client
     ):
