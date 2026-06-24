@@ -164,7 +164,7 @@ class TeamService:
             return results
 
     @staticmethod
-    @error_boundary(error_context_keys=("team_id",))
+    @error_boundary(error_context_keys=("team_id", "user_id"))
     async def get_team_membership_status(
         ctx: Context,
         team_id: int,
