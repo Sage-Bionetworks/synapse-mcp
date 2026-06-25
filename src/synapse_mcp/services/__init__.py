@@ -17,6 +17,7 @@ from .tool_service import (
     synapse_client,
 )
 from .user_service import UserService
+from .utility_service import UtilityService
 from .wiki_service import WikiService
 
 __all__ = [
@@ -30,6 +31,7 @@ __all__ = [
     "SubmissionService",
     "TeamService",
     "UserService",
+    "UtilityService",
     "WikiService",
     "collect_generator",
     "dataclass_to_dict",

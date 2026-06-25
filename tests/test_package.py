@@ -47,6 +47,9 @@ class TestPackageInstallation(unittest.TestCase):
         from synapse_mcp.services import SchemaOrganizationService
         self.assertIsNotNone(SchemaOrganizationService)
 
+        from synapse_mcp.services import UtilityService
+        self.assertIsNotNone(UtilityService)
+
         from synapse_mcp.services import FormService
         self.assertIsNotNone(FormService)
 

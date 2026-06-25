@@ -16,6 +16,7 @@ from .services import (
     SubmissionService,
     TeamService,
     UserService,
+    UtilityService,
     WikiService,
 )
 from .utils import validate_synapse_id
@@ -1027,3 +1028,62 @@ async def list_form_data(
     return await FormService.list_form_data(
         ctx, group_id, filter_by_state, as_reviewer, next_page_token
     )
+
+
+# ---------------------------------------------------------------------------
+# Domain 15: Utility Operations
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(
+    title="Find Entity ID",
+    description=(
+        "Find a Synapse entity's ID by its exact name "
+        "and optional parent container. The name match is "
+        "case-sensitive (e.g. 'Patient Record Set' will "
+        "not match 'Patient record set'). Use search_synapse "
+        "for fuzzy or case-insensitive lookup."
+    ),
+    annotations=_RO,
+)
+async def find_entity_id(
+    name: str,
+    ctx: Context,
+    parent_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Find an entity's Synapse ID by exact name and parent."""
+    return await UtilityService.find_entity_id(
+        ctx, name, parent_id
+    )
+
+
+@mcp.tool(
+    title="Validate Synapse ID",
+    description=(
+        "Check whether a Synapse ID exists and is valid "
+        "by querying the Synapse backend."
+    ),
+    annotations=_RO,
+)
+async def check_synapse_id(
+    syn_id: str, ctx: Context
+) -> Dict[str, Any]:
+    """Validate whether a Synapse ID exists."""
+    return await UtilityService.is_synapse_id(ctx, syn_id)
+
+
+@mcp.tool(
+    title="MD5 Query",
+    description=(
+        "Find Synapse entities by the MD5 hash of "
+        "their attached file."
+    ),
+    annotations=_RO,
+)
+async def md5_query(
+    md5: str, ctx: Context
+) -> Dict[str, Any]:
+    """Find entities by MD5 hash."""
+    return await UtilityService.md5_query(ctx, md5)
+
+

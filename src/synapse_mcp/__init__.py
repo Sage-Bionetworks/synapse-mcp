@@ -9,6 +9,8 @@ from .context_helpers import (
 )
 from .resources import synapse_blog_feed
 from .tools import (
+    check_synapse_id,
+    find_entity_id,
     get_curation_task,
     get_curation_task_resources,
     get_entity,
@@ -53,12 +55,15 @@ from .tools import (
     list_my_submission_bundles,
     list_my_submissions,
     list_submission_statuses,
+    md5_query,
     search_synapse,
 )
 
 __all__ = [
     "auth",
+    "check_synapse_id",
     "ConnectionAuthError",
+    "find_entity_id",
     "first_successful_result",
     "get_curation_task",
     "get_curation_task_resources",
@@ -108,6 +113,7 @@ __all__ = [
     "list_my_submissions",
     "list_submission_statuses",
     "mcp",
+    "md5_query",
     "require_request_context",
     "search_synapse",
     "synapse_blog_feed",
