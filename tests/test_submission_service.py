@@ -63,6 +63,26 @@ class TestGetSubmission:
         assert result["id"] == "777"
 
 
+class TestValidatePagination:
+    async def test_given_negative_limit_then_raises(self):
+        with pytest.raises(ValueError, match="limit and offset must be >= 0"):
+            await SubmissionService.list_evaluation_submissions(
+                MagicMock(), "9600001", limit=-1
+            )
+
+    async def test_given_negative_offset_then_raises(self):
+        with pytest.raises(ValueError, match="limit and offset must be >= 0"):
+            await SubmissionService.list_evaluation_submissions(
+                MagicMock(), "9600001", offset=-1
+            )
+
+    async def test_given_zero_limit_then_returns_empty(self):
+        result = await SubmissionService.list_evaluation_submissions(
+            MagicMock(), "9600001", limit=0
+        )
+        assert result == []
+
+
 class TestListEvaluationSubmissions:
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
     @patch(f"{SVC}.rest_get_paginated_async")
