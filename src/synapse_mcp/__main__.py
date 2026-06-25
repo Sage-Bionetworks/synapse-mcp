@@ -91,6 +91,7 @@ def main():
                 host=host,
                 port=port,
                 middleware=[grant_types_middleware],
+                stateless_http=True,
             )
         else:
             mcp.run(transport=transport)
