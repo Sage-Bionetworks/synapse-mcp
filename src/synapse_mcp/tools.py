@@ -10,10 +10,13 @@ from .services import (
     CurationTaskService,
     EntityService,
     EvaluationService,
+    FormService,
+    SchemaOrganizationService,
     SearchService,
     SubmissionService,
     TeamService,
     UserService,
+    UtilityService,
     WikiService,
 )
 from .utils import validate_synapse_id
@@ -819,7 +822,7 @@ async def list_my_submission_bundles(
 
 
 # ---------------------------------------------------------------------------
-# Domain 13: Curation Tasks
+# Domain 12: Curation Tasks
 # ---------------------------------------------------------------------------
 
 
@@ -871,3 +874,216 @@ async def get_curation_task_resources(
     return await CurationTaskService.get_task_resources(
         ctx, task_id
     )
+
+
+# ---------------------------------------------------------------------------
+# Domain 13: JSON Schema Organizations
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(
+    title="Get Schema Organization",
+    description=(
+        "Get a Synapse JSON Schema Organization by name."
+    ),
+    annotations=_RO,
+)
+async def get_schema_organization(
+    organization_name: str, ctx: Context
+) -> Dict[str, Any]:
+    """Get a Schema Organization by name."""
+    return await SchemaOrganizationService.get_schema_organization(
+        ctx, organization_name
+    )
+
+
+@mcp.tool(
+    title="Get Schema Organization ACL",
+    description=(
+        "Get the ACL for a Synapse JSON Schema "
+        "Organization."
+    ),
+    annotations=_RO,
+)
+async def get_schema_organization_acl(
+    organization_name: str, ctx: Context
+) -> Dict[str, Any]:
+    """Get ACL for a Schema Organization."""
+    return await SchemaOrganizationService.get_schema_organization_acl(
+        ctx, organization_name
+    )
+
+
+@mcp.tool(
+    title="List JSON Schemas",
+    description=(
+        "List JSON Schemas in a Synapse Schema Organization, one "
+        "page at a time. The Synapse list endpoint paginates with a "
+        "``nextPageToken`` (no limit/offset): the response includes "
+        "``next_page_token``; pass it back as the next call's "
+        "``next_page_token`` argument to fetch the following page. "
+        "``next_page_token`` is null on the final page."
+    ),
+    annotations=_RO,
+)
+async def list_json_schemas(
+    organization_name: str,
+    ctx: Context,
+    next_page_token: Optional[str] = None,
+) -> Dict[str, Any]:
+    """List schemas in an organization (token-paginated)."""
+    return await SchemaOrganizationService.list_json_schemas(
+        ctx, organization_name, next_page_token
+    )
+
+
+@mcp.tool(
+    title="Get JSON Schema",
+    description=(
+        "Get metadata for a specific Synapse "
+        "JSON Schema."
+    ),
+    annotations=_RO,
+)
+async def get_json_schema(
+    organization_name: str,
+    schema_name: str,
+    ctx: Context,
+) -> Dict[str, Any]:
+    """Get metadata for a JSON Schema."""
+    return await SchemaOrganizationService.get_json_schema(
+        ctx, organization_name, schema_name
+    )
+
+
+@mcp.tool(
+    title="Get JSON Schema Body",
+    description=(
+        "Get the actual JSON document of a Synapse "
+        "JSON Schema."
+    ),
+    annotations=_RO,
+)
+async def get_json_schema_body(
+    organization_name: str,
+    schema_name: str,
+    ctx: Context,
+    version: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Get the raw JSON schema document."""
+    return await SchemaOrganizationService.get_json_schema_body(
+        ctx, organization_name, schema_name, version
+    )
+
+
+@mcp.tool(
+    title="List JSON Schema Versions",
+    description=(
+        "List versions of a Synapse JSON Schema, one page at a time. "
+        "Token-paginated like list_json_schemas: pass the returned "
+        "``next_page_token`` back to fetch the next page."
+    ),
+    annotations=_RO,
+)
+async def list_json_schema_versions(
+    organization_name: str,
+    schema_name: str,
+    ctx: Context,
+    next_page_token: Optional[str] = None,
+) -> Dict[str, Any]:
+    """List versions of a JSON Schema (token-paginated)."""
+    return await SchemaOrganizationService.list_json_schema_versions(
+        ctx, organization_name, schema_name, next_page_token
+    )
+
+
+# ---------------------------------------------------------------------------
+# Domain 14: Forms
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(
+    title="List Form Data",
+    description=(
+        "List form submissions for a Synapse FormGroup, optionally "
+        "filtered by submission state. Valid filter_by_state values: "
+        "'waiting_for_submission', 'submitted_waiting_for_review', "
+        "'accepted', 'rejected'. When as_reviewer=True, the caller "
+        "lists submissions they can review ('waiting_for_submission' "
+        "is not allowed in this mode); when False (default), lists "
+        "submissions the caller owns. "
+        "Token-paginated: response includes ``next_page_token``; "
+        "pass it back to fetch the next page (null on final page)."
+    ),
+    annotations=_RO,
+)
+async def list_form_data(
+    group_id: str,
+    ctx: Context,
+    filter_by_state: Optional[List[str]] = None,
+    as_reviewer: bool = False,
+    next_page_token: Optional[str] = None,
+) -> Dict[str, Any]:
+    """List form submissions for a FormGroup (token-paginated)."""
+    return await FormService.list_form_data(
+        ctx, group_id, filter_by_state, as_reviewer, next_page_token
+    )
+
+
+# ---------------------------------------------------------------------------
+# Domain 15: Utility Operations
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(
+    title="Find Entity ID",
+    description=(
+        "Find a Synapse entity's ID by its exact name "
+        "and optional parent container. The name match is "
+        "case-sensitive (e.g. 'Patient Record Set' will "
+        "not match 'Patient record set'). Use search_synapse "
+        "for fuzzy or case-insensitive lookup."
+    ),
+    annotations=_RO,
+)
+async def find_entity_id(
+    name: str,
+    ctx: Context,
+    parent_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Find an entity's Synapse ID by exact name and parent."""
+    return await UtilityService.find_entity_id(
+        ctx, name, parent_id
+    )
+
+
+@mcp.tool(
+    title="Validate Synapse ID",
+    description=(
+        "Check whether a Synapse ID exists and is valid "
+        "by querying the Synapse backend."
+    ),
+    annotations=_RO,
+)
+async def check_synapse_id(
+    syn_id: str, ctx: Context
+) -> Dict[str, Any]:
+    """Validate whether a Synapse ID exists."""
+    return await UtilityService.is_synapse_id(ctx, syn_id)
+
+
+@mcp.tool(
+    title="MD5 Query",
+    description=(
+        "Find Synapse entities by the MD5 hash of "
+        "their attached file."
+    ),
+    annotations=_RO,
+)
+async def md5_query(
+    md5: str, ctx: Context
+) -> Dict[str, Any]:
+    """Find entities by MD5 hash."""
+    return await UtilityService.md5_query(ctx, md5)
+
+
