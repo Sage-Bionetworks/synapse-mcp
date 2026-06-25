@@ -157,6 +157,47 @@ class TestListEvaluationSubmissions:
         assert "Authentication required" in result[0]["error"]
 
 
+class TestListMySubmissions:
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.rest_get_paginated_async")
+    async def test_given_queue_then_paginates_with_limit_offset(
+        self, mock_paginate, mock_get_client
+    ):
+        mock_get_client.return_value = MagicMock()
+        captured = {}
+
+        async def _fake(uri, *, limit, offset, synapse_client):
+            captured["uri"] = uri
+            captured["limit"] = limit
+            captured["offset"] = offset
+            for sid in ("1", "2"):
+                yield {"id": sid, "evaluationId": "9600001"}
+
+        mock_paginate.side_effect = _fake
+
+        result = await SubmissionService.list_my_submissions(
+            MagicMock(), "9600001", offset=5, limit=2
+        )
+
+        assert captured["uri"] == "/evaluation/9600001/submission"
+        assert captured["limit"] == 2
+        assert captured["offset"] == 5
+        assert [s["id"] for s in result] == ["1", "2"]
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    async def test_given_expired_auth_then_returns_wrapped_error(
+        self, mock_get_client
+    ):
+        mock_get_client.side_effect = ConnectionAuthError("expired")
+
+        result = await SubmissionService.list_my_submissions(
+            MagicMock(), "9600001"
+        )
+
+        assert isinstance(result, list)
+        assert "Authentication required" in result[0]["error"]
+
+
 class TestGetSubmissionCount:
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
     @patch(f"{SVC}.Submission")
