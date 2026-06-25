@@ -9,7 +9,9 @@ from .services import (
     ActivityService,
     CurationTaskService,
     EntityService,
+    EvaluationService,
     SearchService,
+    SubmissionService,
     TeamService,
     UserService,
     WikiService,
@@ -552,6 +554,268 @@ async def is_user_certified(
 ) -> Dict[str, Any]:
     """Check if a user is certified."""
     return await UserService.is_user_certified(ctx, user_id)
+
+
+# ---------------------------------------------------------------------------
+# Domain 10: Evaluation (Challenge Queue)
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(
+    title="Get Evaluation",
+    description=(
+        "Get a Synapse Evaluation (challenge queue) "
+        "by ID or name."
+    ),
+    annotations=_RO,
+)
+async def get_evaluation(
+    ctx: Context,
+    evaluation_id: Optional[str] = None,
+    evaluation_name: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Get an Evaluation by ID or name."""
+    return await EvaluationService.get_evaluation(
+        ctx, evaluation_id, evaluation_name
+    )
+
+
+@mcp.tool(
+    title="List Evaluations",
+    description=(
+        "List Synapse Evaluations with optional "
+        "filters (project, access type, active only). "
+        "If the result set hits the limit, call again "
+        "with a higher offset to retrieve the next page."
+    ),
+    annotations=_RO,
+)
+async def list_evaluations(
+    ctx: Context,
+    project_id: Optional[str] = None,
+    access_type: Optional[str] = None,
+    active_only: Optional[bool] = None,
+    available_only: bool = False,
+    evaluation_ids: Optional[List[str]] = None,
+    offset: int = 0,
+    limit: int = 20,
+) -> List[Dict[str, Any]]:
+    """List evaluations with filters."""
+    return await EvaluationService.list_evaluations(
+        ctx,
+        project_id=project_id,
+        access_type=access_type,
+        active_only=active_only,
+        available_only=available_only,
+        evaluation_ids=evaluation_ids,
+        offset=offset,
+        limit=limit,
+    )
+
+
+@mcp.tool(
+    title="Get Evaluation ACL",
+    description=(
+        "Get the resource-level access control list for a "
+        "Synapse Evaluation queue: which principals (users "
+        "and teams) hold which access types on the queue. "
+        "Use this for queue-administration questions like "
+        "\"who can score submissions\". Distinct from "
+        "get_evaluation_permissions, which reports the "
+        "caller's own effective permissions."
+    ),
+    annotations=_RO,
+)
+async def get_evaluation_acl(
+    evaluation_id: str, ctx: Context
+) -> Dict[str, Any]:
+    """Get ACL for an Evaluation queue."""
+    return await EvaluationService.get_evaluation_acl(
+        ctx, evaluation_id
+    )
+
+
+@mcp.tool(
+    title="Get Evaluation Permissions",
+    description=(
+        "Get the current authenticated user's effective "
+        "permissions on a Synapse Evaluation queue (can_view, "
+        "can_edit, can_submit, etc.). Use this for "
+        "self-permission checks. Distinct from "
+        "get_evaluation_acl, which lists the queue's full "
+        "ACL across every principal."
+    ),
+    annotations=_RO,
+)
+async def get_evaluation_permissions(
+    evaluation_id: str, ctx: Context
+) -> Dict[str, Any]:
+    """Get permissions on an Evaluation queue."""
+    return await EvaluationService.get_evaluation_permissions(
+        ctx, evaluation_id
+    )
+
+
+# ---------------------------------------------------------------------------
+# Domain 11: Submission
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(
+    title="Get Submission",
+    description="Get a Synapse Submission by its ID.",
+    annotations=_RO,
+)
+async def get_submission(
+    submission_id: str, ctx: Context
+) -> Dict[str, Any]:
+    """Get a Submission by ID."""
+    return await SubmissionService.get_submission(
+        ctx, submission_id
+    )
+
+
+@mcp.tool(
+    title="List Evaluation Submissions",
+    description=(
+        "List submissions to a Synapse Evaluation queue, "
+        "optionally filtered by status. Pages through the "
+        "queue's submission list; pass an increased "
+        "``offset`` to fetch the next batch."
+    ),
+    annotations=_RO,
+)
+async def list_evaluation_submissions(
+    evaluation_id: str,
+    ctx: Context,
+    status: Optional[str] = None,
+    offset: int = 0,
+    limit: int = 50,
+) -> List[Dict[str, Any]]:
+    """List submissions to an Evaluation."""
+    return await SubmissionService.list_evaluation_submissions(
+        ctx, evaluation_id, status, offset, limit
+    )
+
+
+@mcp.tool(
+    title="List My Submissions",
+    description=(
+        "List the current user's submissions to a "
+        "Synapse Evaluation queue. Pass an increased "
+        "``offset`` to page beyond the first batch."
+    ),
+    annotations=_RO,
+)
+async def list_my_submissions(
+    evaluation_id: str,
+    ctx: Context,
+    offset: int = 0,
+    limit: int = 50,
+) -> List[Dict[str, Any]]:
+    """List current user's submissions."""
+    return await SubmissionService.list_my_submissions(
+        ctx, evaluation_id, offset, limit
+    )
+
+
+@mcp.tool(
+    title="Get Submission Count",
+    description=(
+        "Get the count of submissions to a Synapse "
+        "Evaluation queue."
+    ),
+    annotations=_RO,
+)
+async def get_submission_count(
+    evaluation_id: str, ctx: Context
+) -> Dict[str, Any]:
+    """Get submission count for an Evaluation."""
+    return await SubmissionService.get_submission_count(
+        ctx, evaluation_id
+    )
+
+
+@mcp.tool(
+    title="Get Submission Status",
+    description=(
+        "Get the status of a specific Synapse Submission."
+    ),
+    annotations=_RO,
+)
+async def get_submission_status(
+    submission_id: str, ctx: Context
+) -> Dict[str, Any]:
+    """Get status of a Submission."""
+    return await SubmissionService.get_submission_status(
+        ctx, submission_id
+    )
+
+
+@mcp.tool(
+    title="List Submission Statuses",
+    description=(
+        "List statuses for all submissions in a "
+        "Synapse Evaluation queue. "
+        "If the result set hits the limit, call again "
+        "with a higher offset to retrieve the next page."
+    ),
+    annotations=_RO,
+)
+async def list_submission_statuses(
+    evaluation_id: str,
+    ctx: Context,
+    status: Optional[str] = None,
+    limit: int = 10,
+    offset: int = 0,
+) -> List[Dict[str, Any]]:
+    """List submission statuses for an Evaluation."""
+    return await SubmissionService.list_submission_statuses(
+        ctx, evaluation_id, status, limit, offset
+    )
+
+
+@mcp.tool(
+    title="List Evaluation Submission Bundles",
+    description=(
+        "List submission+status bundles for a Synapse "
+        "Evaluation queue. Pass an increased ``offset`` "
+        "to fetch the next batch."
+    ),
+    annotations=_RO,
+)
+async def list_evaluation_submission_bundles(
+    evaluation_id: str,
+    ctx: Context,
+    status: Optional[str] = None,
+    offset: int = 0,
+    limit: int = 50,
+) -> List[Dict[str, Any]]:
+    """List submission bundles for an Evaluation."""
+    return await SubmissionService.list_evaluation_submission_bundles(
+        ctx, evaluation_id, status, offset, limit
+    )
+
+
+@mcp.tool(
+    title="List My Submission Bundles",
+    description=(
+        "List the current user's submission bundles "
+        "for a Synapse Evaluation queue. Pass an "
+        "increased ``offset`` to fetch the next batch."
+    ),
+    annotations=_RO,
+)
+async def list_my_submission_bundles(
+    evaluation_id: str,
+    ctx: Context,
+    offset: int = 0,
+    limit: int = 50,
+) -> List[Dict[str, Any]]:
+    """List current user's submission bundles."""
+    return await SubmissionService.list_my_submission_bundles(
+        ctx, evaluation_id, offset, limit
+    )
 
 
 # ---------------------------------------------------------------------------
