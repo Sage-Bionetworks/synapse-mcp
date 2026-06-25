@@ -64,17 +64,21 @@ class TestGetSubmission:
 
 
 class TestValidatePagination:
-    async def test_given_negative_limit_then_raises(self):
-        with pytest.raises(ValueError, match="limit and offset must be >= 0"):
-            await SubmissionService.list_evaluation_submissions(
-                MagicMock(), "9600001", limit=-1
-            )
+    async def test_given_negative_limit_then_returns_error(self):
+        result = await SubmissionService.list_evaluation_submissions(
+            MagicMock(), "9600001", limit=-1
+        )
+        assert isinstance(result, list)
+        assert result[0]["error"] == "limit and offset must be >= 0"
+        assert result[0]["error_type"] == "ValueError"
 
-    async def test_given_negative_offset_then_raises(self):
-        with pytest.raises(ValueError, match="limit and offset must be >= 0"):
-            await SubmissionService.list_evaluation_submissions(
-                MagicMock(), "9600001", offset=-1
-            )
+    async def test_given_negative_offset_then_returns_error(self):
+        result = await SubmissionService.list_evaluation_submissions(
+            MagicMock(), "9600001", offset=-1
+        )
+        assert isinstance(result, list)
+        assert result[0]["error"] == "limit and offset must be >= 0"
+        assert result[0]["error_type"] == "ValueError"
 
     async def test_given_zero_limit_then_returns_empty(self):
         result = await SubmissionService.list_evaluation_submissions(
