@@ -30,22 +30,22 @@ class EvaluationService:
         Returns:
             Dict with evaluation metadata.
         """
+        if evaluation_id is None and evaluation_name is None:
+            return {
+                "error": (
+                    "Either evaluation_id or "
+                    "evaluation_name is required"
+                )
+            }
         async with synapse_client(ctx) as client:
             if evaluation_id is not None:
                 ev = await Evaluation(id=evaluation_id).get_async(
                     synapse_client=client,
                 )
-            elif evaluation_name is not None:
+            else:
                 ev = await Evaluation(name=evaluation_name).get_async(
                     synapse_client=client,
                 )
-            else:
-                return {
-                    "error": (
-                        "Either evaluation_id or "
-                        "evaluation_name is required"
-                    )
-                }
             return serialize_model(ev)
 
     @staticmethod
