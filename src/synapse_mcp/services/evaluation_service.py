@@ -22,6 +22,9 @@ class EvaluationService:
     ) -> Dict[str, Any]:
         """Get an Evaluation by ID or name.
 
+        If both evaluation_id and evaluation_name are provided,
+        evaluation_id takes priority.
+
         Arguments:
             ctx: The FastMCP request context.
             evaluation_id: Numeric evaluation queue ID.
@@ -65,7 +68,8 @@ class EvaluationService:
         Arguments:
             ctx: The FastMCP request context.
             project_id: Filter by project ID.
-            access_type: Filter by access type.
+            access_type: Filter by access type. Not used when
+                available_only=True.
             active_only: Only return active evaluations.
             available_only: Only evaluations the user
                 can submit to.
