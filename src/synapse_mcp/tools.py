@@ -9,7 +9,15 @@ from .services import (
     ActivityService,
     CurationTaskService,
     EntityService,
+    EvaluationService,
+    FormService,
+    SchemaOrganizationService,
     SearchService,
+    SubmissionService,
+    TeamService,
+    UserService,
+    UtilityService,
+    WikiService,
 )
 from .utils import validate_synapse_id
 
@@ -344,7 +352,478 @@ async def get_link(
 
 
 # ---------------------------------------------------------------------------
-# Domain 13: Curation Tasks
+# Domain 8: Wiki
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(
+    title="Get Wiki Page",
+    description=(
+        "Get a wiki page's content (markdown) and "
+        "metadata for any Synapse entity. If wiki_id "
+        "is omitted, returns the root wiki page. "
+        "If wiki_id is provided, returns the wiki page with the given id."
+    ),
+    annotations=_RO,
+)
+async def get_wiki_page(
+    owner_id: str,
+    ctx: Context,
+    wiki_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Get a wiki page's content and metadata."""
+    if not validate_synapse_id(owner_id):
+        return {"error": f"Invalid Synapse ID: {owner_id}"}
+    return await WikiService.get_wiki_page(
+        ctx, owner_id, wiki_id
+    )
+
+
+@mcp.tool(
+    title="Get Wiki Headers",
+    description=(
+        "Get the hierarchical table of contents "
+        "(wiki page tree) for a Synapse entity. "
+        "If the result set hits the limit, call again "
+        "with a higher offset to retrieve the next page."
+    ),
+    annotations=_RO,
+)
+async def get_wiki_headers(
+    owner_id: str,
+    ctx: Context,
+    offset: int = 0,
+    limit: int = 50,
+) -> List[Dict[str, Any]]:
+    """Get the wiki table of contents for an entity."""
+    if not validate_synapse_id(owner_id):
+        return [{"error": f"Invalid Synapse ID: {owner_id}"}]
+    return await WikiService.get_wiki_headers(
+        ctx, owner_id, offset, limit
+    )
+
+
+@mcp.tool(
+    title="Get Wiki History",
+    description=(
+        "Get the revision history of a specific "
+        "wiki page. If the result set hits the limit, "
+        "call again with a higher offset to retrieve "
+        "the next page."
+    ),
+    annotations=_RO,
+)
+async def get_wiki_history(
+    owner_id: str,
+    wiki_id: str,
+    ctx: Context,
+    offset: int = 0,
+    limit: int = 50,
+) -> List[Dict[str, Any]]:
+    """Get revision history of a wiki page."""
+    if not validate_synapse_id(owner_id):
+        return [{"error": f"Invalid Synapse ID: {owner_id}"}]
+    return await WikiService.get_wiki_history(
+        ctx, owner_id, wiki_id, offset, limit
+    )
+
+
+@mcp.tool(
+    title="Get Wiki Order Hint",
+    description=(
+        "Get the display ordering of wiki sub-pages "
+        "for a Synapse entity. If no explicit ordering is set, the order hint is empty by default."
+    ),
+    annotations=_RO,
+)
+async def get_wiki_order_hint(
+    owner_id: str, ctx: Context
+) -> Dict[str, Any]:
+    """Get wiki page display ordering."""
+    if not validate_synapse_id(owner_id):
+        return {"error": f"Invalid Synapse ID: {owner_id}"}
+    return await WikiService.get_wiki_order_hint(ctx, owner_id)
+
+
+# ---------------------------------------------------------------------------
+# Domain 9: Team & User
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(
+    title="Get Team",
+    description=(
+        "Get a Synapse Team by its numeric ID or "
+        "by name."
+    ),
+    annotations=_RO,
+)
+async def get_team(
+    ctx: Context,
+    team_id: Optional[int] = None,
+    team_name: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Get a Synapse Team by ID or name."""
+    return await TeamService.get_team(ctx, team_id, team_name)
+
+
+@mcp.tool(
+    title="Get Team Members",
+    description=(
+        "List members of a Synapse Team. Pages through "
+        "the team membership API; pass an increased "
+        "``offset`` to fetch the next batch."
+    ),
+    annotations=_RO,
+)
+async def get_team_members(
+    team_id: int,
+    ctx: Context,
+    offset: int = 0,
+    limit: int = 50,
+) -> List[Dict[str, Any]]:
+    """List members of a Team."""
+    return await TeamService.get_team_members(
+        ctx, team_id, offset=offset, limit=limit
+    )
+
+
+@mcp.tool(
+    title="Get Team Open Invitations",
+    description=(
+        "List pending invitations for a Synapse Team. "
+        "Pages through the open-invitation API; pass an "
+        "increased ``offset`` to fetch the next batch."
+    ),
+    annotations=_RO,
+)
+async def get_team_open_invitations(
+    team_id: int,
+    ctx: Context,
+    offset: int = 0,
+    limit: int = 50,
+) -> List[Dict[str, Any]]:
+    """List pending Team invitations."""
+    return await TeamService.get_team_open_invitations(
+        ctx, team_id, offset=offset, limit=limit
+    )
+
+
+@mcp.tool(
+    title="Get Team Membership Status",
+    description=(
+        "Check if a specific user is a member of "
+        "or has applied to a Synapse Team."
+    ),
+    annotations=_RO,
+)
+async def get_team_membership_status(
+    team_id: int, user_id: int, ctx: Context
+) -> Dict[str, Any]:
+    """Check a user's Team membership status."""
+    return await TeamService.get_team_membership_status(
+        ctx, team_id, user_id
+    )
+
+
+@mcp.tool(
+    title="Get User Profile",
+    description=(
+        "Get a Synapse user's profile by numeric ID, "
+        "username, or self (no args returns the "
+        "authenticated user's own profile)."
+    ),
+    annotations=_RO,
+)
+async def get_user_profile(
+    ctx: Context,
+    user_id: Optional[int] = None,
+    username: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Get a Synapse user profile."""
+    return await UserService.get_user_profile(
+        ctx, user_id, username
+    )
+
+
+@mcp.tool(
+    title="Is User Certified",
+    description=(
+        "Check if a Synapse user is certified."
+    ),
+    annotations=_RO,
+)
+async def is_user_certified(
+    user_id: int, ctx: Context
+) -> Dict[str, Any]:
+    """Check if a user is certified."""
+    return await UserService.is_user_certified(ctx, user_id)
+
+
+# ---------------------------------------------------------------------------
+# Domain 10: Evaluation (Challenge Queue)
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(
+    title="Get Evaluation",
+    description=(
+        "Get a Synapse Evaluation (challenge queue) "
+        "by ID or name."
+    ),
+    annotations=_RO,
+)
+async def get_evaluation(
+    ctx: Context,
+    evaluation_id: Optional[str] = None,
+    evaluation_name: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Get an Evaluation by ID or name."""
+    return await EvaluationService.get_evaluation(
+        ctx, evaluation_id, evaluation_name
+    )
+
+
+@mcp.tool(
+    title="List Evaluations",
+    description=(
+        "List Synapse Evaluations with optional "
+        "filters (project, access type, active only). "
+        "If the result set hits the limit, call again "
+        "with a higher offset to retrieve the next page."
+    ),
+    annotations=_RO,
+)
+async def list_evaluations(
+    ctx: Context,
+    project_id: Optional[str] = None,
+    access_type: Optional[str] = None,
+    active_only: Optional[bool] = None,
+    available_only: bool = False,
+    evaluation_ids: Optional[List[str]] = None,
+    offset: int = 0,
+    limit: int = 20,
+) -> List[Dict[str, Any]]:
+    """List evaluations with filters."""
+    return await EvaluationService.list_evaluations(
+        ctx,
+        project_id=project_id,
+        access_type=access_type,
+        active_only=active_only,
+        available_only=available_only,
+        evaluation_ids=evaluation_ids,
+        offset=offset,
+        limit=limit,
+    )
+
+
+@mcp.tool(
+    title="Get Evaluation ACL",
+    description=(
+        "Get the resource-level access control list for a "
+        "Synapse Evaluation queue: which principals (users "
+        "and teams) hold which access types on the queue. "
+        "Use this for queue-administration questions like "
+        "\"who can score submissions\". Distinct from "
+        "get_evaluation_permissions, which reports the "
+        "caller's own effective permissions."
+    ),
+    annotations=_RO,
+)
+async def get_evaluation_acl(
+    evaluation_id: str, ctx: Context
+) -> Dict[str, Any]:
+    """Get ACL for an Evaluation queue."""
+    return await EvaluationService.get_evaluation_acl(
+        ctx, evaluation_id
+    )
+
+
+@mcp.tool(
+    title="Get Evaluation Permissions",
+    description=(
+        "Get the current authenticated user's effective "
+        "permissions on a Synapse Evaluation queue (can_view, "
+        "can_edit, can_submit, etc.). Use this for "
+        "self-permission checks. Distinct from "
+        "get_evaluation_acl, which lists the queue's full "
+        "ACL across every principal."
+    ),
+    annotations=_RO,
+)
+async def get_evaluation_permissions(
+    evaluation_id: str, ctx: Context
+) -> Dict[str, Any]:
+    """Get permissions on an Evaluation queue."""
+    return await EvaluationService.get_evaluation_permissions(
+        ctx, evaluation_id
+    )
+
+
+# ---------------------------------------------------------------------------
+# Domain 11: Submission
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(
+    title="Get Submission",
+    description="Get a Synapse Submission by its ID.",
+    annotations=_RO,
+)
+async def get_submission(
+    submission_id: str, ctx: Context
+) -> Dict[str, Any]:
+    """Get a Submission by ID."""
+    return await SubmissionService.get_submission(
+        ctx, submission_id
+    )
+
+
+@mcp.tool(
+    title="List Evaluation Submissions",
+    description=(
+        "List submissions to a Synapse Evaluation queue, "
+        "optionally filtered by status. Pages through the "
+        "queue's submission list; pass an increased "
+        "``offset`` to fetch the next batch."
+    ),
+    annotations=_RO,
+)
+async def list_evaluation_submissions(
+    evaluation_id: str,
+    ctx: Context,
+    status: Optional[str] = None,
+    offset: int = 0,
+    limit: int = 50,
+) -> List[Dict[str, Any]]:
+    """List submissions to an Evaluation."""
+    return await SubmissionService.list_evaluation_submissions(
+        ctx, evaluation_id, status, offset, limit
+    )
+
+
+@mcp.tool(
+    title="List My Submissions",
+    description=(
+        "List the current user's submissions to a "
+        "Synapse Evaluation queue. Pass an increased "
+        "``offset`` to page beyond the first batch."
+    ),
+    annotations=_RO,
+)
+async def list_my_submissions(
+    evaluation_id: str,
+    ctx: Context,
+    offset: int = 0,
+    limit: int = 50,
+) -> List[Dict[str, Any]]:
+    """List current user's submissions."""
+    return await SubmissionService.list_my_submissions(
+        ctx, evaluation_id, offset, limit
+    )
+
+
+@mcp.tool(
+    title="Get Submission Count",
+    description=(
+        "Get the count of submissions to a Synapse "
+        "Evaluation queue."
+    ),
+    annotations=_RO,
+)
+async def get_submission_count(
+    evaluation_id: str, ctx: Context
+) -> Dict[str, Any]:
+    """Get submission count for an Evaluation."""
+    return await SubmissionService.get_submission_count(
+        ctx, evaluation_id
+    )
+
+
+@mcp.tool(
+    title="Get Submission Status",
+    description=(
+        "Get the status of a specific Synapse Submission."
+    ),
+    annotations=_RO,
+)
+async def get_submission_status(
+    submission_id: str, ctx: Context
+) -> Dict[str, Any]:
+    """Get status of a Submission."""
+    return await SubmissionService.get_submission_status(
+        ctx, submission_id
+    )
+
+
+@mcp.tool(
+    title="List Submission Statuses",
+    description=(
+        "List statuses for all submissions in a "
+        "Synapse Evaluation queue. "
+        "If the result set hits the limit, call again "
+        "with a higher offset to retrieve the next page."
+    ),
+    annotations=_RO,
+)
+async def list_submission_statuses(
+    evaluation_id: str,
+    ctx: Context,
+    status: Optional[str] = None,
+    limit: int = 10,
+    offset: int = 0,
+) -> List[Dict[str, Any]]:
+    """List submission statuses for an Evaluation."""
+    return await SubmissionService.list_submission_statuses(
+        ctx, evaluation_id, status, limit, offset
+    )
+
+
+@mcp.tool(
+    title="List Evaluation Submission Bundles",
+    description=(
+        "List submission+status bundles for a Synapse "
+        "Evaluation queue. Pass an increased ``offset`` "
+        "to fetch the next batch."
+    ),
+    annotations=_RO,
+)
+async def list_evaluation_submission_bundles(
+    evaluation_id: str,
+    ctx: Context,
+    status: Optional[str] = None,
+    offset: int = 0,
+    limit: int = 50,
+) -> List[Dict[str, Any]]:
+    """List submission bundles for an Evaluation."""
+    return await SubmissionService.list_evaluation_submission_bundles(
+        ctx, evaluation_id, status, offset, limit
+    )
+
+
+@mcp.tool(
+    title="List My Submission Bundles",
+    description=(
+        "List the current user's submission bundles "
+        "for a Synapse Evaluation queue. Pass an "
+        "increased ``offset`` to fetch the next batch."
+    ),
+    annotations=_RO,
+)
+async def list_my_submission_bundles(
+    evaluation_id: str,
+    ctx: Context,
+    offset: int = 0,
+    limit: int = 50,
+) -> List[Dict[str, Any]]:
+    """List current user's submission bundles."""
+    return await SubmissionService.list_my_submission_bundles(
+        ctx, evaluation_id, offset, limit
+    )
+
+
+# ---------------------------------------------------------------------------
+# Domain 12: Curation Tasks
 # ---------------------------------------------------------------------------
 
 
@@ -396,3 +875,216 @@ async def get_curation_task_resources(
     return await CurationTaskService.get_task_resources(
         ctx, task_id
     )
+
+
+# ---------------------------------------------------------------------------
+# Domain 13: JSON Schema Organizations
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(
+    title="Get Schema Organization",
+    description=(
+        "Get a Synapse JSON Schema Organization by name."
+    ),
+    annotations=_RO,
+)
+async def get_schema_organization(
+    organization_name: str, ctx: Context
+) -> Dict[str, Any]:
+    """Get a Schema Organization by name."""
+    return await SchemaOrganizationService.get_schema_organization(
+        ctx, organization_name
+    )
+
+
+@mcp.tool(
+    title="Get Schema Organization ACL",
+    description=(
+        "Get the ACL for a Synapse JSON Schema "
+        "Organization."
+    ),
+    annotations=_RO,
+)
+async def get_schema_organization_acl(
+    organization_name: str, ctx: Context
+) -> Dict[str, Any]:
+    """Get ACL for a Schema Organization."""
+    return await SchemaOrganizationService.get_schema_organization_acl(
+        ctx, organization_name
+    )
+
+
+@mcp.tool(
+    title="List JSON Schemas",
+    description=(
+        "List JSON Schemas in a Synapse Schema Organization, one "
+        "page at a time. The Synapse list endpoint paginates with a "
+        "``nextPageToken`` (no limit/offset): the response includes "
+        "``next_page_token``; pass it back as the next call's "
+        "``next_page_token`` argument to fetch the following page. "
+        "``next_page_token`` is null on the final page."
+    ),
+    annotations=_RO,
+)
+async def list_json_schemas(
+    organization_name: str,
+    ctx: Context,
+    next_page_token: Optional[str] = None,
+) -> Dict[str, Any]:
+    """List schemas in an organization (token-paginated)."""
+    return await SchemaOrganizationService.list_json_schemas(
+        ctx, organization_name, next_page_token
+    )
+
+
+@mcp.tool(
+    title="Get JSON Schema",
+    description=(
+        "Get metadata for a specific Synapse "
+        "JSON Schema."
+    ),
+    annotations=_RO,
+)
+async def get_json_schema(
+    organization_name: str,
+    schema_name: str,
+    ctx: Context,
+) -> Dict[str, Any]:
+    """Get metadata for a JSON Schema."""
+    return await SchemaOrganizationService.get_json_schema(
+        ctx, organization_name, schema_name
+    )
+
+
+@mcp.tool(
+    title="Get JSON Schema Body",
+    description=(
+        "Get the actual JSON document of a Synapse "
+        "JSON Schema."
+    ),
+    annotations=_RO,
+)
+async def get_json_schema_body(
+    organization_name: str,
+    schema_name: str,
+    ctx: Context,
+    version: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Get the raw JSON schema document."""
+    return await SchemaOrganizationService.get_json_schema_body(
+        ctx, organization_name, schema_name, version
+    )
+
+
+@mcp.tool(
+    title="List JSON Schema Versions",
+    description=(
+        "List versions of a Synapse JSON Schema, one page at a time. "
+        "Token-paginated like list_json_schemas: pass the returned "
+        "``next_page_token`` back to fetch the next page."
+    ),
+    annotations=_RO,
+)
+async def list_json_schema_versions(
+    organization_name: str,
+    schema_name: str,
+    ctx: Context,
+    next_page_token: Optional[str] = None,
+) -> Dict[str, Any]:
+    """List versions of a JSON Schema (token-paginated)."""
+    return await SchemaOrganizationService.list_json_schema_versions(
+        ctx, organization_name, schema_name, next_page_token
+    )
+
+
+# ---------------------------------------------------------------------------
+# Domain 14: Forms
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(
+    title="List Form Data",
+    description=(
+        "List form submissions for a Synapse FormGroup, optionally "
+        "filtered by submission state. Valid filter_by_state values: "
+        "'waiting_for_submission', 'submitted_waiting_for_review', "
+        "'accepted', 'rejected'. When as_reviewer=True, the caller "
+        "lists submissions they can review ('waiting_for_submission' "
+        "is not allowed in this mode); when False (default), lists "
+        "submissions the caller owns. "
+        "Token-paginated: response includes ``next_page_token``; "
+        "pass it back to fetch the next page (null on final page)."
+    ),
+    annotations=_RO,
+)
+async def list_form_data(
+    group_id: str,
+    ctx: Context,
+    filter_by_state: Optional[List[str]] = None,
+    as_reviewer: bool = False,
+    next_page_token: Optional[str] = None,
+) -> Dict[str, Any]:
+    """List form submissions for a FormGroup (token-paginated)."""
+    return await FormService.list_form_data(
+        ctx, group_id, filter_by_state, as_reviewer, next_page_token
+    )
+
+
+# ---------------------------------------------------------------------------
+# Domain 15: Utility Operations
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(
+    title="Find Entity ID",
+    description=(
+        "Find a Synapse entity's ID by its exact name "
+        "and optional parent container. The name match is "
+        "case-sensitive (e.g. 'Patient Record Set' will "
+        "not match 'Patient record set'). Use search_synapse "
+        "for fuzzy or case-insensitive lookup."
+    ),
+    annotations=_RO,
+)
+async def find_entity_id(
+    name: str,
+    ctx: Context,
+    parent_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Find an entity's Synapse ID by exact name and parent."""
+    return await UtilityService.find_entity_id(
+        ctx, name, parent_id
+    )
+
+
+@mcp.tool(
+    title="Validate Synapse ID",
+    description=(
+        "Check whether a Synapse ID exists and is valid "
+        "by querying the Synapse backend."
+    ),
+    annotations=_RO,
+)
+async def check_synapse_id(
+    syn_id: str, ctx: Context
+) -> Dict[str, Any]:
+    """Validate whether a Synapse ID exists."""
+    return await UtilityService.is_synapse_id(ctx, syn_id)
+
+
+@mcp.tool(
+    title="MD5 Query",
+    description=(
+        "Find Synapse entities by the MD5 hash of "
+        "their attached file."
+    ),
+    annotations=_RO,
+)
+async def md5_query(
+    md5: str, ctx: Context
+) -> Dict[str, Any]:
+    """Find entities by MD5 hash."""
+    return await UtilityService.md5_query(ctx, md5)
+
+

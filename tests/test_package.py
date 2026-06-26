@@ -29,6 +29,30 @@ class TestPackageInstallation(unittest.TestCase):
         from synapse_mcp.services import CurationTaskService
         self.assertIsNotNone(CurationTaskService)
 
+        from synapse_mcp.services import WikiService
+        self.assertIsNotNone(WikiService)
+
+        from synapse_mcp.services import TeamService
+        self.assertIsNotNone(TeamService)
+
+        from synapse_mcp.services import UserService
+        self.assertIsNotNone(UserService)
+
+        from synapse_mcp.services import EvaluationService
+        self.assertIsNotNone(EvaluationService)
+
+        from synapse_mcp.services import SubmissionService
+        self.assertIsNotNone(SubmissionService)
+
+        from synapse_mcp.services import SchemaOrganizationService
+        self.assertIsNotNone(SchemaOrganizationService)
+
+        from synapse_mcp.services import UtilityService
+        self.assertIsNotNone(UtilityService)
+
+        from synapse_mcp.services import FormService
+        self.assertIsNotNone(FormService)
+
     def test_entry_point(self):
         """Test that the entry point is available."""
         from synapse_mcp.__main__ import main
