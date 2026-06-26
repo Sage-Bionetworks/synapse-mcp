@@ -47,7 +47,6 @@ def clear_env(monkeypatch):
     monkeypatch.delenv("SYNAPSE_PAT", raising=False)
 
 
-@pytest.mark.anyio
 async def test_get_synapse_client_creates_connection_scoped_clients(monkeypatch):
     ctx1 = DummyContext()
     ctx2 = DummyContext()
@@ -67,7 +66,6 @@ async def test_get_synapse_client_creates_connection_scoped_clients(monkeypatch)
     assert (await get_user_auth_info(ctx2))["user_id"] == "user2"
 
 
-@pytest.mark.anyio
 async def test_get_synapse_client_uses_cached_client(monkeypatch):
     ctx = DummyContext()
     created = []
@@ -89,7 +87,6 @@ async def test_get_synapse_client_uses_cached_client(monkeypatch):
     assert len(created) == 1
 
 
-@pytest.mark.anyio
 async def test_get_synapse_client_requires_credentials(monkeypatch):
     ctx = DummyContext()
 
@@ -99,24 +96,28 @@ async def test_get_synapse_client_requires_credentials(monkeypatch):
         await connection_auth.get_synapse_client(ctx)
 
 
-@pytest.mark.anyio
-async def test_get_entity_operations_are_per_connection(monkeypatch):
+async def test_given_two_connections_when_service_called_then_each_gets_own_client(
+    monkeypatch,
+):
+    """Verify that the service layer yields connection-scoped clients."""
     ctx1 = DummyContext()
     ctx2 = DummyContext()
+    await ctx1.set_state("synapse_pat_token", "fake-pat")
+    await ctx2.set_state("synapse_pat_token", "fake-pat")
 
     client1 = _make_client("user1")
     client2 = _make_client("user2")
+    clients = [client1, client2]
+    monkeypatch.setattr(
+        connection_auth.synapseclient,
+        "Synapse",
+        lambda *args, **kwargs: clients.pop(0),
+    )
 
-    import synapse_mcp.context_helpers as context_helpers
+    from synapse_mcp.services.tool_service import synapse_client
 
-    async def fake_get_synapse_client(ctx):
-        return client1 if ctx is ctx1 else client2
-
-    monkeypatch.setattr(context_helpers, "get_synapse_client", fake_get_synapse_client)
-
-    ops1 = await synapse_mcp.get_entity_operations(ctx1)
-    ops2 = await synapse_mcp.get_entity_operations(ctx2)
-
-    assert ops1 is not ops2
-    assert ops1["base"].synapse_client is client1
-    assert ops2["base"].synapse_client is client2
+    async with synapse_client(ctx1) as c1:
+        async with synapse_client(ctx2) as c2:
+            assert c1 is not c2
+            assert c1._user == "user1"
+            assert c2._user == "user2"
