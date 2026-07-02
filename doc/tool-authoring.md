@@ -165,7 +165,7 @@ should set `openWorldHint=False`), pass an `annotations=` dict to
 ```python
 from .app import mcp
 from .services import service_tool
-from .services import EntityService
+from .services import ActivityService
 from .utils import validate_synapse_id
 
 
@@ -201,7 +201,9 @@ async def get_entity_provenance(
     """Return activity metadata for a Synapse entity."""
     if not validate_synapse_id(entity_id):
         return {"error": f"Invalid Synapse ID: {entity_id}"}
-    return await ActivityService().get_provenance(ctx, entity_id, version)
+    return await ActivityService.get_provenance(
+        ctx, entity_id=entity_id, version=version
+    )
 ```
 
 What this gives you:
