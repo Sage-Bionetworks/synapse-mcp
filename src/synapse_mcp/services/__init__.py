@@ -10,10 +10,13 @@ from .search_service import SearchService
 from .submission_service import SubmissionService
 from .team_service import TeamService
 from .tool_service import (
+    Operation,
+    ServiceName,
     collect_generator,
     dataclass_to_dict,
     error_boundary,
     serialize_model,
+    service_tool,
     synapse_client,
 )
 from .user_service import UserService
@@ -26,8 +29,10 @@ __all__ = [
     "EntityService",
     "EvaluationService",
     "FormService",
+    "Operation",
     "SchemaOrganizationService",
     "SearchService",
+    "ServiceName",
     "SubmissionService",
     "TeamService",
     "UserService",
@@ -37,5 +42,6 @@ __all__ = [
     "dataclass_to_dict",
     "error_boundary",
     "serialize_model",
+    "service_tool",
     "synapse_client",
 ]

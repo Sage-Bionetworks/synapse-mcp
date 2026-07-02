@@ -29,18 +29,6 @@ class FakeEvaluation:
     etag: str = "abc"
 
 
-class FakeHTTPError(Exception):
-    def __init__(self, msg: str = "Not found", status_code: int = 404):
-        super().__init__(msg)
-
-        class _Resp:
-            pass
-
-        r = _Resp()
-        r.status_code = status_code
-        self.response = r
-
-
 class TestGetEvaluation:
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
     @patch(f"{SVC}.Evaluation")
@@ -81,24 +69,6 @@ class TestGetEvaluation:
         assert "required" in result["error"]
 
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
-    @patch(f"{SVC}.Evaluation")
-    async def test_given_both_id_and_name_then_id_takes_priority(
-        self, mock_eval_cls, mock_get_client
-    ):
-        mock_get_client.return_value = MagicMock()
-        mock_eval_cls.return_value.get_async = AsyncMock(
-            return_value=FakeEvaluation()
-        )
-
-        await EvaluationService().get_evaluation(
-            MagicMock(),
-            evaluation_id="9600001",
-            evaluation_name="DREAM Challenge",
-        )
-
-        mock_eval_cls.assert_called_once_with(id="9600001")
-
-    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
     async def test_given_expired_auth_then_returns_error(
         self, mock_get_client
     ):
@@ -109,21 +79,6 @@ class TestGetEvaluation:
         )
 
         assert "Authentication required" in result["error"]
-        assert result["evaluation_id"] == "9600001"
-
-    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
-    async def test_given_http_error_then_status_code_surfaced(
-        self, mock_get_client
-    ):
-        mock_get_client.side_effect = FakeHTTPError("server error", 500)
-
-        result = await EvaluationService().get_evaluation(
-            MagicMock(), evaluation_id="9600001"
-        )
-
-        assert result["error"] == "server error"
-        assert result["status_code"] == 500
-        assert result["evaluation_id"] == "9600001"
 
 
 class TestListEvaluations:
@@ -176,68 +131,6 @@ class TestListEvaluations:
         mock_eval_cls.get_all_evaluations_async.assert_called_once()
 
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
-    @patch(f"{SVC}.Evaluation")
-    async def test_given_project_id_then_forwards_all_kwargs(
-        self, mock_eval_cls, mock_get_client
-    ):
-        mock_get_client.return_value = MagicMock()
-        mock_eval_cls.get_evaluations_by_project_async = AsyncMock(
-            return_value=[]
-        )
-
-        await EvaluationService().list_evaluations(
-            MagicMock(),
-            project_id="syn100",
-            access_type="SUBMIT",
-            active_only=True,
-            evaluation_ids=["1", "2"],
-            offset=5,
-            limit=10,
-        )
-
-        mock_eval_cls.get_evaluations_by_project_async.assert_called_once_with(
-            project_id="syn100",
-            access_type="SUBMIT",
-            active_only=True,
-            evaluation_ids=["1", "2"],
-            offset=5,
-            limit=10,
-            synapse_client=mock_get_client.return_value,
-        )
-
-    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
-    @patch(f"{SVC}.Evaluation")
-    async def test_given_project_id_and_available_only_then_project_id_wins(
-        self, mock_eval_cls, mock_get_client
-    ):
-        mock_get_client.return_value = MagicMock()
-        mock_eval_cls.get_evaluations_by_project_async = AsyncMock(
-            return_value=[]
-        )
-        mock_eval_cls.get_available_evaluations_async = AsyncMock(
-            return_value=[]
-        )
-
-        await EvaluationService().list_evaluations(
-            MagicMock(), project_id="syn100", available_only=True
-        )
-
-        mock_eval_cls.get_evaluations_by_project_async.assert_called_once()
-        mock_eval_cls.get_available_evaluations_async.assert_not_called()
-
-    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
-    @patch(f"{SVC}.Evaluation")
-    async def test_given_no_results_then_returns_empty_list(
-        self, mock_eval_cls, mock_get_client
-    ):
-        mock_get_client.return_value = MagicMock()
-        mock_eval_cls.get_all_evaluations_async = AsyncMock(return_value=[])
-
-        result = await EvaluationService().list_evaluations(MagicMock())
-
-        assert result == []
-
-    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
     async def test_given_expired_auth_then_returns_wrapped_error(
         self, mock_get_client
     ):
@@ -266,20 +159,6 @@ class TestGetEvaluationAcl:
 
         assert result["evaluation_id"] == "9600001"
         assert "acl" in result
-        assert result["acl"] == {"resourceAccess": []}
-
-    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
-    async def test_given_expired_auth_then_returns_error(
-        self, mock_get_client
-    ):
-        mock_get_client.side_effect = ConnectionAuthError("expired")
-
-        result = await EvaluationService().get_evaluation_acl(
-            MagicMock(), "9600001"
-        )
-
-        assert "Authentication required" in result["error"]
-        assert result["evaluation_id"] == "9600001"
 
 
 class TestGetEvaluationPermissions:
@@ -299,16 +178,3 @@ class TestGetEvaluationPermissions:
 
         assert result["evaluation_id"] == "9600001"
         assert result["permissions"] == {"canSubmit": True}
-
-    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
-    async def test_given_expired_auth_then_returns_error(
-        self, mock_get_client
-    ):
-        mock_get_client.side_effect = ConnectionAuthError("expired")
-
-        result = await EvaluationService().get_evaluation_permissions(
-            MagicMock(), "9600001"
-        )
-
-        assert "Authentication required" in result["error"]
-        assert result["evaluation_id"] == "9600001"

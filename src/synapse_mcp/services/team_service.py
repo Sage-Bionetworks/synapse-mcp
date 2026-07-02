@@ -103,6 +103,8 @@ class TeamService:
                 offset=offset,
                 synapse_client=client,
             ):
+                if len(results) >= limit:
+                    break
                 # Mirror the response shape produced by
                 # ``Team.members_async``: REST dicts go through
                 # ``TeamMember.fill_from_dict`` and then the standard
@@ -113,8 +115,6 @@ class TeamService:
                     synapse_team_member=raw,
                 )
                 results.append(serialize_model(member))
-                if len(results) >= limit:
-                    break
             return results
 
     @staticmethod
@@ -158,13 +158,13 @@ class TeamService:
                 offset=offset,
                 synapse_client=client,
             ):
-                results.append(serialize_model(invitation))
                 if len(results) >= limit:
                     break
+                results.append(serialize_model(invitation))
             return results
 
     @staticmethod
-    @error_boundary(error_context_keys=("team_id", "user_id"))
+    @error_boundary(error_context_keys=("team_id",))
     async def get_team_membership_status(
         ctx: Context,
         team_id: int,
