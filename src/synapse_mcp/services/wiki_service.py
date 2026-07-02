@@ -111,7 +111,7 @@ class WikiService:
 
     @staticmethod
     @error_boundary(
-        error_context_keys=("owner_id",),
+        error_context_keys=("owner_id", "wiki_id"),
         wrap_errors=True,
     )
     async def get_wiki_history(
