@@ -30,7 +30,7 @@ Every tool is declared via `@service_tool` (from `synapse_mcp.services`), never 
 - Synonyms live in `synonyms=(...)`; siblings live in `siblings=(...)`. Never embed them in prose — because the `Related terms:` / `Distinct from:` lines the decorator renders keep the primary description scannable for humans while still feeding the BM25 index.
 - Tool function bodies stay thin: validate ID with `validate_synapse_id(...)`, delegate to a service-class method, return — because business logic lives in `services/` under `@error_boundary`. Any logic that escapes the tool wrapper becomes a 500 to the LLM.
 - ID-accepting parameters must include a concrete example in the description: `syn123456` for entity IDs, numeric strings for team/evaluation/submission/user IDs, URI form for JSON schema `$id` — because LLMs infer argument shape from example values, not just parameter names.
-- Tool functions take business args first, `ctx: Context` last. Service methods take `ctx: Context` second (after `self`). Don't swap.
+- Tool functions put `ctx: Context` last, EXCEPT when every business arg is optional (defaulted): then `ctx` comes first, because Python forbids a non-default arg after a defaulted one (e.g. `get_entity_provenance(ctx, entity_id=None, ...)`). Service methods take `ctx: Context` first, then business args — no `self`, since services are `@staticmethod`. Don't swap the service/tool convention.
 
 ## BM25 discovery transform
 
