@@ -329,10 +329,8 @@ def _tags_for(service: ServiceName, operation: Operation) -> frozenset:
         tags.add("readonly")
     if operation in ("write", "destructive"):
         tags.add("mutation")
-    if operation == "destructive":
-        tags.add("destructive")
-    if operation == "admin":
-        tags.add("admin")
+    if operation in ("destructive", "admin"):
+        tags.add(operation)
     return frozenset(tags)
 
 

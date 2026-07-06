@@ -90,6 +90,31 @@ class TestGetWikiPage:
         mock_wp_cls.assert_called_once_with(owner_id="syn123", id="222")
 
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.WikiPage")
+    @patch(f"{SVC}.WikiHeader")
+    async def test_given_no_root_header_when_fetched_without_id_then_returns_error(
+        self, mock_wh_cls, mock_wp_cls, mock_get_client
+    ):
+        # GIVEN a wiki tree with no root page (every header has a parent)
+        mock_get_client.return_value = MagicMock()
+
+        async def _wiki_headers(**kw):
+            yield FakeWikiHeader(id="222", title="Methods", parent_id="111")
+            yield FakeWikiHeader(id="333", title="Results", parent_id="111")
+
+        mock_wh_cls.get_async = _wiki_headers
+
+        # WHEN we get the wiki page without wiki_id
+        result = await WikiService().get_wiki_page(MagicMock(), "syn123")
+
+        # THEN a no-root error is returned and no page fetch is attempted
+        assert result == {
+            "error": "No root wiki page found for syn123",
+            "owner_id": "syn123",
+        }
+        mock_wp_cls.assert_not_called()
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
     async def test_given_expired_auth_when_fetching_then_returns_error(
         self, mock_get_client
     ):
@@ -245,3 +270,18 @@ class TestGetWikiOrderHint:
 
         assert "Authentication required" in result["error"]
         assert result["owner_id"] == "syn123"
+
+
+class TestGetWikiOrderHintToolLayer:
+    @patch("synapse_mcp.tools.WikiService.get_wiki_order_hint", new_callable=AsyncMock)
+    async def test_given_invalid_owner_id_when_called_then_rejected_before_service(
+        self, mock_service
+    ):
+        from synapse_mcp.tools import get_wiki_order_hint
+
+        # WHEN the tool is called with an invalid Synapse ID
+        result = await get_wiki_order_hint("not-a-syn-id", MagicMock())
+
+        # THEN it returns a validation error without invoking the service
+        assert result == {"error": "Invalid Synapse ID: not-a-syn-id"}
+        mock_service.assert_not_called()

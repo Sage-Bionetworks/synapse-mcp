@@ -22,9 +22,9 @@ from typing import List, Tuple
 
 import pytest
 
-# Importing synapse_mcp triggers @service_tool registration; by the time
-# the list below is evaluated every tool is live on the server singleton.
-import synapse_mcp  # noqa: F401
+# Importing from synapse_mcp executes the package __init__, which imports
+# .tools and triggers @service_tool registration; by the time the list
+# below is evaluated every tool is live on the server singleton.
 from synapse_mcp import mcp
 
 # FastMCP's BM25 internals live behind underscore-prefixed names, so
