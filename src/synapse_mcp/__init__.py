@@ -10,7 +10,7 @@ from .context_helpers import (
 from .resources import synapse_blog_feed
 from .tools import (
     check_synapse_id,
-    find_entity_id,
+    check_user_certified,
     get_curation_task,
     get_curation_task_resources,
     get_entity,
@@ -43,7 +43,6 @@ from .tools import (
     get_wiki_history,
     get_wiki_order_hint,
     get_wiki_page,
-    is_user_certified,
     list_curation_tasks,
     list_entity_acl,
     list_evaluation_submission_bundles,
@@ -55,15 +54,16 @@ from .tools import (
     list_my_submission_bundles,
     list_my_submissions,
     list_submission_statuses,
-    md5_query,
+    search_entities_by_md5,
+    search_entity_by_name,
     search_synapse,
 )
 
 __all__ = [
     "auth",
     "check_synapse_id",
+    "check_user_certified",
     "ConnectionAuthError",
-    "find_entity_id",
     "first_successful_result",
     "get_curation_task",
     "get_curation_task_resources",
@@ -100,7 +100,6 @@ __all__ = [
     "get_wiki_order_hint",
     "get_wiki_page",
     "health_check",
-    "is_user_certified",
     "list_curation_tasks",
     "list_entity_acl",
     "list_evaluation_submission_bundles",
@@ -113,8 +112,9 @@ __all__ = [
     "list_my_submissions",
     "list_submission_statuses",
     "mcp",
-    "md5_query",
     "require_request_context",
+    "search_entities_by_md5",
+    "search_entity_by_name",
     "search_synapse",
     "synapse_blog_feed",
 ]

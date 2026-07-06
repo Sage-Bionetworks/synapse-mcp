@@ -1844,7 +1844,7 @@ requires-dist = [
     { name = "cryptography", specifier = ">=48.0.1,<50" },
     { name = "fastmcp", specifier = "==3.2.3" },
     { name = "idna", specifier = ">=3.15,<4" },
-    { name = "pandas", specifier = "==1.5.0" },
+    { name = "pandas", specifier = ">=1.5.0" },
     { name = "protobuf", specifier = ">=5.29.6,<7" },
     { name = "pygments", specifier = ">=2.20.0,<3" },
     { name = "pyjwt", specifier = ">=2.13.0,<3" },

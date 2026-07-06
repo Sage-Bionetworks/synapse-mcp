@@ -1,6 +1,6 @@
 """Service layer for Submission operations."""
 
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastmcp import Context
 from synapseclient.api.api_client import rest_get_paginated_async
@@ -39,33 +39,6 @@ def _submission_uri(
     return uri
 
 
-def _validate_pagination(limit: int, offset: int) -> None:
-    """Raise ValueError if limit or offset are negative."""
-    if limit < 0 or offset < 0:
-        raise ValueError("limit and offset must be >= 0")
-
-
-async def _collect_page(
-    client: Any,
-    uri: str,
-    limit: int,
-    offset: int,
-    fill_fn: Callable[[Dict[str, Any]], Any],
-) -> List[Dict[str, Any]]:
-    """Page through rest_get_paginated_async and deserialize results."""
-    results: List[Dict[str, Any]] = []
-    async for raw in rest_get_paginated_async(
-        uri=uri,
-        limit=limit,
-        offset=offset,
-        synapse_client=client,
-    ):
-        results.append(serialize_model(fill_fn(raw)))
-        if len(results) >= limit:
-            break
-    return results
-
-
 class SubmissionService:
     """Orchestrates submission read operations."""
 
@@ -102,7 +75,8 @@ class SubmissionService:
         so the response matches the high-level
         ``Submission.get_evaluation_submissions_async`` shape.
         """
-        _validate_pagination(limit, offset)
+        if limit < 0 or offset < 0:
+            raise ValueError("limit and offset must be >= 0")
         if limit == 0:
             return []
         uri = _submission_uri(
@@ -112,15 +86,20 @@ class SubmissionService:
             status=status,
         )
         async with synapse_client(ctx) as client:
-            return await _collect_page(
-                client,
-                uri,
-                limit,
-                offset,
-                lambda raw: Submission().fill_from_dict(
-                    synapse_submission=raw
-                ),
-            )
+            results: List[Dict[str, Any]] = []
+            async for raw in rest_get_paginated_async(
+                uri=uri,
+                limit=limit,
+                offset=offset,
+                synapse_client=client,
+            ):
+                if len(results) >= limit:
+                    break
+                sub = Submission().fill_from_dict(
+                    synapse_submission=raw,
+                )
+                results.append(serialize_model(sub))
+            return results
 
     @staticmethod
     @error_boundary(
@@ -134,22 +113,28 @@ class SubmissionService:
         limit: int = 50,
     ) -> List[Dict[str, Any]]:
         """List the caller's own submissions to an Evaluation."""
-        _validate_pagination(limit, offset)
+        if limit < 0 or offset < 0:
+            raise ValueError("limit and offset must be >= 0")
         if limit == 0:
             return []
         uri = _submission_uri(
             evaluation_id, user_scoped=True, bundles=False
         )
         async with synapse_client(ctx) as client:
-            return await _collect_page(
-                client,
-                uri,
-                limit,
-                offset,
-                lambda raw: Submission().fill_from_dict(
-                    synapse_submission=raw
-                ),
-            )
+            results: List[Dict[str, Any]] = []
+            async for raw in rest_get_paginated_async(
+                uri=uri,
+                limit=limit,
+                offset=offset,
+                synapse_client=client,
+            ):
+                if len(results) >= limit:
+                    break
+                sub = Submission().fill_from_dict(
+                    synapse_submission=raw,
+                )
+                results.append(serialize_model(sub))
+            return results
 
     @staticmethod
     @error_boundary(error_context_keys=("evaluation_id",))
@@ -222,7 +207,8 @@ class SubmissionService:
         limit: int = 50,
     ) -> List[Dict[str, Any]]:
         """List submission+status bundles for an Evaluation."""
-        _validate_pagination(limit, offset)
+        if limit < 0 or offset < 0:
+            raise ValueError("limit and offset must be >= 0")
         if limit == 0:
             return []
         uri = _submission_uri(
@@ -232,15 +218,20 @@ class SubmissionService:
             status=status,
         )
         async with synapse_client(ctx) as client:
-            return await _collect_page(
-                client,
-                uri,
-                limit,
-                offset,
-                lambda raw: SubmissionBundle().fill_from_dict(
-                    synapse_submission_bundle=raw
-                ),
-            )
+            results: List[Dict[str, Any]] = []
+            async for raw in rest_get_paginated_async(
+                uri=uri,
+                limit=limit,
+                offset=offset,
+                synapse_client=client,
+            ):
+                if len(results) >= limit:
+                    break
+                bundle = SubmissionBundle().fill_from_dict(
+                    synapse_submission_bundle=raw,
+                )
+                results.append(serialize_model(bundle))
+            return results
 
     @staticmethod
     @error_boundary(
@@ -254,19 +245,25 @@ class SubmissionService:
         limit: int = 50,
     ) -> List[Dict[str, Any]]:
         """List the caller's submission bundles for an Evaluation."""
-        _validate_pagination(limit, offset)
+        if limit < 0 or offset < 0:
+            raise ValueError("limit and offset must be >= 0")
         if limit == 0:
             return []
         uri = _submission_uri(
             evaluation_id, user_scoped=True, bundles=True
         )
         async with synapse_client(ctx) as client:
-            return await _collect_page(
-                client,
-                uri,
-                limit,
-                offset,
-                lambda raw: SubmissionBundle().fill_from_dict(
-                    synapse_submission_bundle=raw
-                ),
-            )
+            results: List[Dict[str, Any]] = []
+            async for raw in rest_get_paginated_async(
+                uri=uri,
+                limit=limit,
+                offset=offset,
+                synapse_client=client,
+            ):
+                if len(results) >= limit:
+                    break
+                bundle = SubmissionBundle().fill_from_dict(
+                    synapse_submission_bundle=raw,
+                )
+                results.append(serialize_model(bundle))
+            return results

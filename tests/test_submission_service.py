@@ -63,30 +63,6 @@ class TestGetSubmission:
         assert result["id"] == "777"
 
 
-class TestValidatePagination:
-    async def test_given_negative_limit_then_returns_error(self):
-        result = await SubmissionService.list_evaluation_submissions(
-            MagicMock(), "9600001", limit=-1
-        )
-        assert isinstance(result, list)
-        assert result[0]["error"] == "limit and offset must be >= 0"
-        assert result[0]["error_type"] == "ValueError"
-
-    async def test_given_negative_offset_then_returns_error(self):
-        result = await SubmissionService.list_evaluation_submissions(
-            MagicMock(), "9600001", offset=-1
-        )
-        assert isinstance(result, list)
-        assert result[0]["error"] == "limit and offset must be >= 0"
-        assert result[0]["error_type"] == "ValueError"
-
-    async def test_given_zero_limit_then_returns_empty(self):
-        result = await SubmissionService.list_evaluation_submissions(
-            MagicMock(), "9600001", limit=0
-        )
-        assert result == []
-
-
 class TestListEvaluationSubmissions:
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
     @patch(f"{SVC}.rest_get_paginated_async")
@@ -150,47 +126,6 @@ class TestListEvaluationSubmissions:
         mock_get_client.side_effect = ConnectionAuthError("expired")
 
         result = await SubmissionService.list_evaluation_submissions(
-            MagicMock(), "9600001"
-        )
-
-        assert isinstance(result, list)
-        assert "Authentication required" in result[0]["error"]
-
-
-class TestListMySubmissions:
-    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
-    @patch(f"{SVC}.rest_get_paginated_async")
-    async def test_given_queue_then_paginates_with_limit_offset(
-        self, mock_paginate, mock_get_client
-    ):
-        mock_get_client.return_value = MagicMock()
-        captured = {}
-
-        async def _fake(uri, *, limit, offset, synapse_client):
-            captured["uri"] = uri
-            captured["limit"] = limit
-            captured["offset"] = offset
-            for sid in ("1", "2"):
-                yield {"id": sid, "evaluationId": "9600001"}
-
-        mock_paginate.side_effect = _fake
-
-        result = await SubmissionService.list_my_submissions(
-            MagicMock(), "9600001", offset=5, limit=2
-        )
-
-        assert captured["uri"] == "/evaluation/9600001/submission"
-        assert captured["limit"] == 2
-        assert captured["offset"] == 5
-        assert [s["id"] for s in result] == ["1", "2"]
-
-    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
-    async def test_given_expired_auth_then_returns_wrapped_error(
-        self, mock_get_client
-    ):
-        mock_get_client.side_effect = ConnectionAuthError("expired")
-
-        result = await SubmissionService.list_my_submissions(
             MagicMock(), "9600001"
         )
 
@@ -326,3 +261,66 @@ class TestListMySubmissionBundles:
         assert captured["uri"] == "/evaluation/9600001/submission/bundle"
         assert len(result) == 1
         assert result[0]["submission"]["id"] == "777"
+
+
+class TestListMySubmissions:
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.rest_get_paginated_async")
+    async def test_given_queue_then_paginates_user_scoped_endpoint(
+        self, mock_paginate, mock_get_client
+    ):
+        # GIVEN the caller's own-submission endpoint yields two raw dicts.
+        mock_get_client.return_value = MagicMock()
+        captured = {}
+
+        async def _fake(uri, *, limit, offset, synapse_client):
+            captured["uri"] = uri
+            captured["limit"] = limit
+            captured["offset"] = offset
+            for sid in ("1", "2"):
+                yield {"id": sid, "evaluationId": "9600001"}
+
+        mock_paginate.side_effect = _fake
+
+        # WHEN we list our own submissions with an offset.
+        result = await SubmissionService.list_my_submissions(
+            MagicMock(), "9600001", offset=10, limit=2
+        )
+
+        # THEN limit/offset reach the wire against the user-scoped URI
+        # (no /all suffix) and dicts come back typed.
+        assert captured["uri"] == "/evaluation/9600001/submission"
+        assert captured["limit"] == 2
+        assert captured["offset"] == 10
+        assert [s["id"] for s in result] == ["1", "2"]
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.rest_get_paginated_async")
+    async def test_given_zero_limit_then_returns_empty_without_client(
+        self, mock_paginate, mock_get_client
+    ):
+        # WHEN limit is 0 the method short-circuits before any REST call.
+        result = await SubmissionService.list_my_submissions(
+            MagicMock(), "9600001", limit=0
+        )
+
+        assert result == []
+        mock_paginate.assert_not_called()
+        mock_get_client.assert_not_called()
+
+    async def test_given_negative_limit_then_returns_wrapped_error(self):
+        result = await SubmissionService.list_my_submissions(
+            MagicMock(), "9600001", limit=-1
+        )
+
+        assert isinstance(result, list)
+        assert "limit and offset must be >= 0" in result[0]["error"]
+        assert result[0]["evaluation_id"] == "9600001"
+
+    async def test_given_negative_offset_then_returns_wrapped_error(self):
+        result = await SubmissionService.list_my_submissions(
+            MagicMock(), "9600001", offset=-5
+        )
+
+        assert isinstance(result, list)
+        assert "limit and offset must be >= 0" in result[0]["error"]
