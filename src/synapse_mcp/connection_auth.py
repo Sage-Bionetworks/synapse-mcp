@@ -138,7 +138,7 @@ async def get_synapse_client(ctx: Context) -> synapseclient.Synapse:
             "Authentication for connection needed (or re-authentication for expired sessions).")
 
     # Store client in connection context (not JSON-serializable)
-    await _set_state(ctx, SYNAPSE_CLIENT_KEY, client, serializable=False)
+    # Store client in request-scoped context (not JSON-serializable)
     await _set_state(ctx, AUTH_INITIALIZED_KEY, True, serializable=False)
 
     logger.info(
