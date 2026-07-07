@@ -3,7 +3,7 @@ repos:
     hooks:
       - id: sync-readme-tools
         name: Sync README tool table
-        entry: python scripts/gen_tool_table.py --write
+        entry: python3 scripts/gen_tool_table.py --write
         language: system
         files: ^(src/synapse_mcp/tools\.py|scripts/gen_tool_table\.py|README\.md)$
         pass_filenames: false

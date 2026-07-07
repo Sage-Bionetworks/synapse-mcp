@@ -169,8 +169,8 @@ def _render_block(table: str) -> str:
 def _replace_block(readme_text: str, new_block: str) -> str:
     """Return README text with the marked block replaced by new_block."""
     start = readme_text.find(BEGIN_MARKER)
-    end = readme_text.find(END_MARKER)
-    if start == -1 or end == -1 or end < start:
+    end = readme_text.find(END_MARKER, start) if start != -1 else -1
+    if start == -1 or end == -1:
         raise SystemExit(
             "Could not find the BEGIN/END GENERATED TOOLS markers in "
             f"{README_PATH}. Add them where the table should live."

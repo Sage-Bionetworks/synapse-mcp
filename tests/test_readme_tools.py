@@ -15,12 +15,18 @@ SCRIPT = REPO_ROOT / "scripts" / "gen_tool_table.py"
 
 
 def test_readme_tool_table_in_sync():
+    # Force PAT auth in the child: strip any OAuth vars the developer env may
+    # carry, otherwise app.py would select OAuth mode and change import
+    # side effects.
+    env = {**os.environ, "SYNAPSE_PAT": "dummy-for-tests"}
+    env.pop("SYNAPSE_OAUTH_CLIENT_ID", None)
+    env.pop("SYNAPSE_OAUTH_CLIENT_SECRET", None)
     result = subprocess.run(
         [sys.executable, str(SCRIPT), "--check"],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
-        env={**os.environ, "SYNAPSE_PAT": "dummy-for-tests"},
+        env=env,
     )
     assert result.returncode == 0, (
         "README.md tool table is out of sync with the tool catalog.\n"
