@@ -19,6 +19,17 @@ pip install --upgrade -e .
 
 If you have previously installed the package, it is important to use the `--upgrade` flag to ensure the console script is properly generated.
 
+### Pre-commit hooks
+
+Install the pre-commit hooks once after setup so the README tool table stays in sync with the code:
+
+```bash
+pip install pre-commit  # included in requirements-dev.txt
+pre-commit install
+```
+
+The `sync-readme-tools` hook regenerates the Available Tools table in `README.md` from the registered MCP tools whenever `src/synapse_mcp/tools.py`, the generator script, or `README.md` changes. If it rewrites the table during a commit, re-stage `README.md` and commit again. You can also run it manually: `uv run python scripts/gen_tool_table.py`.
+
 ## 2. Run the Server
 
 ### Environment Configuration
