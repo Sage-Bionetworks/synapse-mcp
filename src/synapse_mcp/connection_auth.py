@@ -91,7 +91,7 @@ async def _set_state(ctx: Context, key: str, value: Any, serializable: bool = Tr
                      type(ctx).__name__, key)
         return
     try:
-        await setter(key, value, serializable)
+        await setter(key, value, serializable=serializable)
     except (TypeError, AttributeError) as exc:
         logger.debug("Context %s rejected set_state for %s: %s",
                      type(ctx).__name__, key, exc)
@@ -139,7 +139,7 @@ async def get_synapse_client(ctx: Context) -> synapseclient.Synapse:
 
     # Store client in connection context (not JSON-serializable)
     await _set_state(ctx, SYNAPSE_CLIENT_KEY, client, serializable=False)
-    await _set_state(ctx, AUTH_INITIALIZED_KEY, True)
+    await _set_state(ctx, AUTH_INITIALIZED_KEY, True, serializable=False)
 
     logger.info(
         "Successfully created and authenticated synapseclient for connection")
@@ -208,7 +208,7 @@ async def _authenticate_with_oauth(client: synapseclient.Synapse, ctx: Context, 
             "method": "oauth",
             "user_id": profile.get("ownerId"),
             "username": profile.get("userName"),
-        })
+        }, serializable=False)
 
         logger.info(
             f"OAuth authentication successful for user: {profile.get('userName')}")
@@ -246,7 +246,7 @@ async def _authenticate_with_pat(client: synapseclient.Synapse, ctx: Context, to
             "user_id": profile.get("ownerId"),
             "username": profile.get("userName"),
             "scopes": ["full_access"]  # PATs have full access
-        })
+        }, serializable=False)
 
         logger.info(
             f"PAT authentication successful for user: {profile.get('userName')}")
