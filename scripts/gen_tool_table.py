@@ -15,8 +15,6 @@ Usage:
 ``--check`` exits non-zero if the table is stale, printing a unified diff.
 """
 
-from __future__ import annotations
-
 import argparse
 import asyncio
 import difflib
