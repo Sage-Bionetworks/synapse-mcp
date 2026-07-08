@@ -6,7 +6,7 @@ Uses synapseclient.operations and model classes (never
 legacy Synapse.get / getChildren / get_annotations).
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from fastmcp import Context
 from synapseclient.models import (
@@ -21,6 +21,7 @@ from synapseclient.models import (
     Link,
     MaterializedView,
     Project,
+    RecordSet,
     SubmissionView,
     Table,
     VirtualTable,
@@ -33,6 +34,14 @@ from synapseclient.operations.factory_operations import (
     LinkOptions,
 )
 
+from ..tool_types import (
+    UNSET,
+    ColumnSpec,
+    EntityAccessType,
+    EntityType,
+    ProvenanceSpec,
+    ViewScopeType,
+)
 from .tool_service import (
     error_boundary,
     serialize_model,
@@ -40,8 +49,8 @@ from .tool_service import (
 )
 
 # Entity types that can be created with metadata only (no file upload).
-# ``file`` is handled separately because it is the one type that requires an
-# external URL or an existing file handle to avoid a data upload.
+# ``file`` and ``recordset`` are handled separately: each requires an external
+# URL or an existing file handle to avoid a data upload.
 _CONTAINER_ENTITY_TYPES = {
     "project": Project,
     "folder": Folder,
@@ -450,14 +459,14 @@ class EntityService:
     @error_boundary(error_context_keys=("entity_type", "parent_id"))
     async def create_entity(
         ctx: Context,
-        entity_type: str,
+        entity_type: EntityType,
         name: str,
         parent_id: Optional[str] = None,
         description: Optional[str] = None,
-        annotations: Optional[Dict[str, Any]] = None,
-        columns: Optional[List[Dict[str, Any]]] = None,
+        annotations: Optional[Dict[str, List[Any]]] = None,
+        columns: Optional[List[ColumnSpec]] = None,
         defining_sql: Optional[str] = None,
-        view_type_mask: Optional[List[str]] = None,
+        view_type_mask: Optional[List[ViewScopeType]] = None,
         scope_ids: Optional[List[str]] = None,
         target_id: Optional[str] = None,
         target_version_number: Optional[int] = None,
@@ -467,22 +476,21 @@ class EntityService:
         """Create a new Synapse entity from metadata (no file upload).
 
         Dispatches on ``entity_type`` to the concrete model class and
-        stores it. File data is never uploaded: a ``file`` entity can only
-        be created from an ``external_url`` (external link) or an existing
-        ``data_file_handle_id`` — never from local file content.
+        stores it. File data is never uploaded: ``file`` and ``recordset``
+        entities can only be created from an ``external_url`` (external
+        link, file only) or an existing ``data_file_handle_id`` — never
+        from local file content.
 
         Arguments:
             ctx: The FastMCP request context.
-            entity_type: One of project, folder, file, link, dataset,
-                datasetcollection, entityview, table, materializedview,
-                virtualtable, submissionview, dockerrepository.
+            entity_type: The entity type to create.
             name: Entity name.
             parent_id: Parent container Synapse ID. Required for every
                 type except project.
             description: Optional entity description.
-            annotations: Optional annotation key/value pairs.
-            columns: Column definitions for table-like entities; each a
-                dict with at least ``name`` and ``column_type``.
+            annotations: Optional annotations; each key maps to a list of
+                values.
+            columns: Column definitions for table-like entities.
             defining_sql: SQL for materializedview / virtualtable.
             view_type_mask: Scope types for view/dataset entities
                 (e.g. ["file", "folder"]).
@@ -490,14 +498,14 @@ class EntityService:
             target_id: For link entities, the entity the link points at.
             target_version_number: Optional pinned version for a link.
             external_url: For file entities, the external URL to link to.
-            data_file_handle_id: For file entities, an existing file
-                handle ID to attach.
+            data_file_handle_id: For file/recordset entities, an existing
+                file handle ID to attach.
 
         Returns:
             Dict with the created entity's metadata (id, name, etc.).
         """
         etype = entity_type.strip().lower().replace("_", "")
-        model = await EntityService._build_new_entity(
+        model = EntityService._build_new_entity(
             etype=etype,
             name=name,
             parent_id=parent_id,
@@ -519,29 +527,31 @@ class EntityService:
             return serialize_model(stored)
 
     @staticmethod
-    async def _build_new_entity(
+    def _build_new_entity(
         *,
         etype: str,
         name: str,
         parent_id: Optional[str],
         description: Optional[str],
-        annotations: Optional[Dict[str, Any]],
-        columns: Optional[List[Dict[str, Any]]],
+        annotations: Optional[Dict[str, List[Any]]],
+        columns: Optional[List[ColumnSpec]],
         defining_sql: Optional[str],
-        view_type_mask: Optional[List[str]],
+        view_type_mask: Optional[List[ViewScopeType]],
         scope_ids: Optional[List[str]],
         target_id: Optional[str],
         target_version_number: Optional[int],
         external_url: Optional[str],
         data_file_handle_id: Optional[str],
-    ):
+    ) -> Union[
+        Project, Folder, File, Link, RecordSet, Dict[str, Any]
+    ]:
         """Construct (but do not store) a model for ``create_entity``.
 
         Returns the model instance, or an error dict if the inputs are
         invalid for the requested type. Kept separate so the validation
         stays readable and unit-testable without a live client.
         """
-        common = {"name": name}
+        common: Dict[str, Any] = {"name": name}
         if description is not None:
             common["description"] = description
         if annotations:
@@ -579,6 +589,25 @@ class EntityService:
                 **common,
             )
 
+        if etype == "recordset":
+            if not data_file_handle_id:
+                return {
+                    "error": (
+                        "A recordset can only be created through this "
+                        "server with an existing data_file_handle_id — "
+                        "uploading CSV content is not supported."
+                    )
+                }
+            if not parent_id:
+                return {
+                    "error": "parent_id is required to create a recordset",
+                }
+            return RecordSet(
+                parent_id=parent_id,
+                data_file_handle_id=data_file_handle_id,
+                **common,
+            )
+
         cls = _CONTAINER_ENTITY_TYPES.get(etype)
         if cls is None:
             return {
@@ -587,7 +616,7 @@ class EntityService:
                     "project, folder, file, link, dataset, "
                     "datasetcollection, entityview, table, "
                     "materializedview, virtualtable, submissionview, "
-                    "dockerrepository."
+                    "dockerrepository, recordset."
                 )
             }
         if cls is not Project and not parent_id:
@@ -613,7 +642,7 @@ class EntityService:
         return cls(**kwargs)
 
     @staticmethod
-    def _build_column(spec: Dict[str, Any]) -> Column:
+    def _build_column(spec: ColumnSpec) -> Column:
         """Build a Column from a plain dict spec."""
         col_type = spec.get("column_type")
         if isinstance(col_type, str):
@@ -627,7 +656,7 @@ class EntityService:
         )
 
     @staticmethod
-    def _resolve_view_mask(masks: List[str]) -> ViewTypeMask:
+    def _resolve_view_mask(masks: List[ViewScopeType]) -> ViewTypeMask:
         """OR together ViewTypeMask flags named by ``masks``."""
         resolved = None
         for m in masks:
@@ -640,52 +669,56 @@ class EntityService:
     async def update_entity(
         ctx: Context,
         entity_id: str,
-        name: Optional[str] = None,
-        parent_id: Optional[str] = None,
-        description: Optional[str] = None,
-        annotations: Optional[Dict[str, Any]] = None,
-        provenance: Optional[Dict[str, Any]] = None,
+        name: Optional[str] = UNSET,
+        parent_id: Optional[str] = UNSET,
+        description: Optional[str] = UNSET,
+        annotations: Optional[Dict[str, List[Any]]] = UNSET,
+        provenance: Optional[ProvenanceSpec] = UNSET,
     ) -> Dict[str, Any]:
         """Update a Synapse entity's metadata, annotations, or provenance.
 
         Resolves the entity to its concrete type, applies the provided
         fields, and stores. Annotations and provenance (Activity) are just
         attributes persisted on the entity's store — there is no separate
-        provenance write path. ``annotations`` fully replaces the
-        annotation set; pass ``{}`` to clear it. ``provenance`` accepts
-        ``name``, ``description``, ``used`` and ``executed`` lists (each
-        item either ``{"target_id", "target_version_number"}`` for a
-        Synapse entity or ``{"name", "url"}`` for an external URL).
+        provenance write path.
+
+        Each optional field is only touched when supplied. Passing an
+        explicit ``null`` clears that field: ``description=null`` blanks
+        the description and ``annotations=null`` (or ``{}``) removes all
+        annotations. Provenance cannot be cleared via this tool — delete
+        the entity's activity separately.
 
         Arguments:
             ctx: The FastMCP request context.
             entity_id: Synapse ID of the entity to update.
             name: New name (rename).
             parent_id: New parent container ID (move).
-            description: New description.
-            annotations: Full replacement annotation dict.
-            provenance: Provenance/activity spec (see above).
+            description: New description; null clears it.
+            annotations: Full replacement annotations (each key maps to a
+                list of values); null or {} clears all annotations.
+            provenance: Provenance/activity spec — ``name``, ``description``,
+                and ``used`` / ``executed`` lists of entity refs or URLs.
 
         Returns:
             Dict with the updated entity metadata.
         """
         async with synapse_client(ctx) as client:
             entity = await _resolve_entity(entity_id, client)
-            if name is not None:
+            if name is not UNSET:
                 entity.name = name
-            if parent_id is not None:
+            if parent_id is not UNSET:
                 entity.parent_id = parent_id
-            if description is not None:
+            if description is not UNSET:
                 entity.description = description
-            if annotations is not None:
-                entity.annotations = annotations
-            if provenance is not None:
+            if annotations is not UNSET:
+                entity.annotations = annotations or {}
+            if provenance is not UNSET and provenance is not None:
                 entity.activity = EntityService._build_activity(provenance)
             stored = await entity.store_async(synapse_client=client)
             return serialize_model(stored)
 
     @staticmethod
-    def _build_activity(spec: Dict[str, Any]) -> Activity:
+    def _build_activity(spec: ProvenanceSpec) -> Activity:
         """Build an Activity from a plain dict spec."""
 
         def _used(items: Optional[List[Dict[str, Any]]]):
@@ -742,7 +775,7 @@ class EntityService:
         ctx: Context,
         entity_id: str,
         principal_id: int,
-        access_type: List[str],
+        access_type: List[EntityAccessType],
     ) -> Dict[str, Any]:
         """Set the access an entity grants to one principal.
 
@@ -750,8 +783,8 @@ class EntityService:
             ctx: The FastMCP request context.
             entity_id: Synapse ID of the entity.
             principal_id: User or team ID to grant access to.
-            access_type: Permission strings (e.g. ["READ", "DOWNLOAD"]).
-                Pass an empty list to remove this principal's entry.
+            access_type: Permission strings. Pass an empty list to remove
+                this principal's entry.
 
         Returns:
             Dict with the updated ACL.
@@ -858,7 +891,7 @@ class EntityService:
     async def update_table_columns(
         ctx: Context,
         entity_id: str,
-        add_columns: Optional[List[Dict[str, Any]]] = None,
+        add_columns: Optional[List[ColumnSpec]] = None,
         delete_columns: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """Add or remove columns on a Synapse table (schema change only).

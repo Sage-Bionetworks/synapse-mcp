@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional
 from fastmcp import Context
 from synapseclient.models import Evaluation
 
+from ..tool_types import UNSET, EvaluationAccessType
 from .tool_service import error_boundary, serialize_model, synapse_client
 
 
@@ -200,11 +201,15 @@ class EvaluationService:
     async def update_evaluation(
         ctx: Context,
         evaluation_id: str,
-        name: Optional[str] = None,
-        description: Optional[str] = None,
-        submission_instructions_message: Optional[str] = None,
+        name: Optional[str] = UNSET,
+        description: Optional[str] = UNSET,
+        submission_instructions_message: Optional[str] = UNSET,
     ) -> Dict[str, Any]:
         """Update an existing Evaluation queue's metadata.
+
+        Each field is only touched when supplied. Note the Synapse API
+        requires name, description, and submitter instructions on an
+        evaluation, so clearing one to null is rejected server-side.
 
         Arguments:
             ctx: The FastMCP request context.
@@ -220,11 +225,11 @@ class EvaluationService:
             ev = await Evaluation(id=evaluation_id).get_async(
                 synapse_client=client,
             )
-            if name is not None:
+            if name is not UNSET:
                 ev.name = name
-            if description is not None:
+            if description is not UNSET:
                 ev.description = description
-            if submission_instructions_message is not None:
+            if submission_instructions_message is not UNSET:
                 ev.submission_instructions_message = (
                     submission_instructions_message
                 )
@@ -257,7 +262,7 @@ class EvaluationService:
         ctx: Context,
         evaluation_id: str,
         principal_id: int,
-        access_type: List[str],
+        access_type: List[EvaluationAccessType],
     ) -> Dict[str, Any]:
         """Grant or update a principal's access on an Evaluation queue.
 

@@ -478,6 +478,40 @@ class TestCreateEntity:
         assert "Unsupported entity_type" in result["error"]
         mock_get_client.assert_not_called()
 
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    async def test_given_recordset_without_handle_then_returns_error(
+        self, mock_get_client
+    ):
+        # A record set cannot be created from local CSV content — only an
+        # existing data_file_handle_id is supported.
+        result = await EntityService.create_entity(
+            MagicMock(), "recordset", "rs", parent_id="syn1"
+        )
+
+        assert "not supported" in result["error"]
+        mock_get_client.assert_not_called()
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.RecordSet")
+    async def test_given_recordset_with_handle_then_creates(
+        self, mock_recordset_cls, mock_get_client
+    ):
+        mock_get_client.return_value = MagicMock()
+        mock_recordset_cls.return_value.store_async = AsyncMock(
+            return_value=FakeEntity(id="syn11", name="rs")
+        )
+
+        result = await EntityService.create_entity(
+            MagicMock(),
+            "recordset",
+            "rs",
+            parent_id="syn1",
+            data_file_handle_id="123",
+        )
+
+        assert result["id"] == "syn11"
+        mock_recordset_cls.return_value.store_async.assert_called_once()
+
 
 class TestUpdateEntity:
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
@@ -527,6 +561,46 @@ class TestUpdateEntity:
         # activity is set from the provenance spec before storing
         assert entity.activity is not None
         assert entity.activity.name == "run1"
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.operations_get_async", new_callable=AsyncMock)
+    async def test_given_omitted_fields_then_left_unchanged(
+        self, mock_ops_get, mock_get_client
+    ):
+        # Fields not supplied keep the UNSET sentinel and are never touched.
+        mock_get_client.return_value = MagicMock()
+        entity = MagicMock()
+        entity.name = "original"
+        entity.description = "original desc"
+        entity.store_async = AsyncMock(return_value=FakeEntity())
+        mock_ops_get.return_value = entity
+
+        await EntityService.update_entity(MagicMock(), "syn1", name="renamed")
+
+        assert entity.name == "renamed"
+        # description was omitted → untouched
+        assert entity.description == "original desc"
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.operations_get_async", new_callable=AsyncMock)
+    async def test_given_explicit_none_then_clears_field(
+        self, mock_ops_get, mock_get_client
+    ):
+        # An explicit null clears the field (distinct from omitting it):
+        # description → None, annotations → {}.
+        mock_get_client.return_value = MagicMock()
+        entity = MagicMock()
+        entity.description = "some desc"
+        entity.annotations = {"k": ["v"]}
+        entity.store_async = AsyncMock(return_value=FakeEntity())
+        mock_ops_get.return_value = entity
+
+        await EntityService.update_entity(
+            MagicMock(), "syn1", description=None, annotations=None
+        )
+
+        assert entity.description is None
+        assert entity.annotations == {}
 
 
 class TestDeleteEntity:

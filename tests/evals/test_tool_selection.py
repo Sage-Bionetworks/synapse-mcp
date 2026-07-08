@@ -126,6 +126,7 @@ QUERY_FIXTURES: List[Tuple[str, str]] = [
     # entity writes
     ("create a new folder inside syn100", "create_entity"),
     ("create a new synapse project entity called My Study", "create_entity"),
+    ("create a record set entity from file handle 123 in syn100", "create_entity"),
     ("rename syn123 to a better name", "update_entity"),
     ("set annotations on syn456", "update_entity"),
     ("move syn123 into folder syn200", "update_entity"),

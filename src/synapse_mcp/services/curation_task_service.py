@@ -15,6 +15,7 @@ from synapseclient.models import (
 )
 
 from ..managers.curation_task_manager import CurationTaskManager
+from ..tool_types import TaskProperties
 from .tool_service import dataclass_to_dict, error_boundary, synapse_client
 
 _TASK_PROPERTY_TYPE_LABELS: Dict[type, str] = {
@@ -23,7 +24,7 @@ _TASK_PROPERTY_TYPE_LABELS: Dict[type, str] = {
 }
 
 
-def _build_task_properties(spec: Dict[str, Any]):
+def _build_task_properties(spec: TaskProperties):
     """Build a task-properties model from a plain dict, or an error dict.
 
     Record-based tasks carry ``record_set_id``; file-based tasks carry
@@ -133,7 +134,7 @@ class CurationTaskService:
         ctx: Context,
         project_id: str,
         data_type: str,
-        task_properties: Dict[str, Any],
+        task_properties: TaskProperties,
         instructions: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Create a curation task on a Synapse project.

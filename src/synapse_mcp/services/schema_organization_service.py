@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 from fastmcp import Context
 from synapseclient.models import JSONSchema, SchemaOrganization
 
+from ..tool_types import OrganizationAccessType
 from .tool_service import (
     error_boundary,
     serialize_model,
@@ -275,7 +276,7 @@ class SchemaOrganizationService:
         ctx: Context,
         organization_name: str,
         principal_id: int,
-        access_type: List[str],
+        access_type: List[OrganizationAccessType],
     ) -> Dict[str, Any]:
         """Set a principal's access on an Organization.
 

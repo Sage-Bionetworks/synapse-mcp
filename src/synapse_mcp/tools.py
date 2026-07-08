@@ -9,9 +9,11 @@ end (after every ``@service_tool`` has run), so the transform has
 the full catalog to index.
 """
 
+import warnings
 from typing import Any, Dict, List, Optional
 
 from fastmcp import Context
+from pydantic.json_schema import PydanticJsonSchemaWarning
 
 from .app import mcp
 from .discovery import SplitCallTransform
@@ -30,7 +32,25 @@ from .services import (
     WikiService,
     service_tool,
 )
+from .tool_types import (
+    UNSET,
+    ColumnSpec,
+    EntityAccessType,
+    EntityType,
+    EvaluationAccessType,
+    OrganizationAccessType,
+    ProvenanceSpec,
+    SubmissionStatusValue,
+    TaskProperties,
+    ViewScopeType,
+)
 from .utils import validate_synapse_id
+
+# Update tools default optional fields to the UNSET sentinel so an omitted
+# argument (leave unchanged) is distinguishable from an explicit null (clear).
+# pydantic warns that this non-JSON default is dropped from the schema, which
+# is exactly what we want — silence that one cosmetic warning at import.
+warnings.filterwarnings("ignore", category=PydanticJsonSchemaWarning)
 
 
 # Reusable synonym sets so BM25 indexes user-language aliases for every
@@ -66,11 +86,6 @@ _ACL_SYNONYMS = ("permissions", "access control", "sharing", "who can access")
 _CREATE_SYNONYMS = ("create", "make", "new", "add")
 _UPDATE_SYNONYMS = ("update", "edit", "modify", "change", "set", "rename")
 _DELETE_SYNONYMS = ("delete", "remove", "destroy")
-
-
-# ---------------------------------------------------------------------------
-# Domain 1: Entity Core
-# ---------------------------------------------------------------------------
 
 
 @service_tool(
@@ -260,11 +275,6 @@ async def search_synapse(
     )
 
 
-# ---------------------------------------------------------------------------
-# Domain 2: Entity Access Control
-# ---------------------------------------------------------------------------
-
-
 @service_tool(
     mcp,
     service="entity",
@@ -358,11 +368,6 @@ async def list_entity_acl(
         include_container_content,
         target_entity_types,
     )
-
-
-# ---------------------------------------------------------------------------
-# Domain 3: Entity JSON Schema
-# ---------------------------------------------------------------------------
 
 
 @service_tool(
@@ -484,11 +489,6 @@ async def get_entity_schema_invalid_validations(
     )
 
 
-# ---------------------------------------------------------------------------
-# Domain 6: Link
-# ---------------------------------------------------------------------------
-
-
 @service_tool(
     mcp,
     service="entity",
@@ -517,11 +517,6 @@ async def get_link(
     return await EntityService.get_link(
         ctx, entity_id, follow_link
     )
-
-
-# ---------------------------------------------------------------------------
-# Domain 8: Wiki
-# ---------------------------------------------------------------------------
 
 
 @service_tool(
@@ -652,11 +647,6 @@ async def get_wiki_order_hint(
     if not validate_synapse_id(owner_id):
         return {"error": f"Invalid Synapse ID: {owner_id}"}
     return await WikiService.get_wiki_order_hint(ctx, owner_id)
-
-
-# ---------------------------------------------------------------------------
-# Domain 9: Team & User
-# ---------------------------------------------------------------------------
 
 
 @service_tool(
@@ -830,11 +820,6 @@ async def check_user_certified(
     return await UserService.is_user_certified(ctx, user_id)
 
 
-# ---------------------------------------------------------------------------
-# Domain 10: Evaluation (Challenge Queue)
-# ---------------------------------------------------------------------------
-
-
 @service_tool(
     mcp,
     service="evaluation",
@@ -970,11 +955,6 @@ async def get_evaluation_permissions(
     return await EvaluationService.get_evaluation_permissions(
         ctx, evaluation_id
     )
-
-
-# ---------------------------------------------------------------------------
-# Domain 11: Submission
-# ---------------------------------------------------------------------------
 
 
 @service_tool(
@@ -1236,11 +1216,6 @@ async def list_my_submission_bundles(
     )
 
 
-# ---------------------------------------------------------------------------
-# Domain 12: Curation Tasks
-# ---------------------------------------------------------------------------
-
-
 @service_tool(
     mcp,
     service="curation",
@@ -1317,11 +1292,6 @@ async def get_curation_task_resources(
     return await CurationTaskService.get_task_resources(
         ctx, task_id
     )
-
-
-# ---------------------------------------------------------------------------
-# Domain 13: JSON Schema Organizations
-# ---------------------------------------------------------------------------
 
 
 @service_tool(
@@ -1504,11 +1474,6 @@ async def list_json_schema_versions(
     )
 
 
-# ---------------------------------------------------------------------------
-# Domain 14: Forms
-# ---------------------------------------------------------------------------
-
-
 @service_tool(
     mcp,
     service="form",
@@ -1545,11 +1510,6 @@ async def list_form_data(
     return await FormService.list_form_data(
         ctx, group_id, filter_by_state, as_reviewer, next_page_token
     )
-
-
-# ---------------------------------------------------------------------------
-# Domain 15: Utility Operations
-# ---------------------------------------------------------------------------
 
 
 @service_tool(
@@ -1644,11 +1604,6 @@ async def search_entities_by_md5(
     return await UtilityService.md5_query(ctx, md5)
 
 
-# ---------------------------------------------------------------------------
-# Domain 16: Entity mutations (write)
-# ---------------------------------------------------------------------------
-
-
 @service_tool(
     mcp,
     service="entity",
@@ -1659,25 +1614,26 @@ async def search_entities_by_md5(
         "Use this when the user wants to create a new Synapse entity — a "
         "project, folder, table, view, dataset, dataset collection, link, "
         "materialized view, virtual table, submission view, docker "
-        "repository, or file. Set entity_type accordingly. Every type "
-        "except project requires parent_id (example: syn123456). IMPORTANT: "
-        "a file can only be created here from an external_url (external "
-        "link) or an existing data_file_handle_id — this server never "
-        "uploads local file content."
+        "repository, file, or record set. Set entity_type accordingly. "
+        "Every type except project requires parent_id (example: "
+        "syn123456). IMPORTANT: a file can only be created here from an "
+        "external_url (external link) or an existing data_file_handle_id, "
+        "and a record set only from an existing data_file_handle_id — this "
+        "server never uploads local file content."
     ),
-    synonyms=_CREATE_SYNONYMS + _ENTITY_TYPES,
+    synonyms=_CREATE_SYNONYMS + _ENTITY_TYPES + ("record set",),
     siblings=("update_entity", "delete_entity", "get_entity"),
 )
 async def create_entity(
     ctx: Context,
-    entity_type: str,
+    entity_type: EntityType,
     name: str,
     parent_id: Optional[str] = None,
     description: Optional[str] = None,
-    annotations: Optional[Dict[str, Any]] = None,
-    columns: Optional[List[Dict[str, Any]]] = None,
+    annotations: Optional[Dict[str, List[Any]]] = None,
+    columns: Optional[List[ColumnSpec]] = None,
     defining_sql: Optional[str] = None,
-    view_type_mask: Optional[List[str]] = None,
+    view_type_mask: Optional[List[ViewScopeType]] = None,
     scope_ids: Optional[List[str]] = None,
     target_id: Optional[str] = None,
     target_version_number: Optional[int] = None,
@@ -1717,8 +1673,9 @@ async def create_entity(
         "description, replace its annotations, or set its provenance "
         "(the activity/lineage that produced it). Annotations and "
         "provenance are attributes stored on the entity; there is no "
-        "separate provenance tool. Entity ID example: syn123456. Pass "
-        "annotations={} to clear all annotations."
+        "separate provenance tool. Entity ID example: syn123456. Each "
+        "field is only changed when supplied; pass an explicit null to "
+        "clear description or annotations."
     ),
     synonyms=_UPDATE_SYNONYMS + _ANNOTATION_SYNONYMS + _PROVENANCE_SYNONYMS,
     siblings=("create_entity", "delete_entity", "get_entity"),
@@ -1726,16 +1683,20 @@ async def create_entity(
 async def update_entity(
     ctx: Context,
     entity_id: str,
-    name: Optional[str] = None,
-    parent_id: Optional[str] = None,
-    description: Optional[str] = None,
-    annotations: Optional[Dict[str, Any]] = None,
-    provenance: Optional[Dict[str, Any]] = None,
+    name: Optional[str] = UNSET,
+    parent_id: Optional[str] = UNSET,
+    description: Optional[str] = UNSET,
+    annotations: Optional[Dict[str, List[Any]]] = UNSET,
+    provenance: Optional[ProvenanceSpec] = UNSET,
 ) -> Dict[str, Any]:
     """Update a Synapse entity's metadata, annotations, or provenance."""
     if not validate_synapse_id(entity_id):
         return {"error": f"Invalid Synapse ID: {entity_id}"}
-    if parent_id is not None and not validate_synapse_id(parent_id):
+    if (
+        parent_id is not UNSET
+        and parent_id is not None
+        and not validate_synapse_id(parent_id)
+    ):
         return {"error": f"Invalid Synapse ID: {parent_id}"}
     return await EntityService.update_entity(
         ctx,
@@ -1780,10 +1741,11 @@ async def delete_entity(
     title="Set Entity ACL",
     description=(
         "Use this when the user wants to share a Synapse entity — grant "
-        "or change what a specific user or team can do with it (READ, "
-        "DOWNLOAD, UPDATE, DELETE, etc.). Entity ID example: syn123456. "
-        "Principal ID example: 3379097 (user or team). Pass an empty "
-        "access_type list to remove that principal's access."
+        "or change what a specific user or team can do with it. Valid "
+        "access_type values are READ, DOWNLOAD, UPDATE, CREATE, DELETE, "
+        "MODERATE, CHANGE_PERMISSIONS, and CHANGE_SETTINGS. Entity ID "
+        "example: syn123456. Principal ID example: 3379097 (user or team). "
+        "Pass an empty access_type list to remove that principal's access."
     ),
     synonyms=_ACL_SYNONYMS + _UPDATE_SYNONYMS,
     siblings=("delete_entity_acl", "get_entity_acl", "get_entity_permissions"),
@@ -1791,7 +1753,7 @@ async def delete_entity(
 async def update_entity_acl(
     entity_id: str,
     principal_id: int,
-    access_type: List[str],
+    access_type: List[EntityAccessType],
     ctx: Context,
 ) -> Dict[str, Any]:
     """Set an entity's ACL for one principal."""
@@ -1897,7 +1859,7 @@ async def delete_entity_schema(
 async def update_table_columns(
     entity_id: str,
     ctx: Context,
-    add_columns: Optional[List[Dict[str, Any]]] = None,
+    add_columns: Optional[List[ColumnSpec]] = None,
     delete_columns: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """Add or remove columns on a Synapse table."""
@@ -1906,11 +1868,6 @@ async def update_table_columns(
     return await EntityService.update_table_columns(
         ctx, entity_id, add_columns, delete_columns
     )
-
-
-# ---------------------------------------------------------------------------
-# Domain 17: Team mutations (write)
-# ---------------------------------------------------------------------------
 
 
 @service_tool(
@@ -1925,7 +1882,7 @@ async def update_table_columns(
         "collectively. Team name example: 'NF-OSI Curators'."
     ),
     synonyms=_CREATE_SYNONYMS + _TEAM_SYNONYMS,
-    siblings=("delete_team", "invite_to_team", "get_team"),
+    siblings=("delete_team", "create_team_invitation", "get_team"),
 )
 async def create_team(
     ctx: Context,
@@ -1991,11 +1948,6 @@ async def create_team_invitation(
     )
 
 
-# ---------------------------------------------------------------------------
-# Domain 18: Evaluation mutations (write)
-# ---------------------------------------------------------------------------
-
-
 @service_tool(
     mcp,
     service="evaluation",
@@ -2050,9 +2002,9 @@ async def create_evaluation(
 async def update_evaluation(
     evaluation_id: str,
     ctx: Context,
-    name: Optional[str] = None,
-    description: Optional[str] = None,
-    submission_instructions_message: Optional[str] = None,
+    name: Optional[str] = UNSET,
+    description: Optional[str] = UNSET,
+    submission_instructions_message: Optional[str] = UNSET,
 ) -> Dict[str, Any]:
     """Update an Evaluation queue's metadata."""
     return await EvaluationService.update_evaluation(
@@ -2094,8 +2046,10 @@ async def delete_evaluation(
     description=(
         "Use this when the user wants to grant or change a user's or "
         "team's access on a Synapse Evaluation queue (challenge queue) — "
-        "e.g. who can submit or score. Evaluation ID example: '9600001'. "
-        "Principal ID example: 3379097."
+        "e.g. who can submit or score. Valid access_type values are READ, "
+        "UPDATE, DELETE, CREATE, SUBMIT, READ_PRIVATE_SUBMISSION, "
+        "DELETE_SUBMISSION, UPDATE_SUBMISSION, and CHANGE_PERMISSIONS. "
+        "Evaluation ID example: '9600001'. Principal ID example: 3379097."
     ),
     synonyms=_EVALUATION_SYNONYMS + _ACL_SYNONYMS + _UPDATE_SYNONYMS,
     siblings=("get_evaluation_acl", "get_evaluation_permissions"),
@@ -2103,18 +2057,13 @@ async def delete_evaluation(
 async def update_evaluation_acl(
     evaluation_id: str,
     principal_id: int,
-    access_type: List[str],
+    access_type: List[EvaluationAccessType],
     ctx: Context,
 ) -> Dict[str, Any]:
     """Update an Evaluation queue's ACL for one principal."""
     return await EvaluationService.update_evaluation_acl(
         ctx, evaluation_id, principal_id, access_type
     )
-
-
-# ---------------------------------------------------------------------------
-# Domain 19: Submission mutations (write)
-# ---------------------------------------------------------------------------
 
 
 @service_tool(
@@ -2159,9 +2108,11 @@ async def submit_to_evaluation(
     title="Update Submission Status",
     description=(
         "Use this when the user wants to update the scoring status of a "
-        "Synapse submission (challenge entry) — e.g. mark it SCORED, "
-        "INVALID, ACCEPTED, or REJECTED, or set status annotations. "
-        "Submission ID example: '9722233'."
+        "Synapse submission (challenge entry). Valid status values are "
+        "OPEN, CLOSED, RECEIVED, VALIDATED, EVALUATION_IN_PROGRESS, "
+        "SCORED, INVALID, ACCEPTED, and REJECTED. You can also set status "
+        "annotations. Submission ID example: '9722233'. Pass null "
+        "annotations to clear them."
     ),
     synonyms=_SUBMISSION_SYNONYMS + _UPDATE_SYNONYMS + ("score", "status"),
     siblings=("get_submission_status", "submit_to_evaluation"),
@@ -2169,18 +2120,13 @@ async def submit_to_evaluation(
 async def update_submission_status(
     submission_id: str,
     ctx: Context,
-    status: Optional[str] = None,
-    annotations: Optional[Dict[str, Any]] = None,
+    status: Optional[SubmissionStatusValue] = UNSET,
+    annotations: Optional[Dict[str, List[Any]]] = UNSET,
 ) -> Dict[str, Any]:
     """Update a submission's scoring status."""
     return await SubmissionService.update_submission_status(
         ctx, submission_id, status=status, annotations=annotations
     )
-
-
-# ---------------------------------------------------------------------------
-# Domain 20: JSON Schema & Organization mutations (write)
-# ---------------------------------------------------------------------------
 
 
 @service_tool(
@@ -2238,8 +2184,9 @@ async def delete_organization(
     description=(
         "Use this when the user wants to grant or change who can publish "
         "resources (such as JSON schemas) under a Synapse Organization "
-        "namespace. Organization name example: 'my.org'. Principal ID "
-        "example: 3379097."
+        "namespace. Valid access_type values are READ, CREATE, UPDATE, "
+        "DELETE, and CHANGE_PERMISSIONS. Organization name example: "
+        "'my.org'. Principal ID example: 3379097."
     ),
     synonyms=_SCHEMA_SYNONYMS + _ACL_SYNONYMS + _UPDATE_SYNONYMS,
     siblings=("get_schema_organization_acl", "get_schema_organization"),
@@ -2247,7 +2194,7 @@ async def delete_organization(
 async def update_organization_acl(
     organization_name: str,
     principal_id: int,
-    access_type: List[str],
+    access_type: List[OrganizationAccessType],
     ctx: Context,
 ) -> Dict[str, Any]:
     """Set a principal's access on a Synapse Organization."""
@@ -2313,11 +2260,6 @@ async def delete_json_schema(
     )
 
 
-# ---------------------------------------------------------------------------
-# Domain 21: Curation task mutations (write)
-# ---------------------------------------------------------------------------
-
-
 @service_tool(
     mcp,
     service="curation",
@@ -2337,7 +2279,7 @@ async def delete_json_schema(
 async def create_curation_task(
     project_id: str,
     data_type: str,
-    task_properties: Dict[str, Any],
+    task_properties: TaskProperties,
     ctx: Context,
     instructions: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -2373,9 +2315,6 @@ async def delete_curation_task(
     return await CurationTaskService.delete_task(ctx, task_id)
 
 
-# ---------------------------------------------------------------------------
-# Discovery: BM25 search transform
-# ---------------------------------------------------------------------------
 # Applied after all tools are registered so the transform has the full
 # catalog to index. The LLM's default view becomes the two pinned tools
 # plus the synthetic ``search_tools`` / ``call_read_tool`` / ``call_write_tool``

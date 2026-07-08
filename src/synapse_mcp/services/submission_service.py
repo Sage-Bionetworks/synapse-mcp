@@ -10,6 +10,7 @@ from synapseclient.models import (
     SubmissionStatus,
 )
 
+from ..tool_types import UNSET, SubmissionStatusValue
 from .tool_service import error_boundary, serialize_model, synapse_client
 
 
@@ -307,16 +308,20 @@ class SubmissionService:
     async def update_submission_status(
         ctx: Context,
         submission_id: str,
-        status: Optional[str] = None,
-        annotations: Optional[Dict[str, Any]] = None,
+        status: Optional[SubmissionStatusValue] = UNSET,
+        annotations: Optional[Dict[str, List[Any]]] = UNSET,
     ) -> Dict[str, Any]:
         """Update the scoring status of a Synapse submission.
+
+        Each field is only touched when supplied; passing an explicit
+        ``null`` for ``annotations`` clears the status annotations.
 
         Arguments:
             ctx: The FastMCP request context.
             submission_id: Submission ID (e.g. "9722233").
-            status: New status (e.g. SCORED, INVALID, ACCEPTED, REJECTED).
-            annotations: Optional submission-status annotations to set.
+            status: New scoring state.
+            annotations: Status annotations (each key maps to a list of
+                values); null clears them.
 
         Returns:
             Dict with the updated submission status.
@@ -325,9 +330,9 @@ class SubmissionService:
             sub_status = await SubmissionStatus(
                 id=submission_id
             ).get_async(synapse_client=client)
-            if status is not None:
+            if status is not UNSET:
                 sub_status.status = status
-            if annotations is not None:
-                sub_status.submission_annotations = annotations
+            if annotations is not UNSET:
+                sub_status.submission_annotations = annotations or {}
             stored = await sub_status.store_async(synapse_client=client)
             return serialize_model(stored)
