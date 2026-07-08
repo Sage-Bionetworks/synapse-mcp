@@ -603,6 +603,90 @@ class TestUpdateEntity:
         assert entity.annotations == {}
 
 
+class TestUpdateEntityChangeTracking:
+    """Pin the SDK change-tracking contract that makes clearing persist.
+
+    ``update_entity`` fetches the entity first (via ``_resolve_entity`` ->
+    ``get_async``), which sets ``_last_persistent_instance``. That is what
+    makes the subsequent ``store_async`` take the DESTRUCTIVE path: the
+    non-destructive merge (``merge_dataclass_entities``) only runs when
+    ``_last_persistent_instance`` is unset, and that merge would copy the
+    server's existing value back over a ``None``-cleared field — silently
+    reverting the clear. These tests use a real ``Project`` dataclass (not a
+    mock) so a regression to a no-fetch/merge path would fail here.
+    """
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.operations_get_async", new_callable=AsyncMock)
+    async def test_fetched_entity_takes_destructive_store_path(
+        self, mock_ops_get, mock_get_client
+    ):
+        from synapseclient.models import Project
+
+        mock_get_client.return_value = MagicMock()
+
+        # A real, already-fetched Project: get_async stamps the baseline.
+        project = Project(
+            id="syn1",
+            name="P",
+            description="original",
+            annotations={"k": ["v"]},
+        )
+        project._set_last_persistent_instance()
+        assert project.has_changed is False
+
+        captured = {}
+
+        async def fake_store(*, synapse_client=None):
+            # Capture the state the SDK would serialize + whether the
+            # non-destructive merge would be bypassed.
+            captured["description"] = project.description
+            captured["annotations"] = project.annotations
+            captured["merge_skipped"] = bool(
+                project._last_persistent_instance
+            )
+            captured["has_changed"] = project.has_changed
+            return project
+
+        project.store_async = fake_store
+        mock_ops_get.return_value = project
+
+        await EntityService.update_entity(
+            MagicMock(), "syn1", description=None, annotations=None
+        )
+
+        # The clear reaches the store, the merge is bypassed, and the diff
+        # against the fetched baseline marks the entity as changed.
+        assert captured["description"] is None
+        assert captured["annotations"] == {}
+        assert captured["merge_skipped"] is True
+        assert captured["has_changed"] is True
+
+    async def test_merge_would_revert_a_clear_on_an_unfetched_instance(self):
+        # Documents WHY the pre-fetch is required: if the instance were not
+        # fetched first, store's non-destructive merge restores the server
+        # value over the caller's None/empty clear.
+        from synapseclient.core.utils import merge_dataclass_entities
+        from synapseclient.models import Project
+
+        server = Project(
+            id="syn1",
+            name="P",
+            description="original",
+            annotations={"k": ["v"]},
+        )
+        caller = Project(
+            id="syn1", name="P", description=None, annotations={}
+        )
+
+        merge_dataclass_entities(source=server, destination=caller)
+
+        # The merge is non-destructive: the clear is reverted. This is the
+        # behavior update_entity avoids by fetching first.
+        assert caller.description == "original"
+        assert caller.annotations == {"k": ["v"]}
+
+
 class TestDeleteEntity:
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
     @patch(f"{SVC}.operations_get_async", new_callable=AsyncMock)
