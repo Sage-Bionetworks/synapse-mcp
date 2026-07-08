@@ -29,6 +29,7 @@ from typing import Iterable
 # importing synapse_mcp (same trick as tests/conftest.py).
 os.environ.setdefault("SYNAPSE_PAT", "readme-gen")
 
+from fastmcp.tools import Tool  # noqa: E402  (base class, not FunctionTool)
 from synapse_mcp import mcp  # noqa: E402
 from synapse_mcp.services.tool_service import ServiceName  # noqa: E402
 
@@ -65,7 +66,7 @@ DOMAIN_ORDER = [
 _SERVICE_TAGS = set(ServiceName.__args__)
 
 
-def _domain_for(tool) -> str:
+def _domain_for(tool: Tool) -> str:
     """Return the single service-domain tag for a tool."""
     domains = sorted(set(tool.tags) & _SERVICE_TAGS)
     if not domains:
@@ -73,7 +74,7 @@ def _domain_for(tool) -> str:
     return domains[0]
 
 
-def _signature(tool) -> str:
+def _signature(tool: Tool) -> str:
     """Render ``name(required_param, ...)`` from the tool's parameter schema.
 
     ``ctx`` is already excluded by FastMCP. Only required params are shown;
@@ -118,8 +119,7 @@ def _escape_cell(text: str) -> str:
     return text.replace("|", "\\|")
 
 
-def _sort_key(tool):
-    domain = _domain_for(tool)
+def _sort_key(tool: Tool, domain: str):
     try:
         domain_rank = DOMAIN_ORDER.index(domain)
     except ValueError:
@@ -128,13 +128,13 @@ def _sort_key(tool):
     return (domain_rank, domain, tool.name)
 
 
-def build_table(tools: Iterable) -> str:
+def build_table(tools: Iterable[Tool]) -> str:
     """Build the Markdown tool table from a catalog of FastMCP tools."""
-    tools = sorted(tools, key=_sort_key)
+    # Resolve each tool's domain once; every downstream step reuses it.
+    pairs = [(tool, _domain_for(tool)) for tool in tools]
+    pairs.sort(key=lambda pair: _sort_key(*pair))
 
-    unknown = sorted(
-        {_domain_for(t) for t in tools} - set(DOMAIN_ORDER) - {"?"}
-    )
+    unknown = sorted({d for _, d in pairs} - set(DOMAIN_ORDER) - {"?"})
     if unknown:
         print(
             f"WARNING: tools have domains not in DOMAIN_ORDER: {unknown}. "
@@ -146,11 +146,11 @@ def build_table(tools: Iterable) -> str:
         "| Tool | Domain | Description |",
         "| --- | --- | --- |",
     ]
-    for tool in tools:
+    for tool, domain in pairs:
         signature = _escape_cell(_signature(tool))
-        domain = _escape_cell(_domain_for(tool))
+        domain_cell = _escape_cell(domain)
         description = _escape_cell(_first_sentence(tool.description))
-        lines.append(f"| `{signature}` | {domain} | {description} |")
+        lines.append(f"| `{signature}` | {domain_cell} | {description} |")
     return "\n".join(lines)
 
 
