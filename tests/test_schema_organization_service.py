@@ -433,3 +433,118 @@ class TestListJsonSchemaVersions:
         assert result["organization_name"] == "sage.example"
         assert result["schema_name"] == "ExampleSchema"
 
+
+class TestCreateSchemaOrganization:
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.SchemaOrganization")
+    async def test_given_name_when_created_then_returns_dict(
+        self, mock_org_cls, mock_get_client
+    ):
+        mock_get_client.return_value = MagicMock()
+        mock_org_cls.return_value.store_async = AsyncMock(
+            return_value=FakeOrg(name="new.org", id="99")
+        )
+
+        result = await SchemaOrganizationService.create_organization(
+            MagicMock(), "new.org"
+        )
+
+        assert result["name"] == "new.org"
+        assert result["id"] == "99"
+        mock_org_cls.return_value.store_async.assert_called_once()
+
+
+class TestDeleteSchemaOrganization:
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.SchemaOrganization")
+    async def test_given_name_when_deleted_then_gets_then_deletes(
+        self, mock_org_cls, mock_get_client
+    ):
+        mock_get_client.return_value = MagicMock()
+        org = mock_org_cls.return_value
+        org.get_async = AsyncMock()
+        org.delete_async = AsyncMock()
+
+        result = await SchemaOrganizationService.delete_organization(
+            MagicMock(), "sage.example"
+        )
+
+        assert result == {
+            "organization_name": "sage.example",
+            "deleted": True,
+        }
+        org.get_async.assert_called_once()
+        org.delete_async.assert_called_once()
+
+
+class TestUpdateSchemaOrganizationAcl:
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.SchemaOrganization")
+    async def test_given_principal_when_updated_then_returns_confirmation(
+        self, mock_org_cls, mock_get_client
+    ):
+        mock_get_client.return_value = MagicMock()
+        org = mock_org_cls.return_value
+        org.get_async = AsyncMock()
+        org.update_acl_async = AsyncMock()
+
+        result = await (
+            SchemaOrganizationService.update_organization_acl(
+                MagicMock(), "sage.example", 12345, ["READ", "CREATE"]
+            )
+        )
+
+        assert result["organization_name"] == "sage.example"
+        assert result["principal_id"] == 12345
+        assert result["access_type"] == ["READ", "CREATE"]
+        assert result["updated"] is True
+        org.get_async.assert_called_once()
+        org.update_acl_async.assert_called_once()
+
+
+class TestRegisterJsonSchema:
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.JSONSchema")
+    async def test_given_body_when_registered_then_stores_with_kwargs(
+        self, mock_schema_cls, mock_get_client
+    ):
+        mock_get_client.return_value = MagicMock()
+        mock_schema_cls.return_value.store_async = AsyncMock(
+            return_value=FakeSchema(name="MySchema")
+        )
+
+        body = {"type": "object", "properties": {}}
+        result = await SchemaOrganizationService.register_json_schema(
+            MagicMock(),
+            "sage.example",
+            "MySchema",
+            body,
+            version="1.0.0",
+        )
+
+        assert result["name"] == "MySchema"
+        kwargs = mock_schema_cls.return_value.store_async.call_args.kwargs
+        assert kwargs["schema_body"] == body
+        assert kwargs["version"] == "1.0.0"
+
+
+class TestDeleteJsonSchema:
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.JSONSchema")
+    async def test_given_name_when_deleted_then_returns_confirmation(
+        self, mock_schema_cls, mock_get_client
+    ):
+        mock_get_client.return_value = MagicMock()
+        mock_schema_cls.return_value.delete_async = AsyncMock()
+
+        result = await SchemaOrganizationService.delete_json_schema(
+            MagicMock(), "sage.example", "MySchema"
+        )
+
+        assert result == {
+            "organization_name": "sage.example",
+            "schema_name": "MySchema",
+            "deleted": True,
+        }
+        mock_schema_cls.return_value.delete_async.assert_called_once()
+

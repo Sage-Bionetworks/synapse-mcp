@@ -23,6 +23,9 @@ All tools are **read-only** (no create/update/delete) — the server surfaces Sy
 
 | Tool | Domain | Description |
 | --- | --- | --- |
+| `create_entity(entity_type, name)` | entity | Use this when the user wants to create a new Synapse entity — a project, folder, table, view, dataset, dataset collection, link, materialized view, virtual table, submission view, docker repository, or file. |
+| `delete_entity(entity_id)` | entity | Use this when the user wants to delete a Synapse entity — a project, folder, file, table, view, or dataset — by its ID. |
+| `delete_entity_acl(entity_id)` | entity | Use this when the user wants a Synapse entity to stop having its own sharing settings and instead inherit permissions from its parent container (delete its local ACL). |
 | `get_entity(entity_id)` | entity | Use this when the user wants the metadata, record, details, or info for a specific Synapse entity given its Synapse ID. |
 | `get_entity_acl(entity_id)` | entity | Use this when the user wants the sharing settings or access control list (ACL) of one single Synapse entity — who can access it and with what permissions. |
 | `get_entity_annotations(entity_id)` | entity | Use this when the user wants the custom annotations (metadata key/value pairs) attached to a Synapse entity. |
@@ -30,8 +33,13 @@ All tools are **read-only** (no create/update/delete) — the server surfaces Sy
 | `get_entity_permissions(entity_id)` | entity | Use this when the user wants to know what the currently authenticated user is allowed to do on a Synapse entity (READ, UPDATE, DELETE, etc.). |
 | `get_link(entity_id)` | entity | Use this when the user has a Synapse Link entity (a shortcut that points at another entity) and wants either the Link's own metadata or the target it resolves to. |
 | `list_entity_acl(entity_id)` | entity | Use this when the user wants every ACL on a Synapse entity and, with recursive=True, on all its descendants — useful for auditing sharing recursively across a project subtree. |
+| `update_entity(entity_id)` | entity | Use this when the user wants to update a Synapse entity's metadata — rename it, move it to a new parent, change its description, replace its annotations, or set its provenance (the activity/lineage that produced it). |
+| `update_entity_acl(entity_id, principal_id, access_type)` | entity | Use this when the user wants to share a Synapse entity — grant or change what a specific user or team can do with it (READ, DOWNLOAD, UPDATE, DELETE, etc.). |
+| `update_table_columns(entity_id)` | entity | Use this when the user wants to change the columns (schema) of a Synapse table, view, or dataset — add new columns or delete existing ones. |
 | `search_synapse()` | search | Use this when the user wants to search for Synapse entities matching a keyword, topic, or subject (e.g. 'brain tissue', 'cancer_type=glioma'). |
 | `get_entity_provenance()` | activity | Use this when the user wants to know what produced a Synapse entity — its data lineage, inputs, outputs, code executed, and the activity that generated it. |
+| `delete_entity_schema(entity_id)` | schema | Use this when the user wants to unbind (remove) the JSON schema from a Synapse entity so it is no longer validated. |
+| `delete_json_schema(organization_name, schema_name)` | schema | Use this when the user wants to delete a Synapse JSON Schema by organization and name. |
 | `get_entity_schema(entity_id)` | schema | Use this when the user wants to know which JSON schema (data model / validation contract) is bound to a Synapse entity. |
 | `get_entity_schema_derived_keys(entity_id)` | schema | Use this when the user wants the annotation keys a bound JSON schema requires on a Synapse entity. |
 | `get_entity_schema_invalid_validations(entity_id)` | schema | Use this when the user wants the list of Synapse entities inside a Folder or Project that currently fail their bound JSON schema — the 'what's broken' view. |
@@ -40,20 +48,29 @@ All tools are **read-only** (no create/update/delete) — the server surfaces Sy
 | `get_json_schema_body(organization_name, schema_name)` | schema | Use this when the user wants the raw JSON document of a Synapse JSON Schema — the actual data model / validation rules. |
 | `list_json_schema_versions(organization_name, schema_name)` | schema | Use this when the user wants every version published for a Synapse JSON Schema. |
 | `list_json_schemas(organization_name)` | schema | Use this when the user wants every Synapse JSON Schema (data model, validation contract) owned by an organization. |
+| `register_json_schema(organization_name, schema_name, schema_body)` | schema | Use this when the user wants to register (publish a version of) a Synapse JSON Schema from an inline JSON document. |
+| `update_entity_schema(entity_id, json_schema_uri)` | schema | Use this when the user wants to bind (attach) a JSON schema (data model / validation contract) to a Synapse entity so its annotations are validated against that schema. |
 | `get_wiki_headers(owner_id)` | wiki | Use this when the user wants the table of contents of a Synapse wiki — the list of pages and sub-pages attached to an entity. |
 | `get_wiki_history(owner_id, wiki_id)` | wiki | Use this when the user wants the revision history (edit log) of a specific Synapse wiki page — who changed it and when. |
 | `get_wiki_order_hint(owner_id)` | wiki | Use this when the user wants to know the display order of sub-pages in a Synapse wiki — how the wiki navigation is sorted. |
 | `get_wiki_page(owner_id)` | wiki | Use this when the user wants to read a Synapse wiki page — its markdown content and metadata — attached to a project, folder, or file. |
+| `create_team(name)` | team | Use this when the user wants to create a new Synapse team — a named group of users that can be granted access to entities collectively. |
+| `create_team_invitation(team_id, user)` | team | Use this when the user wants to create an invitation for a user to join a Synapse team. |
+| `delete_team(team_id)` | team | Use this when the user wants to delete a Synapse team by its numeric ID. |
 | `get_team()` | team | Use this when the user wants a Synapse team by its numeric ID or name. |
 | `get_team_members(team_id)` | team | Use this when the user wants the roster of a Synapse team — who is on it. |
 | `get_team_membership_status(team_id, user_id)` | team | Use this when the user wants to know whether a specific Synapse user is already a member of, has applied to, or has been invited to a Synapse team. |
 | `get_team_open_invitations(team_id)` | team | Use this when the user wants the pending (not yet accepted or rejected) invitations for a Synapse team. |
 | `check_user_certified(user_id)` | user | Use this when the user wants to know whether a Synapse user has passed the certification quiz required for uploading human data. |
 | `get_user_profile()` | user | Use this when the user wants a Synapse user profile by numeric user ID or username, or the authenticated caller's own profile when called with no arguments. |
+| `create_evaluation(name, content_source, description, submission_instructions_message, submission_receipt_message)` | evaluation | Use this when the user wants to create a new Synapse Evaluation queue (challenge/competition queue) on a project. |
+| `delete_evaluation(evaluation_id)` | evaluation | Use this when the user wants to delete a Synapse Evaluation queue by ID. |
 | `get_evaluation()` | evaluation | Use this when the user wants a Synapse Evaluation queue — the challenge/competition queue that participants submit models or results to. |
 | `get_evaluation_acl(evaluation_id)` | evaluation | Use this when the user wants the resource-level access control list of a Synapse Evaluation queue (challenge queue) — which principals (users and teams) hold which access types on the queue. |
 | `get_evaluation_permissions(evaluation_id)` | evaluation | Use this when the user wants to know what the authenticated caller is allowed to do on a Synapse Evaluation queue (challenge queue) — submit, administer, etc. Returns the caller's own effective permission flags. |
 | `list_evaluations()` | evaluation | Use this when the user wants to enumerate Synapse Evaluation queues (challenges, competitions, leaderboards) — optionally filtered by project, access type, or active-only. |
+| `update_evaluation(evaluation_id)` | evaluation | Use this when the user wants to update a Synapse Evaluation queue's metadata — its name, description, or submitter instructions. |
+| `update_evaluation_acl(evaluation_id, principal_id, access_type)` | evaluation | Use this when the user wants to grant or change a user's or team's access on a Synapse Evaluation queue (challenge queue) — e.g. who can submit or score. |
 | `get_submission(submission_id)` | submission | Use this when the user wants a specific Synapse submission — a challenge entry a participant sent to an Evaluation queue. |
 | `get_submission_count(evaluation_id)` | submission | Use this when the user wants only the count of Synapse submissions (challenge entries) in an Evaluation queue, not the submissions themselves. |
 | `get_submission_status(submission_id)` | submission | Use this when the user wants the scoring status of a single Synapse submission (challenge entry) — e.g. RECEIVED, EVALUATION_IN_PROGRESS, SCORED. |
@@ -62,11 +79,18 @@ All tools are **read-only** (no create/update/delete) — the server surfaces Sy
 | `list_my_submission_bundles(evaluation_id)` | submission | Use this when the user wants their own Synapse submission+status bundles for an Evaluation queue — one call returns both submission and scoring status for every entry they made. |
 | `list_my_submissions(evaluation_id)` | submission | Use this when the user wants their own submissions (challenge entries) to a Synapse Evaluation queue. |
 | `list_submission_statuses(evaluation_id)` | submission | Use this when the user wants the scoring statuses of every Synapse submission in an Evaluation queue — optionally filtered (SCORED, INVALID, etc.). |
+| `submit_to_evaluation(evaluation_id, entity_id)` | submission | Use this when the user wants to submit an existing Synapse entity to an Evaluation queue as a challenge submission. |
+| `update_submission_status(submission_id)` | submission | Use this when the user wants to update the scoring status of a Synapse submission (challenge entry) — e.g. mark it SCORED, INVALID, ACCEPTED, or REJECTED, or set status annotations. |
+| `create_curation_task(project_id, data_type, task_properties)` | curation | Use this when the user wants to create a Synapse curation task on a project — a data-curation work item. |
+| `delete_curation_task(task_id)` | curation | Use this when the user wants to delete a Synapse curation task by its numeric task ID. |
 | `get_curation_task(task_id)` | curation | Use this when the user wants the details of a single Synapse curation task by its numeric task ID. |
 | `get_curation_task_resources(task_id)` | curation | Use this when the user wants the Synapse resources (RecordSets, Folders, EntityViews) linked to a curation task — the data the curator will act on. |
 | `list_curation_tasks(project_id)` | curation | Use this when the user wants every Synapse curation task in a project — the queue of data-curation work items attached to that project. |
+| `create_organization(organization_name)` | organization | Use this when the user wants to create a new Synapse Organization — a named namespace under which resources such as JSON schemas are published. |
+| `delete_organization(organization_name)` | organization | Use this when the user wants to delete a Synapse Organization (a namespace) by name. |
 | `get_schema_organization(organization_name)` | organization | Use this when the user wants a Synapse JSON Schema Organization (namespace that owns a set of JSON schemas / data models) by name or numeric ID. |
 | `get_schema_organization_acl(organization_name)` | organization | Use this when the user wants the ACL of a Synapse JSON Schema Organization — who may publish schemas under that namespace. |
+| `update_organization_acl(organization_name, principal_id, access_type)` | organization | Use this when the user wants to grant or change who can publish resources (such as JSON schemas) under a Synapse Organization namespace. |
 | `list_form_data(group_id)` | form | Use this when the user wants the form submissions for a Synapse FormGroup — a collection of structured-data forms submitted by users. |
 | `check_synapse_id(syn_id)` | utility | Use this when the user has a string that looks like a Synapse ID (e.g. syn123456) and wants to check whether it exists in Synapse — verifies validity by querying the Synapse backend. |
 | `search_entities_by_md5(md5)` | utility | Use this when the user has an MD5 hash of a file and wants the Synapse entities (file entities) whose attached file has that exact MD5 — useful for deduplication and 'is this already in Synapse' checks. |

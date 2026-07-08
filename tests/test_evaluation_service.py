@@ -178,3 +178,94 @@ class TestGetEvaluationPermissions:
 
         assert result["evaluation_id"] == "9600001"
         assert result["permissions"] == {"canSubmit": True}
+
+
+class TestCreateEvaluation:
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.Evaluation")
+    async def test_given_name_and_source_when_created_then_returns_dict(
+        self, mock_eval_cls, mock_get_client
+    ):
+        mock_get_client.return_value = MagicMock()
+        mock_eval_cls.return_value.store_async = AsyncMock(
+            return_value=FakeEvaluation(id="9600002", name="New Challenge")
+        )
+
+        result = await EvaluationService.create_evaluation(
+            MagicMock(),
+            "New Challenge",
+            "syn100",
+            description="d",
+            submission_instructions_message="submit csv",
+            submission_receipt_message="got it",
+        )
+
+        assert result["id"] == "9600002"
+        assert result["name"] == "New Challenge"
+        mock_eval_cls.return_value.store_async.assert_called_once()
+
+
+class TestUpdateEvaluation:
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.Evaluation")
+    async def test_given_fields_when_updated_then_sets_and_stores(
+        self, mock_eval_cls, mock_get_client
+    ):
+        mock_get_client.return_value = MagicMock()
+        ev = MagicMock()
+        ev.store_async = AsyncMock(
+            return_value=FakeEvaluation(name="Renamed")
+        )
+        mock_eval_cls.return_value.get_async = AsyncMock(return_value=ev)
+
+        result = await EvaluationService.update_evaluation(
+            MagicMock(),
+            "9600001",
+            name="Renamed",
+            description="new desc",
+            submission_instructions_message="follow the rules",
+        )
+
+        assert ev.name == "Renamed"
+        assert ev.description == "new desc"
+        assert ev.submission_instructions_message == "follow the rules"
+        ev.store_async.assert_called_once()
+        assert result["name"] == "Renamed"
+
+
+class TestDeleteEvaluation:
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.Evaluation")
+    async def test_given_evaluation_id_when_deleted_then_returns_confirmation(
+        self, mock_eval_cls, mock_get_client
+    ):
+        mock_get_client.return_value = MagicMock()
+        mock_eval_cls.return_value.delete_async = AsyncMock()
+
+        result = await EvaluationService.delete_evaluation(
+            MagicMock(), "9600001"
+        )
+
+        assert result == {"evaluation_id": "9600001", "deleted": True}
+        mock_eval_cls.return_value.delete_async.assert_called_once()
+
+
+class TestUpdateEvaluationAcl:
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.Evaluation")
+    async def test_given_principal_when_updated_then_returns_acl(
+        self, mock_eval_cls, mock_get_client
+    ):
+        mock_get_client.return_value = MagicMock()
+        mock_eval_cls.return_value.update_acl_async = AsyncMock(
+            return_value={"resourceAccess": []}
+        )
+
+        result = await EvaluationService.update_evaluation_acl(
+            MagicMock(), "9600001", 12345, ["READ", "SUBMIT"]
+        )
+
+        assert result["evaluation_id"] == "9600001"
+        assert result["principal_id"] == 12345
+        assert result["acl"] == {"resourceAccess": []}
+        mock_eval_cls.return_value.update_acl_async.assert_called_once()

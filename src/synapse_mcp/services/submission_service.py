@@ -267,3 +267,67 @@ class SubmissionService:
                 )
                 results.append(serialize_model(bundle))
             return results
+
+    @staticmethod
+    @error_boundary(error_context_keys=("evaluation_id", "entity_id"))
+    async def submit_to_evaluation(
+        ctx: Context,
+        evaluation_id: str,
+        entity_id: str,
+        name: Optional[str] = None,
+        submitter_alias: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Submit an existing Synapse entity to an Evaluation queue.
+
+        The submission references an entity that already exists in Synapse
+        (e.g. a File or Docker entity) by ID — no file is uploaded here.
+
+        Arguments:
+            ctx: The FastMCP request context.
+            evaluation_id: Target evaluation queue ID (e.g. "9600001").
+            entity_id: Synapse ID of the entity to submit (e.g. syn123456).
+            name: Optional submission name.
+            submitter_alias: Optional alias shown on the leaderboard.
+
+        Returns:
+            Dict with the created submission metadata.
+        """
+        async with synapse_client(ctx) as client:
+            submission = Submission(
+                evaluation_id=evaluation_id,
+                entity_id=entity_id,
+                name=name,
+                submitter_alias=submitter_alias,
+            )
+            stored = await submission.store_async(synapse_client=client)
+            return serialize_model(stored)
+
+    @staticmethod
+    @error_boundary(error_context_keys=("submission_id",))
+    async def update_submission_status(
+        ctx: Context,
+        submission_id: str,
+        status: Optional[str] = None,
+        annotations: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Update the scoring status of a Synapse submission.
+
+        Arguments:
+            ctx: The FastMCP request context.
+            submission_id: Submission ID (e.g. "9722233").
+            status: New status (e.g. SCORED, INVALID, ACCEPTED, REJECTED).
+            annotations: Optional submission-status annotations to set.
+
+        Returns:
+            Dict with the updated submission status.
+        """
+        async with synapse_client(ctx) as client:
+            sub_status = await SubmissionStatus(
+                id=submission_id
+            ).get_async(synapse_client=client)
+            if status is not None:
+                sub_status.status = status
+            if annotations is not None:
+                sub_status.submission_annotations = annotations
+            stored = await sub_status.store_async(synapse_client=client)
+            return serialize_model(stored)

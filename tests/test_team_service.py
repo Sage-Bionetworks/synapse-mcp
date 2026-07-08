@@ -324,3 +324,76 @@ class TestGetTeamMembershipStatus:
         )
 
         assert "Authentication required" in result["error"]
+
+
+class TestCreateTeam:
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.Team")
+    async def test_given_name_when_created_then_returns_dict(
+        self, mock_team_cls, mock_get_client
+    ):
+        mock_get_client.return_value = MagicMock()
+        mock_team_cls.return_value.create_async = AsyncMock(
+            return_value=FakeTeam(id=200, name="New Team")
+        )
+
+        result = await TeamService.create_team(
+            MagicMock(), "New Team", description="desc"
+        )
+
+        assert result["id"] == 200
+        assert result["name"] == "New Team"
+        mock_team_cls.return_value.create_async.assert_called_once()
+
+
+class TestDeleteTeam:
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.Team")
+    async def test_given_team_id_when_deleted_then_returns_confirmation(
+        self, mock_team_cls, mock_get_client
+    ):
+        mock_get_client.return_value = MagicMock()
+        mock_team_cls.return_value.delete_async = AsyncMock()
+
+        result = await TeamService.delete_team(MagicMock(), 100)
+
+        assert result == {"team_id": 100, "deleted": True}
+        mock_team_cls.return_value.delete_async.assert_called_once()
+
+
+class TestInviteToTeam:
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.Team")
+    async def test_given_invite_sent_then_returns_invited_true(
+        self, mock_team_cls, mock_get_client
+    ):
+        mock_get_client.return_value = MagicMock()
+        mock_team_cls.return_value.invite_async = AsyncMock(
+            return_value={"id": "inv1"}
+        )
+
+        result = await TeamService.invite_to_team(
+            MagicMock(), 100, "alice", message="join"
+        )
+
+        assert result["invited"] is True
+        assert result["invitation"] == {"id": "inv1"}
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.Team")
+    async def test_given_no_invite_sent_then_returns_invited_false(
+        self, mock_team_cls, mock_get_client
+    ):
+        # invite_async returns None when the user is already a member or
+        # already has an open invitation.
+        mock_get_client.return_value = MagicMock()
+        mock_team_cls.return_value.invite_async = AsyncMock(
+            return_value=None
+        )
+
+        result = await TeamService.invite_to_team(
+            MagicMock(), 100, "alice"
+        )
+
+        assert result["invited"] is False
+        assert "reason" in result

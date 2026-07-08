@@ -388,3 +388,304 @@ class TestGetSchemaInvalidValidations:
 
         # THEN every yielded record surfaces as a serialized dict
         assert [r["entity_id"] for r in result] == ["syn1", "syn2"]
+
+
+class TestCreateEntity:
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.Project.store_async", new_callable=AsyncMock)
+    async def test_given_project_when_created_then_stores_and_returns_dict(
+        self, mock_store, mock_get_client
+    ):
+        # Container types (project) are resolved through
+        # _CONTAINER_ENTITY_TYPES which captured the real Project class at
+        # import — patch store_async on that class rather than the name.
+        mock_get_client.return_value = MagicMock()
+        mock_store.return_value = FakeEntity(id="syn9", name="P")
+
+        result = await EntityService.create_entity(
+            MagicMock(), "project", "P"
+        )
+
+        assert result["id"] == "syn9"
+        assert result["name"] == "P"
+        mock_store.assert_called_once()
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    async def test_given_folder_without_parent_then_returns_error(
+        self, mock_get_client
+    ):
+        # Validation fires before the auth'd client opens.
+        result = await EntityService.create_entity(
+            MagicMock(), "folder", "F"
+        )
+
+        assert "parent_id" in result["error"]
+        mock_get_client.assert_not_called()
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    async def test_given_file_without_url_or_handle_then_returns_error(
+        self, mock_get_client
+    ):
+        # A file cannot be created from local content — only an
+        # external_url or an existing data_file_handle_id is supported.
+        result = await EntityService.create_entity(
+            MagicMock(), "file", "f", parent_id="syn1"
+        )
+
+        assert "not supported" in result["error"]
+        mock_get_client.assert_not_called()
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.File")
+    async def test_given_file_with_external_url_then_creates(
+        self, mock_file_cls, mock_get_client
+    ):
+        mock_get_client.return_value = MagicMock()
+        mock_file_cls.return_value.store_async = AsyncMock(
+            return_value=FakeEntity(id="syn10", name="f")
+        )
+
+        result = await EntityService.create_entity(
+            MagicMock(),
+            "file",
+            "f",
+            parent_id="syn1",
+            external_url="http://example.com/data.csv",
+        )
+
+        assert result["id"] == "syn10"
+        mock_file_cls.return_value.store_async.assert_called_once()
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    async def test_given_link_without_target_then_returns_error(
+        self, mock_get_client
+    ):
+        result = await EntityService.create_entity(
+            MagicMock(), "link", "L", parent_id="syn1"
+        )
+
+        assert "target_id" in result["error"]
+        mock_get_client.assert_not_called()
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    async def test_given_unsupported_type_then_returns_error(
+        self, mock_get_client
+    ):
+        result = await EntityService.create_entity(
+            MagicMock(), "bogus", "x", parent_id="syn1"
+        )
+
+        assert "Unsupported entity_type" in result["error"]
+        mock_get_client.assert_not_called()
+
+
+class TestUpdateEntity:
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.operations_get_async", new_callable=AsyncMock)
+    async def test_given_name_and_annotations_then_sets_and_stores(
+        self, mock_ops_get, mock_get_client
+    ):
+        mock_get_client.return_value = MagicMock()
+        entity = MagicMock()
+        entity.store_async = AsyncMock(
+            return_value=FakeEntity(id="syn1", name="New")
+        )
+        mock_ops_get.return_value = entity
+
+        result = await EntityService.update_entity(
+            MagicMock(),
+            "syn1",
+            name="New",
+            annotations={"species": ["human"]},
+        )
+
+        assert entity.name == "New"
+        assert entity.annotations == {"species": ["human"]}
+        entity.store_async.assert_called_once()
+        assert result["name"] == "New"
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.operations_get_async", new_callable=AsyncMock)
+    async def test_given_provenance_then_builds_activity(
+        self, mock_ops_get, mock_get_client
+    ):
+        mock_get_client.return_value = MagicMock()
+        entity = MagicMock()
+        entity.store_async = AsyncMock(return_value=FakeEntity())
+        mock_ops_get.return_value = entity
+
+        await EntityService.update_entity(
+            MagicMock(),
+            "syn1",
+            provenance={
+                "name": "run1",
+                "used": [{"target_id": "syn2"}],
+                "executed": [{"name": "script", "url": "http://x/s.py"}],
+            },
+        )
+
+        # activity is set from the provenance spec before storing
+        assert entity.activity is not None
+        assert entity.activity.name == "run1"
+
+
+class TestDeleteEntity:
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.operations_get_async", new_callable=AsyncMock)
+    async def test_given_entity_when_deleted_then_returns_confirmation(
+        self, mock_ops_get, mock_get_client
+    ):
+        mock_get_client.return_value = MagicMock()
+        entity = MagicMock()
+        entity.delete_async = AsyncMock()
+        mock_ops_get.return_value = entity
+
+        result = await EntityService.delete_entity(MagicMock(), "syn123")
+
+        assert result == {"entity_id": "syn123", "deleted": True}
+        entity.delete_async.assert_called_once()
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    async def test_given_expired_auth_when_deleting_then_returns_error(
+        self, mock_get_client
+    ):
+        mock_get_client.side_effect = ConnectionAuthError("expired")
+
+        result = await EntityService.delete_entity(MagicMock(), "syn123")
+
+        assert "Authentication required" in result["error"]
+        assert result["entity_id"] == "syn123"
+
+
+class TestSetAcl:
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.operations_get_async", new_callable=AsyncMock)
+    async def test_given_principal_when_set_then_returns_acl(
+        self, mock_ops_get, mock_get_client
+    ):
+        mock_get_client.return_value = MagicMock()
+        entity = MagicMock()
+        entity.set_permissions_async = AsyncMock(
+            return_value={"resourceAccess": []}
+        )
+        mock_ops_get.return_value = entity
+
+        result = await EntityService.set_acl(
+            MagicMock(), "syn123", 12345, ["READ", "DOWNLOAD"]
+        )
+
+        assert result["entity_id"] == "syn123"
+        assert result["principal_id"] == 12345
+        assert result["acl"] == {"resourceAccess": []}
+        entity.set_permissions_async.assert_called_once()
+
+
+class TestDeleteAcl:
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.operations_get_async", new_callable=AsyncMock)
+    async def test_given_entity_when_acl_deleted_then_returns_confirmation(
+        self, mock_ops_get, mock_get_client
+    ):
+        mock_get_client.return_value = MagicMock()
+        entity = MagicMock()
+        entity.delete_permissions_async = AsyncMock()
+        mock_ops_get.return_value = entity
+
+        result = await EntityService.delete_acl(MagicMock(), "syn123")
+
+        assert result == {"entity_id": "syn123", "acl_deleted": True}
+        entity.delete_permissions_async.assert_called_once()
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.operations_get_async", new_callable=AsyncMock)
+    async def test_given_project_when_acl_deleted_then_reports_not_deleted(
+        self, mock_ops_get, mock_get_client
+    ):
+        # GIVEN the resolved entity is a Project (root ACL is undeletable)
+        mock_get_client.return_value = MagicMock()
+
+        class Project:
+            def __init__(self):
+                self.delete_permissions_async = AsyncMock()
+
+        entity = Project()
+        mock_ops_get.return_value = entity
+
+        # WHEN its ACL delete is requested
+        result = await EntityService.delete_acl(MagicMock(), "syn123")
+
+        # THEN the response honestly reports the root ACL was not deleted
+        assert result["acl_deleted"] is False
+        assert "Project" in result["message"]
+        entity.delete_permissions_async.assert_called_once()
+
+
+class TestBindSchema:
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.operations_get_async", new_callable=AsyncMock)
+    async def test_given_uri_when_bound_then_returns_binding(
+        self, mock_ops_get, mock_get_client
+    ):
+        mock_get_client.return_value = MagicMock()
+        entity = MagicMock()
+        entity.bind_schema_async = AsyncMock(
+            return_value={"json_schema_version_info": {}}
+        )
+        mock_ops_get.return_value = entity
+
+        result = await EntityService.bind_schema(
+            MagicMock(), "syn123", "my.org-MySchema-1.0.0"
+        )
+
+        assert result["entity_id"] == "syn123"
+        entity.bind_schema_async.assert_called_once()
+        kwargs = entity.bind_schema_async.call_args.kwargs
+        assert kwargs["json_schema_uri"] == "my.org-MySchema-1.0.0"
+        assert kwargs["enable_derived_annotations"] is False
+
+
+class TestUnbindSchema:
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.operations_get_async", new_callable=AsyncMock)
+    async def test_given_entity_when_unbound_then_returns_confirmation(
+        self, mock_ops_get, mock_get_client
+    ):
+        mock_get_client.return_value = MagicMock()
+        entity = MagicMock()
+        entity.unbind_schema_async = AsyncMock()
+        mock_ops_get.return_value = entity
+
+        result = await EntityService.unbind_schema(MagicMock(), "syn123")
+
+        assert result == {"entity_id": "syn123", "schema_unbound": True}
+        entity.unbind_schema_async.assert_called_once()
+
+
+class TestUpdateTableColumns:
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.Table")
+    async def test_given_add_and_delete_then_applies_and_stores(
+        self, mock_table_cls, mock_get_client
+    ):
+        mock_get_client.return_value = MagicMock()
+        table = MagicMock()
+        table.add_column = MagicMock()
+        table.delete_column = MagicMock()
+        table.store_async = AsyncMock(
+            return_value=FakeEntity(id="syn5", name="T")
+        )
+        mock_table_cls.return_value.get_async = AsyncMock(
+            return_value=table
+        )
+
+        result = await EntityService.update_table_columns(
+            MagicMock(),
+            "syn5",
+            add_columns=[{"name": "age", "column_type": "INTEGER"}],
+            delete_columns=["old_col"],
+        )
+
+        table.delete_column.assert_called_once_with(name="old_col")
+        table.add_column.assert_called_once()
+        table.store_async.assert_called_once()
+        assert result["id"] == "syn5"

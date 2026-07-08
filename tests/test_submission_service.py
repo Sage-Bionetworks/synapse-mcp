@@ -324,3 +324,54 @@ class TestListMySubmissions:
 
         assert isinstance(result, list)
         assert "limit and offset must be >= 0" in result[0]["error"]
+
+
+class TestSubmitToEvaluation:
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.Submission")
+    async def test_given_entity_when_submitted_then_returns_dict(
+        self, mock_sub_cls, mock_get_client
+    ):
+        mock_get_client.return_value = MagicMock()
+        mock_sub_cls.return_value.store_async = AsyncMock(
+            return_value=FakeSubmission(id="888")
+        )
+
+        result = await SubmissionService.submit_to_evaluation(
+            MagicMock(),
+            "9600001",
+            "syn123456",
+            name="my run",
+            submitter_alias="team-x",
+        )
+
+        assert result["id"] == "888"
+        mock_sub_cls.return_value.store_async.assert_called_once()
+
+
+class TestUpdateSubmissionStatus:
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.SubmissionStatus")
+    async def test_given_status_and_annotations_then_sets_and_stores(
+        self, mock_status_cls, mock_get_client
+    ):
+        mock_get_client.return_value = MagicMock()
+        sub_status = MagicMock()
+        sub_status.store_async = AsyncMock(
+            return_value=FakeSubmissionStatus(status="SCORED")
+        )
+        mock_status_cls.return_value.get_async = AsyncMock(
+            return_value=sub_status
+        )
+
+        result = await SubmissionService.update_submission_status(
+            MagicMock(),
+            "9722233",
+            status="SCORED",
+            annotations={"score": 0.91},
+        )
+
+        assert sub_status.status == "SCORED"
+        assert sub_status.submission_annotations == {"score": 0.91}
+        sub_status.store_async.assert_called_once()
+        assert result["status"] == "SCORED"

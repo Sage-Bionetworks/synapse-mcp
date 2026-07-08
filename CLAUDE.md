@@ -34,9 +34,13 @@ Every tool is declared via `@service_tool` (from `synapse_mcp.services`), never 
 
 ## BM25 discovery transform
 
-`BM25SearchTransform` is registered at the bottom of `src/synapse_mcp/tools.py`, after every `@service_tool` has run — because it builds its index from the catalog at startup. Adding tools below the transform call silently excludes them.
+`SplitCallTransform` (`src/synapse_mcp/discovery.py`, a `BM25SearchTransform` subclass) is registered at the bottom of `src/synapse_mcp/tools.py`, after every `@service_tool` has run — because it builds its index from the catalog at startup. Adding tools below the transform call silently excludes them.
+
+The transform exposes `search_tools` (indexes the full catalog) plus **two** dispatch proxies: `call_read_tool` for read tools and `call_write_tool` for `write`/`destructive` tools. Routing is by the `mutation` alias tag — a read tool cannot be invoked through `call_write_tool` and vice versa. This split lets clients that gate permissions by tool name allow reads while withholding writes. So a tool's `operation=` is what determines which proxy can reach it.
 
 `always_visible = ["search_synapse", "get_entity"]` is intentional — these two cover the common first step of any Synapse workflow (lookup-by-ID, keyword-search). Expanding the list trades LLM context budget for one-shot access. Don't add entries without a justified reason.
+
+No tool uploads or downloads file bytes. A File entity is creatable only via external URL or an existing file handle (`create_entity` with `entity_type="file"`); there is no wiki-write tool because the SDK wiki store path always writes markdown to disk.
 
 ## Error response shape
 

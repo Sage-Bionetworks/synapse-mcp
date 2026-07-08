@@ -188,3 +188,99 @@ class TeamService:
                 synapse_client=client,
             )
             return serialize_model(status)
+
+    @staticmethod
+    @error_boundary(error_context_keys=("name",))
+    async def create_team(
+        ctx: Context,
+        name: str,
+        description: Optional[str] = None,
+        can_public_join: bool = False,
+        can_request_membership: bool = True,
+    ) -> Dict[str, Any]:
+        """Create a new Synapse Team.
+
+        Arguments:
+            ctx: The FastMCP request context.
+            name: Team name.
+            description: Optional team description.
+            can_public_join: Whether anyone may join without approval.
+            can_request_membership: Whether users may request to join.
+
+        Returns:
+            Dict with the created team metadata (id, name, etc.).
+        """
+        async with synapse_client(ctx) as client:
+            team = Team(
+                name=name,
+                description=description,
+                can_public_join=can_public_join,
+                can_request_membership=can_request_membership,
+            )
+            created = await team.create_async(synapse_client=client)
+            return serialize_model(created)
+
+    @staticmethod
+    @error_boundary(error_context_keys=("team_id",))
+    async def delete_team(
+        ctx: Context, team_id: int
+    ) -> Dict[str, Any]:
+        """Delete a Synapse Team by ID.
+
+        Arguments:
+            ctx: The FastMCP request context.
+            team_id: Numeric team ID (e.g. "3379097").
+
+        Returns:
+            Dict confirming the deletion.
+        """
+        async with synapse_client(ctx) as client:
+            await Team(id=team_id).delete_async(synapse_client=client)
+            return {"team_id": team_id, "deleted": True}
+
+    @staticmethod
+    @error_boundary(error_context_keys=("team_id", "user"))
+    async def invite_to_team(
+        ctx: Context,
+        team_id: int,
+        user: str,
+        message: Optional[str] = None,
+        force: bool = True,
+    ) -> Dict[str, Any]:
+        """Invite a user to a Synapse Team.
+
+        Arguments:
+            ctx: The FastMCP request context.
+            team_id: Numeric team ID (e.g. "3379097").
+            user: Username or numeric user ID to invite.
+            message: Optional invitation message.
+            force: Send even if the user already has an invite/membership.
+
+        Returns:
+            Dict with the invitation response, or a note that no invite was
+            sent (already a member/invited and force=False).
+        """
+        async with synapse_client(ctx) as client:
+            team = Team(id=team_id)
+            invite = await team.invite_async(
+                user=user,
+                message=message or "",
+                force=force,
+                synapse_client=client,
+            )
+            if invite is None:
+                return {
+                    "team_id": team_id,
+                    "user": user,
+                    "invited": False,
+                    "reason": (
+                        "No invite sent — user is already a member or has "
+                        "an open invitation."
+                    ),
+                }
+            return {
+                "team_id": team_id,
+                "user": user,
+                "invited": True,
+                "invitation": serialize_model(invite),
+            }

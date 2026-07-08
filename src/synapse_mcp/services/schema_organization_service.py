@@ -224,3 +224,147 @@ class SchemaOrganizationService:
                 "results": results,
                 "next_page_token": response.get("nextPageToken"),
             }
+
+    @staticmethod
+    @error_boundary(error_context_keys=("organization_name",))
+    async def create_organization(
+        ctx: Context, organization_name: str
+    ) -> Dict[str, Any]:
+        """Create a new Organization (namespace).
+
+        Arguments:
+            ctx: The FastMCP request context.
+            organization_name: Namespace to register (e.g. "my.org").
+
+        Returns:
+            Dict with the created organization metadata.
+        """
+        async with synapse_client(ctx) as client:
+            org = SchemaOrganization(name=organization_name)
+            created = await org.store_async(synapse_client=client)
+            return serialize_model(created)
+
+    @staticmethod
+    @error_boundary(error_context_keys=("organization_name",))
+    async def delete_organization(
+        ctx: Context, organization_name: str
+    ) -> Dict[str, Any]:
+        """Delete an Organization by name.
+
+        Arguments:
+            ctx: The FastMCP request context.
+            organization_name: Namespace to delete (e.g. "my.org").
+
+        Returns:
+            Dict confirming the deletion.
+        """
+        async with synapse_client(ctx) as client:
+            org = SchemaOrganization(name=organization_name)
+            await org.get_async(synapse_client=client)
+            await org.delete_async(synapse_client=client)
+            return {
+                "organization_name": organization_name,
+                "deleted": True,
+            }
+
+    @staticmethod
+    @error_boundary(
+        error_context_keys=("organization_name", "principal_id")
+    )
+    async def update_organization_acl(
+        ctx: Context,
+        organization_name: str,
+        principal_id: int,
+        access_type: List[str],
+    ) -> Dict[str, Any]:
+        """Set a principal's access on an Organization.
+
+        Arguments:
+            ctx: The FastMCP request context.
+            organization_name: Organization name (e.g. "my.org").
+            principal_id: User or team ID to grant access to.
+            access_type: Permission strings (e.g. ["READ", "CREATE"]).
+
+        Returns:
+            Dict confirming the ACL update.
+        """
+        async with synapse_client(ctx) as client:
+            org = SchemaOrganization(name=organization_name)
+            await org.get_async(synapse_client=client)
+            await org.update_acl_async(
+                principal_id=principal_id,
+                access_type=access_type,
+                synapse_client=client,
+            )
+            return {
+                "organization_name": organization_name,
+                "principal_id": principal_id,
+                "access_type": access_type,
+                "updated": True,
+            }
+
+    @staticmethod
+    @error_boundary(
+        error_context_keys=("organization_name", "schema_name")
+    )
+    async def register_json_schema(
+        ctx: Context,
+        organization_name: str,
+        schema_name: str,
+        schema_body: Dict[str, Any],
+        version: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Register (create a version of) a JSON Schema from an inline body.
+
+        Arguments:
+            ctx: The FastMCP request context.
+            organization_name: Owning organization (e.g. "my.org").
+            schema_name: Schema name (e.g. "MySchema").
+            schema_body: The JSON Schema document as an inline dict.
+            version: Optional semantic version (e.g. "1.0.0").
+
+        Returns:
+            Dict with the registered schema metadata.
+        """
+        async with synapse_client(ctx) as client:
+            schema = JSONSchema(
+                organization_name=organization_name,
+                name=schema_name,
+            )
+            stored = await schema.store_async(
+                schema_body=schema_body,
+                version=version,
+                synapse_client=client,
+            )
+            return serialize_model(stored)
+
+    @staticmethod
+    @error_boundary(
+        error_context_keys=("organization_name", "schema_name")
+    )
+    async def delete_json_schema(
+        ctx: Context,
+        organization_name: str,
+        schema_name: str,
+    ) -> Dict[str, Any]:
+        """Delete a JSON Schema by organization and name.
+
+        Arguments:
+            ctx: The FastMCP request context.
+            organization_name: Owning organization (e.g. "my.org").
+            schema_name: Schema name to delete (e.g. "MySchema").
+
+        Returns:
+            Dict confirming the deletion.
+        """
+        async with synapse_client(ctx) as client:
+            schema = JSONSchema(
+                organization_name=organization_name,
+                name=schema_name,
+            )
+            await schema.delete_async(synapse_client=client)
+            return {
+                "organization_name": organization_name,
+                "schema_name": schema_name,
+                "deleted": True,
+            }

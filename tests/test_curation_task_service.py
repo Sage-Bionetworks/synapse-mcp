@@ -266,3 +266,94 @@ class TestGetTaskResources:
         # THEN the error is captured with the task_id for debugging
         assert result["error"] == "bad"
         assert result["task_id"] == 5
+
+
+# -------------------------------------------------------------------
+# CurationTaskService.create_task
+# -------------------------------------------------------------------
+
+
+class TestCreateTask:
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.CurationTask")
+    async def test_given_record_based_properties_then_creates_and_formats(
+        self, mock_ct, mock_get_client
+    ):
+        # GIVEN a record-based property spec
+        mock_get_client.return_value = MagicMock()
+        mock_ct.return_value.store_async = AsyncMock(
+            return_value=make_task(
+                task_id=7, task_properties=record_based_properties("syn1")
+            )
+        )
+
+        # WHEN we create the task
+        result = await CurationTaskService.create_task(
+            MagicMock(),
+            "syn999",
+            "DataType",
+            {"record_set_id": "syn1"},
+        )
+
+        # THEN the created task is formatted with the record-based type tag
+        assert result["task_id"] == 7
+        assert result["task_properties"]["type"] == "record-based"
+        mock_ct.return_value.store_async.assert_called_once()
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.CurationTask")
+    async def test_given_file_based_properties_then_creates_and_formats(
+        self, mock_ct, mock_get_client
+    ):
+        # GIVEN a file-based property spec
+        mock_get_client.return_value = MagicMock()
+        mock_ct.return_value.store_async = AsyncMock(
+            return_value=make_task(
+                task_id=8, task_properties=file_based_properties()
+            )
+        )
+
+        # WHEN we create the task
+        result = await CurationTaskService.create_task(
+            MagicMock(),
+            "syn999",
+            "DataType",
+            {"upload_folder_id": "syn1"},
+        )
+
+        # THEN the created task is formatted with the file-based type tag
+        assert result["task_id"] == 8
+        assert result["task_properties"]["type"] == "file-based"
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    async def test_given_empty_properties_then_returns_error_without_client(
+        self, mock_get_client
+    ):
+        # GIVEN a task_properties dict with neither record_set_id nor
+        # upload_folder_id — validation fires before the client opens.
+        result = await CurationTaskService.create_task(
+            MagicMock(), "syn999", "DataType", {}
+        )
+
+        assert "record_set_id" in result["error"]
+        mock_get_client.assert_not_called()
+
+
+# -------------------------------------------------------------------
+# CurationTaskService.delete_task
+# -------------------------------------------------------------------
+
+
+class TestDeleteTask:
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.CurationTask")
+    async def test_given_task_id_when_deleted_then_returns_confirmation(
+        self, mock_ct, mock_get_client
+    ):
+        mock_get_client.return_value = MagicMock()
+        mock_ct.return_value.delete_async = AsyncMock()
+
+        result = await CurationTaskService.delete_task(MagicMock(), 42)
+
+        assert result == {"task_id": 42, "deleted": True}
+        mock_ct.return_value.delete_async.assert_called_once()

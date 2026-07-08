@@ -144,6 +144,35 @@ When in doubt, prefer the narrower operation — `destructive` over
 `write`, `admin` over `destructive` — so the MCP annotations
 correctly signal the effect of the call to clients.
 
+### How operation gates which call proxy reaches a tool
+
+Discovery runs through `SplitCallTransform` (`src/synapse_mcp/discovery.py`),
+which replaces the catalog with `search_tools` plus **two** dispatch
+proxies:
+
+- `call_read_tool` — executes read tools only.
+- `call_write_tool` — executes `write`/`destructive` tools only.
+
+`search_tools` indexes and returns the whole catalog, but the proxies
+route on the `mutation` alias tag that `operation="write"` and
+`operation="destructive"` attach. A read tool called through
+`call_write_tool` (or a write tool through `call_read_tool`) is rejected
+before dispatch. This split exists because many MCP clients gate
+permissions by **tool name**, not by the MCP annotation hints — so a
+client can allow `call_read_tool` while withholding `call_write_tool` to
+run the server read-only. Getting `operation` right is therefore what
+determines whether a tool is reachable for writes at all.
+
+### File content is never uploaded
+
+No tool uploads or downloads file bytes. A File **entity** can be
+created (via `create_entity` with `entity_type="file"`) only from an
+`external_url` (external link) or an existing `data_file_handle_id`, and
+its metadata/annotations updated or the entity deleted — but local file
+content is never sent. There is deliberately no wiki-write tool: the SDK
+wiki store path always writes the markdown to a temp file on disk, which
+this server does not do.
+
 The four MCP-spec annotation hints `@service_tool` knows how to set
 are:
 
