@@ -100,7 +100,6 @@ class SplitCallTransform(BM25SearchTransform):
 
     def _make_call_tool(self) -> Tool:
         """Wrap the parent read proxy to reject mutating tools."""
-        read_tool = super()._make_call_tool()
         transform = self
         read_tool_name = self._call_tool_name
 

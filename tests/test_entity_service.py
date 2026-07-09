@@ -512,6 +512,58 @@ class TestCreateEntity:
         assert result["id"] == "syn11"
         mock_recordset_cls.return_value.store_async.assert_called_once()
 
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    async def test_given_file_with_url_and_handle_then_returns_error(
+        self, mock_get_client
+    ):
+        # A file takes exactly one source — external_url or an existing
+        # data_file_handle_id, never both.
+        result = await EntityService.create_entity(
+            MagicMock(),
+            "file",
+            "f",
+            parent_id="syn1",
+            external_url="http://example.com/data.csv",
+            data_file_handle_id="123",
+        )
+
+        assert "not both" in result["error"]
+        mock_get_client.assert_not_called()
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    async def test_given_bad_column_type_then_returns_value_error(
+        self, mock_get_client
+    ):
+        result = await EntityService.create_entity(
+            MagicMock(),
+            "table",
+            "T",
+            parent_id="syn1",
+            columns=[{"name": "age", "column_type": "BOGUS"}],
+        )
+
+        assert result["error_type"] == "ValueError"
+        assert "BOGUS" in result["error"]
+        assert "Valid:" in result["error"]
+        mock_get_client.assert_not_called()
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    async def test_given_bad_view_mask_then_returns_value_error(
+        self, mock_get_client
+    ):
+        result = await EntityService.create_entity(
+            MagicMock(),
+            "entityview",
+            "V",
+            parent_id="syn1",
+            view_type_mask=["BOGUS"],
+        )
+
+        assert result["error_type"] == "ValueError"
+        assert "BOGUS" in result["error"]
+        assert "Valid:" in result["error"]
+        mock_get_client.assert_not_called()
+
 
 class TestUpdateEntity:
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)

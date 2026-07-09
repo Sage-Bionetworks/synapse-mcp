@@ -14,10 +14,13 @@ You (your AI agent) can:
 - Browse JSON schemas and their validation results, plus schema organizations
 - List curation tasks and their linked resources, and read form submissions
 - Resolve entities by exact name or MD5 hash and validate Synapse IDs
+- Create, update, and delete Synapse objects — entities, ACLs, table columns, teams, evaluations, submissions, organizations, and JSON schemas (metadata only, no file content)
 
 ## Available Tools
 
-All tools are **read-only** (no create/update/delete) — the server surfaces Synapse metadata, never mutates it and never downloads file content.
+The catalog includes both read tools and write/destructive tools (create/update/delete) across the entity, schema, team, evaluation, submission, organization, and curation domains. The server **never uploads or downloads file content** — File entities are created only via an external URL or an existing file handle, never from local file bytes.
+
+Read and write tools are dispatched through separate proxies — `call_read_tool` and `call_write_tool` — so a client that gates permissions by tool name can allow reads while withholding writes to run the server read-only.
 
 <!-- BEGIN GENERATED TOOLS: run `uv run python scripts/gen_tool_table.py` to update -->
 

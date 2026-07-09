@@ -570,6 +570,13 @@ class EntityService:
             )
 
         if etype == "file":
+            if external_url and data_file_handle_id:
+                return {
+                    "error": (
+                        "Provide either external_url or "
+                        "data_file_handle_id for a file, not both."
+                    )
+                }
             if not (external_url or data_file_handle_id):
                 return {
                     "error": (
@@ -646,7 +653,14 @@ class EntityService:
         """Build a Column from a plain dict spec."""
         col_type = spec.get("column_type")
         if isinstance(col_type, str):
-            col_type = ColumnType[col_type.upper()]
+            try:
+                col_type = ColumnType[col_type.upper()]
+            except KeyError:
+                valid = ", ".join(c.name for c in ColumnType)
+                raise ValueError(
+                    f"Unknown column_type '{spec.get('column_type')}'. "
+                    f"Valid: {valid}"
+                )
         return Column(
             name=spec.get("name"),
             column_type=col_type,
@@ -660,7 +674,13 @@ class EntityService:
         """OR together ViewTypeMask flags named by ``masks``."""
         resolved = None
         for m in masks:
-            flag = ViewTypeMask[m.strip().upper()]
+            try:
+                flag = ViewTypeMask[m.strip().upper()]
+            except KeyError:
+                valid = ", ".join(v.name for v in ViewTypeMask)
+                raise ValueError(
+                    f"Unknown view_type_mask '{m}'. Valid: {valid}"
+                )
             resolved = flag if resolved is None else resolved | flag
         return resolved
 
