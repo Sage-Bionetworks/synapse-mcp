@@ -221,6 +221,19 @@ class EvaluationService:
         Returns:
             Dict with the updated evaluation metadata.
         """
+        for field, value in (
+            ("name", name),
+            ("description", description),
+            ("submission_instructions_message", submission_instructions_message),
+        ):
+            if value is not UNSET and value is None:
+                return {
+                    "error": (
+                        f"'{field}' is required and cannot be cleared to "
+                        "null; supply a non-null value or omit it to leave "
+                        "it unchanged."
+                    )
+                }
         async with synapse_client(ctx) as client:
             ev = await Evaluation(id=evaluation_id).get_async(
                 synapse_client=client,

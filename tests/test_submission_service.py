@@ -375,3 +375,17 @@ class TestUpdateSubmissionStatus:
         assert sub_status.submission_annotations == {"score": 0.91}
         sub_status.store_async.assert_called_once()
         assert result["status"] == "SCORED"
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.SubmissionStatus")
+    async def test_given_explicit_null_status_then_returns_error(
+        self, mock_status_cls, mock_get_client
+    ):
+        # status is required server-side; an explicit null is rejected up
+        # front rather than storing a None status.
+        result = await SubmissionService.update_submission_status(
+            MagicMock(), "9722233", status=None
+        )
+
+        assert "cannot be set to null" in result["error"]
+        mock_get_client.assert_not_called()

@@ -651,6 +651,13 @@ class EntityService:
     @staticmethod
     def _build_column(spec: ColumnSpec) -> Column:
         """Build a Column from a plain dict spec."""
+        if not spec.get("name"):
+            raise ValueError("Column spec is missing required 'name'.")
+        if not spec.get("column_type"):
+            raise ValueError(
+                f"Column '{spec.get('name')}' is missing required "
+                "'column_type'."
+            )
         col_type = spec.get("column_type")
         if isinstance(col_type, str):
             try:
@@ -722,6 +729,22 @@ class EntityService:
         Returns:
             Dict with the updated entity metadata.
         """
+        for field, value in (("name", name), ("parent_id", parent_id)):
+            if value is not UNSET and value is None:
+                return {
+                    "error": (
+                        f"'{field}' cannot be cleared to null; supply a "
+                        "non-null value or omit it to leave it unchanged."
+                    )
+                }
+        if provenance is not UNSET and provenance is None:
+            return {
+                "error": (
+                    "provenance cannot be cleared via this tool; delete the "
+                    "entity's activity separately, or omit it to leave it "
+                    "unchanged."
+                )
+            }
         async with synapse_client(ctx) as client:
             entity = await _resolve_entity(entity_id, client)
             if name is not UNSET:
@@ -732,7 +755,7 @@ class EntityService:
                 entity.description = description
             if annotations is not UNSET:
                 entity.annotations = annotations or {}
-            if provenance is not UNSET and provenance is not None:
+            if provenance is not UNSET:
                 entity.activity = EntityService._build_activity(provenance)
             stored = await entity.store_async(synapse_client=client)
             return serialize_model(stored)

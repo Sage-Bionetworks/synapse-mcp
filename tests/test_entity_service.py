@@ -548,6 +548,40 @@ class TestCreateEntity:
         mock_get_client.assert_not_called()
 
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    async def test_given_column_missing_name_then_returns_value_error(
+        self, mock_get_client
+    ):
+        # A column spec without 'name' is rejected up front rather than
+        # constructing Column(name=None) that fails with a vague error later.
+        result = await EntityService.create_entity(
+            MagicMock(),
+            "table",
+            "T",
+            parent_id="syn1",
+            columns=[{"column_type": "INTEGER"}],
+        )
+
+        assert result["error_type"] == "ValueError"
+        assert "name" in result["error"]
+        mock_get_client.assert_not_called()
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    async def test_given_column_missing_type_then_returns_value_error(
+        self, mock_get_client
+    ):
+        result = await EntityService.create_entity(
+            MagicMock(),
+            "table",
+            "T",
+            parent_id="syn1",
+            columns=[{"name": "age"}],
+        )
+
+        assert result["error_type"] == "ValueError"
+        assert "column_type" in result["error"]
+        mock_get_client.assert_not_called()
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
     async def test_given_bad_view_mask_then_returns_value_error(
         self, mock_get_client
     ):
@@ -653,6 +687,34 @@ class TestUpdateEntity:
 
         assert entity.description is None
         assert entity.annotations == {}
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.operations_get_async", new_callable=AsyncMock)
+    async def test_given_explicit_null_name_then_returns_error(
+        self, mock_ops_get, mock_get_client
+    ):
+        # name/parent_id are not clearable — an explicit null is rejected
+        # before the entity is even fetched.
+        result = await EntityService.update_entity(
+            MagicMock(), "syn1", name=None
+        )
+
+        assert "cannot be cleared" in result["error"]
+        mock_ops_get.assert_not_called()
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.operations_get_async", new_callable=AsyncMock)
+    async def test_given_explicit_null_provenance_then_returns_error(
+        self, mock_ops_get, mock_get_client
+    ):
+        # provenance cannot be cleared via this tool; null is rejected
+        # instead of being silently ignored.
+        result = await EntityService.update_entity(
+            MagicMock(), "syn1", provenance=None
+        )
+
+        assert "cannot be cleared" in result["error"]
+        mock_ops_get.assert_not_called()
 
 
 class TestUpdateEntityChangeTracking:

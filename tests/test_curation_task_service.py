@@ -338,6 +338,23 @@ class TestCreateTask:
         assert "record_set_id" in result["error"]
         mock_get_client.assert_not_called()
 
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    async def test_given_both_properties_then_returns_error_without_client(
+        self, mock_get_client
+    ):
+        # GIVEN both record_set_id and upload_folder_id — the two shapes are
+        # mutually exclusive, so this is rejected rather than silently
+        # preferring record-based.
+        result = await CurationTaskService.create_task(
+            MagicMock(),
+            "syn999",
+            "DataType",
+            {"record_set_id": "syn1", "upload_folder_id": "syn2"},
+        )
+
+        assert "not both" in result["error"]
+        mock_get_client.assert_not_called()
+
 
 # -------------------------------------------------------------------
 # CurationTaskService.delete_task

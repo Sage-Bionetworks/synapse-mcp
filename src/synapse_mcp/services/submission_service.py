@@ -326,6 +326,13 @@ class SubmissionService:
         Returns:
             Dict with the updated submission status.
         """
+        if status is not UNSET and status is None:
+            return {
+                "error": (
+                    "'status' is required and cannot be set to null; supply "
+                    "a status value or omit it to leave it unchanged."
+                )
+            }
         async with synapse_client(ctx) as client:
             sub_status = await SubmissionStatus(
                 id=submission_id

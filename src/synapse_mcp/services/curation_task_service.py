@@ -30,7 +30,16 @@ def _build_task_properties(spec: TaskProperties):
     Record-based tasks carry ``record_set_id``; file-based tasks carry
     ``upload_folder_id`` (and optionally ``file_view_id``). The presence
     of ``record_set_id`` selects record-based; otherwise file-based.
+    The two shapes are mutually exclusive.
     """
+    if spec.get("record_set_id") and spec.get("upload_folder_id"):
+        return {
+            "error": (
+                "task_properties must include either 'record_set_id' "
+                "(record-based) or 'upload_folder_id' (file-based), "
+                "not both."
+            )
+        }
     if spec.get("record_set_id"):
         return RecordBasedMetadataTaskProperties(
             record_set_id=spec["record_set_id"],

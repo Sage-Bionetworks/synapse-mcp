@@ -232,6 +232,20 @@ class TestUpdateEvaluation:
         ev.store_async.assert_called_once()
         assert result["name"] == "Renamed"
 
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.Evaluation")
+    async def test_given_explicit_null_required_field_then_returns_error(
+        self, mock_eval_cls, mock_get_client
+    ):
+        # Required Synapse fields can't be cleared; an explicit null is
+        # rejected up front before the client is touched.
+        result = await EvaluationService.update_evaluation(
+            MagicMock(), "9600001", description=None
+        )
+
+        assert "cannot be cleared" in result["error"]
+        mock_get_client.assert_not_called()
+
 
 class TestDeleteEvaluation:
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
