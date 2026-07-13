@@ -871,31 +871,53 @@ class TestUnbindSchema:
         entity.unbind_schema_async.assert_called_once()
 
 
-class TestUpdateTableColumns:
+class TestUpdateColumns:
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
-    @patch(f"{SVC}.Table")
+    @patch(f"{SVC}.operations_get_async", new_callable=AsyncMock)
     async def test_given_add_and_delete_then_applies_and_stores(
-        self, mock_table_cls, mock_get_client
+        self, mock_ops_get, mock_get_client
     ):
         mock_get_client.return_value = MagicMock()
-        table = MagicMock()
-        table.add_column = MagicMock()
-        table.delete_column = MagicMock()
-        table.store_async = AsyncMock(
+        entity = MagicMock()
+        entity.add_column = MagicMock()
+        entity.delete_column = MagicMock()
+        entity.store_async = AsyncMock(
             return_value=FakeEntity(id="syn5", name="T")
         )
-        mock_table_cls.return_value.get_async = AsyncMock(
-            return_value=table
-        )
+        mock_ops_get.return_value = entity
 
-        result = await EntityService.update_table_columns(
+        result = await EntityService.update_columns(
             MagicMock(),
             "syn5",
             add_columns=[{"name": "age", "column_type": "INTEGER"}],
             delete_columns=["old_col"],
         )
 
-        table.delete_column.assert_called_once_with(name="old_col")
-        table.add_column.assert_called_once()
-        table.store_async.assert_called_once()
+        entity.delete_column.assert_called_once_with(name="old_col")
+        entity.add_column.assert_called_once()
+        entity.store_async.assert_called_once()
         assert result["id"] == "syn5"
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.operations_get_async", new_callable=AsyncMock)
+    async def test_given_non_columnar_entity_then_returns_error(
+        self, mock_ops_get, mock_get_client
+    ):
+        # GIVEN a resolved entity without column methods (e.g. a Folder)
+        mock_get_client.return_value = MagicMock()
+
+        class Folder:
+            pass
+
+        mock_ops_get.return_value = Folder()
+
+        # WHEN a column change is requested on it
+        result = await EntityService.update_columns(
+            MagicMock(),
+            "syn5",
+            add_columns=[{"name": "age", "column_type": "INTEGER"}],
+        )
+
+        # THEN a clear error is returned instead of an AttributeError
+        assert "does not have" in result["error"]
+        assert result["entity_id"] == "syn5"

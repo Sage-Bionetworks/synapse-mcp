@@ -1845,27 +1845,27 @@ async def delete_entity_schema(
     service="entity",
     operation="write",
     synapse_object="Synapse table",
-    title="Update Table Columns",
+    title="Update Columns",
     description=(
         "Use this when the user wants to change the columns (schema) of a "
         "Synapse table, view, or dataset — add new columns or delete "
         "existing ones. This only changes the schema; it never loads row "
-        "data. Table entity ID example: syn123456. add_columns are dicts "
+        "data. Entity ID example: syn123456. add_columns are dicts "
         "with 'name' and 'column_type'; delete_columns are column names."
     ),
     synonyms=("column", "schema", "add column", "delete column") + _UPDATE_SYNONYMS,
     siblings=("create_entity", "update_entity"),
 )
-async def update_table_columns(
+async def update_columns(
     entity_id: str,
     ctx: Context,
     add_columns: Optional[List[ColumnSpec]] = None,
     delete_columns: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
-    """Add or remove columns on a Synapse table."""
+    """Add or remove columns on a Synapse table, view, or dataset."""
     if not validate_synapse_id(entity_id):
         return {"error": f"Invalid Synapse ID: {entity_id}"}
-    return await EntityService.update_table_columns(
+    return await EntityService.update_columns(
         ctx, entity_id, add_columns, delete_columns
     )
 

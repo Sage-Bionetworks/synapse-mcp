@@ -849,8 +849,7 @@ class EntityService:
                     "message": (
                         "A Project's own ACL cannot be deleted; revoke "
                         "individual permissions with update_entity_acl "
-                        "instead. Local ACLs on descendants (if any) were "
-                        "removed."
+                        "instead."
                     ),
                 }
             return {"entity_id": entity_id, "acl_deleted": True}
@@ -908,35 +907,47 @@ class EntityService:
 
     @staticmethod
     @error_boundary(error_context_keys=("entity_id",))
-    async def update_table_columns(
+    async def update_columns(
         ctx: Context,
         entity_id: str,
         add_columns: Optional[List[ColumnSpec]] = None,
         delete_columns: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
-        """Add or remove columns on a Synapse table (schema change only).
+        """Add or remove columns on a table/view/dataset (schema change only).
 
-        Resolves the table, applies column additions/removals, and stores
-        the schema change. This never loads row data. ``delete_columns``
-        names columns to drop; ``add_columns`` are column dict specs
-        (``name`` + ``column_type`` at minimum).
+        Resolves the entity to its concrete columnar type (Table,
+        EntityView, Dataset, ...), applies column additions/removals, and
+        stores the schema change. This never loads row data.
+        ``delete_columns`` names columns to drop; ``add_columns`` are
+        column dict specs (``name`` + ``column_type`` at minimum).
 
         Arguments:
             ctx: The FastMCP request context.
-            entity_id: Synapse ID of the table.
+            entity_id: Synapse ID of the table, view, or dataset.
             add_columns: Column specs to add.
             delete_columns: Column names to delete.
 
         Returns:
-            Dict with the updated table metadata.
+            Dict with the updated entity metadata. Returns an error dict if
+            the entity type does not support columns.
         """
         async with synapse_client(ctx) as client:
-            table = await Table(id=entity_id).get_async(
-                synapse_client=client,
-            )
+            entity = await _resolve_entity(entity_id, client)
+            if not hasattr(entity, "add_column") or not hasattr(
+                entity, "delete_column"
+            ):
+                return {
+                    "error": (
+                        f"Entity {entity_id} is a "
+                        f"{type(entity).__name__}, which does not have "
+                        "columns. Columns can only be changed on tables, "
+                        "views, and datasets."
+                    ),
+                    "entity_id": entity_id,
+                }
             for name in delete_columns or []:
-                table.delete_column(name=name)
+                entity.delete_column(name=name)
             for spec in add_columns or []:
-                table.add_column(EntityService._build_column(spec))
-            stored = await table.store_async(synapse_client=client)
+                entity.add_column(EntityService._build_column(spec))
+            stored = await entity.store_async(synapse_client=client)
             return serialize_model(stored)

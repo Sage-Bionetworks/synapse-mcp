@@ -73,6 +73,7 @@ from .tools import (
     search_entity_by_name,
     search_synapse,
     submit_to_evaluation,
+    update_columns,
     update_entity,
     update_entity_acl,
     update_entity_schema,
@@ -80,7 +81,6 @@ from .tools import (
     update_evaluation_acl,
     update_organization_acl,
     update_submission_status,
-    update_table_columns,
 )
 
 __all__ = [
@@ -157,6 +157,7 @@ __all__ = [
     "search_synapse",
     "submit_to_evaluation",
     "synapse_blog_feed",
+    "update_columns",
     "update_entity",
     "update_entity_acl",
     "update_entity_schema",
@@ -164,5 +165,4 @@ __all__ = [
     "update_evaluation_acl",
     "update_organization_acl",
     "update_submission_status",
-    "update_table_columns",
 ]

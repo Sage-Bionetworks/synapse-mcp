@@ -135,7 +135,7 @@ QUERY_FIXTURES: List[Tuple[str, str]] = [
     ("stop syn123 having its own sharing and inherit from parent", "delete_entity_acl"),
     ("attach the JSON schema my.org-MySchema-1.0.0 to syn123", "update_entity_schema"),
     ("remove the bound schema from syn123", "delete_entity_schema"),
-    ("add a column to table syn123", "update_table_columns"),
+    ("add a column to table syn123", "update_columns"),
     # team writes
     ("create a new team called My Collaborators", "create_team"),
     ("delete team 3379097", "delete_team"),

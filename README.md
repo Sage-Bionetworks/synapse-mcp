@@ -36,9 +36,9 @@ Read and write tools are dispatched through separate proxies — `call_read_tool
 | `get_entity_permissions(entity_id)` | entity | Use this when the user wants to know what the currently authenticated user is allowed to do on a Synapse entity (READ, UPDATE, DELETE, etc.). |
 | `get_link(entity_id)` | entity | Use this when the user has a Synapse Link entity (a shortcut that points at another entity) and wants either the Link's own metadata or the target it resolves to. |
 | `list_entity_acl(entity_id)` | entity | Use this when the user wants every ACL on a Synapse entity and, with recursive=True, on all its descendants — useful for auditing sharing recursively across a project subtree. |
+| `update_columns(entity_id)` | entity | Use this when the user wants to change the columns (schema) of a Synapse table, view, or dataset — add new columns or delete existing ones. |
 | `update_entity(entity_id)` | entity | Use this when the user wants to update a Synapse entity's metadata — rename it, move it to a new parent, change its description, replace its annotations, or set its provenance (the activity/lineage that produced it). |
 | `update_entity_acl(entity_id, principal_id, access_type)` | entity | Use this when the user wants to share a Synapse entity — grant or change what a specific user or team can do with it. |
-| `update_table_columns(entity_id)` | entity | Use this when the user wants to change the columns (schema) of a Synapse table, view, or dataset — add new columns or delete existing ones. |
 | `search_synapse()` | search | Use this when the user wants to search for Synapse entities matching a keyword, topic, or subject (e.g. 'brain tissue', 'cancer_type=glioma'). |
 | `get_entity_provenance()` | activity | Use this when the user wants to know what produced a Synapse entity — its data lineage, inputs, outputs, code executed, and the activity that generated it. |
 | `delete_entity_schema(entity_id)` | schema | Use this when the user wants to unbind (remove) the JSON schema from a Synapse entity so it is no longer validated. |
