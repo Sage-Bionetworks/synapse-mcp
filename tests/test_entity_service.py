@@ -457,6 +457,34 @@ class TestCreateEntity:
         mock_file_cls.return_value.store_async.assert_called_once()
 
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.File")
+    async def test_given_file_with_data_file_handle_id_then_creates(
+        self, mock_file_cls, mock_get_client
+    ):
+        mock_get_client.return_value = MagicMock()
+        mock_file_cls.return_value.store_async = AsyncMock(
+            return_value=FakeEntity(id="syn12", name="f")
+        )
+
+        result = await EntityService.create_entity(
+            MagicMock(),
+            "file",
+            "f",
+            parent_id="syn1",
+            data_file_handle_id="456",
+        )
+
+        assert result["id"] == "syn12"
+        mock_file_cls.assert_called_once_with(
+            name="f",
+            parent_id="syn1",
+            external_url=None,
+            data_file_handle_id="456",
+            synapse_store=True,
+        )
+        mock_file_cls.return_value.store_async.assert_called_once()
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
     async def test_given_link_without_target_then_returns_error(
         self, mock_get_client
     ):

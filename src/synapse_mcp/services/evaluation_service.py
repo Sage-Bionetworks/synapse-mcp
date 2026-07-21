@@ -232,7 +232,9 @@ class EvaluationService:
                         f"'{field}' is required and cannot be cleared to "
                         "null; supply a non-null value or omit it to leave "
                         "it unchanged."
-                    )
+                    ),
+                    "error_type": "ValueError",
+                    "evaluation_id": evaluation_id,
                 }
         async with synapse_client(ctx) as client:
             ev = await Evaluation(id=evaluation_id).get_async(

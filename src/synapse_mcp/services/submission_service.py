@@ -331,7 +331,9 @@ class SubmissionService:
                 "error": (
                     "'status' is required and cannot be set to null; supply "
                     "a status value or omit it to leave it unchanged."
-                )
+                ),
+                "error_type": "ValueError",
+                "submission_id": submission_id,
             }
         async with synapse_client(ctx) as client:
             sub_status = await SubmissionStatus(

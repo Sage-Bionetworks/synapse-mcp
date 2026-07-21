@@ -1631,12 +1631,12 @@ async def search_entities_by_md5(
     siblings=("update_entity", "delete_entity", "get_entity"),
 )
 async def create_entity(
-    ctx: Context,
     entity_type: Annotated[
         EntityType,
         Field(description="The type of entity to create (e.g. project, folder, file)."),
     ],
     name: Annotated[str, Field(description="Name for the new entity.")],
+    ctx: Context,
     parent_id: Annotated[
         Optional[str],
         Field(
@@ -1688,7 +1688,10 @@ async def create_entity(
 ) -> Dict[str, Any]:
     """Create a new Synapse entity from metadata."""
     if parent_id is not None and not validate_synapse_id(parent_id):
-        return {"error": f"Invalid Synapse ID: {parent_id}"}
+        return {
+            "error": f"Invalid Synapse ID: {parent_id}",
+            "error_type": "ValueError",
+        }
     return await EntityService.create_entity(
         ctx,
         entity_type=entity_type,
@@ -1725,10 +1728,10 @@ async def create_entity(
     siblings=("create_entity", "delete_entity", "get_entity", "update_columns"),
 )
 async def update_entity(
-    ctx: Context,
     entity_id: Annotated[
         str, Field(description="Synapse ID of the entity to update, e.g. syn123456.")
     ],
+    ctx: Context,
     name: Annotated[
         Optional[str],
         Field(description="New name (rename). Omit to leave unchanged."),
@@ -1790,13 +1793,19 @@ async def update_entity(
 ) -> Dict[str, Any]:
     """Update a Synapse entity's metadata, annotations, or provenance."""
     if not validate_synapse_id(entity_id):
-        return {"error": f"Invalid Synapse ID: {entity_id}"}
+        return {
+            "error": f"Invalid Synapse ID: {entity_id}",
+            "error_type": "ValueError",
+        }
     if (
         parent_id is not UNSET
         and parent_id is not None
         and not validate_synapse_id(parent_id)
     ):
-        return {"error": f"Invalid Synapse ID: {parent_id}"}
+        return {
+            "error": f"Invalid Synapse ID: {parent_id}",
+            "error_type": "ValueError",
+        }
     return await EntityService.update_entity(
         ctx,
         entity_id=entity_id,
@@ -1835,7 +1844,10 @@ async def delete_entity(
 ) -> Dict[str, Any]:
     """Delete a Synapse entity by ID."""
     if not validate_synapse_id(entity_id):
-        return {"error": f"Invalid Synapse ID: {entity_id}"}
+        return {
+            "error": f"Invalid Synapse ID: {entity_id}",
+            "error_type": "ValueError",
+        }
     return await EntityService.delete_entity(ctx, entity_id)
 
 
@@ -1864,7 +1876,10 @@ async def update_entity_acl(
 ) -> Dict[str, Any]:
     """Set an entity's ACL for one principal."""
     if not validate_synapse_id(entity_id):
-        return {"error": f"Invalid Synapse ID: {entity_id}"}
+        return {
+            "error": f"Invalid Synapse ID: {entity_id}",
+            "error_type": "ValueError",
+        }
     return await EntityService.set_acl(
         ctx, entity_id, principal_id, access_type
     )
@@ -1890,7 +1905,10 @@ async def delete_entity_acl(
 ) -> Dict[str, Any]:
     """Delete an entity's local ACL."""
     if not validate_synapse_id(entity_id):
-        return {"error": f"Invalid Synapse ID: {entity_id}"}
+        return {
+            "error": f"Invalid Synapse ID: {entity_id}",
+            "error_type": "ValueError",
+        }
     return await EntityService.delete_acl(ctx, entity_id)
 
 
@@ -1917,7 +1935,10 @@ async def update_entity_schema(
 ) -> Dict[str, Any]:
     """Bind a JSON schema to a Synapse entity."""
     if not validate_synapse_id(entity_id):
-        return {"error": f"Invalid Synapse ID: {entity_id}"}
+        return {
+            "error": f"Invalid Synapse ID: {entity_id}",
+            "error_type": "ValueError",
+        }
     return await EntityService.bind_schema(
         ctx, entity_id, json_schema_uri, enable_derived_annotations
     )
@@ -1942,7 +1963,10 @@ async def delete_entity_schema(
 ) -> Dict[str, Any]:
     """Unbind the JSON schema from a Synapse entity."""
     if not validate_synapse_id(entity_id):
-        return {"error": f"Invalid Synapse ID: {entity_id}"}
+        return {
+            "error": f"Invalid Synapse ID: {entity_id}",
+            "error_type": "ValueError",
+        }
     return await EntityService.unbind_schema(ctx, entity_id)
 
 
@@ -1997,7 +2021,10 @@ async def update_columns(
 ) -> Dict[str, Any]:
     """Add, remove, rename, or reorder columns on a Synapse table/view/dataset."""
     if not validate_synapse_id(entity_id):
-        return {"error": f"Invalid Synapse ID: {entity_id}"}
+        return {
+            "error": f"Invalid Synapse ID: {entity_id}",
+            "error_type": "ValueError",
+        }
     return await EntityService.update_columns(
         ctx,
         entity_id,
@@ -2023,8 +2050,8 @@ async def update_columns(
     siblings=("delete_team", "create_team_invitation", "get_team"),
 )
 async def create_team(
-    ctx: Context,
     name: str,
+    ctx: Context,
     description: Optional[str] = None,
     can_public_join: bool = False,
     can_request_membership: bool = True,
@@ -2123,7 +2150,10 @@ async def create_evaluation(
 ) -> Dict[str, Any]:
     """Create a new Evaluation queue."""
     if not validate_synapse_id(content_source):
-        return {"error": f"Invalid Synapse ID: {content_source}"}
+        return {
+            "error": f"Invalid Synapse ID: {content_source}",
+            "error_type": "ValueError",
+        }
     return await EvaluationService.create_evaluation(
         ctx,
         name=name,
@@ -2239,7 +2269,10 @@ async def submit_to_evaluation(
 ) -> Dict[str, Any]:
     """Submit an existing entity to an Evaluation queue."""
     if not validate_synapse_id(entity_id):
-        return {"error": f"Invalid Synapse ID: {entity_id}"}
+        return {
+            "error": f"Invalid Synapse ID: {entity_id}",
+            "error_type": "ValueError",
+        }
     return await SubmissionService.submit_to_evaluation(
         ctx,
         evaluation_id,
@@ -2449,7 +2482,10 @@ async def create_curation_task(
 ) -> Dict[str, Any]:
     """Create a curation task on a project."""
     if not validate_synapse_id(project_id):
-        return {"error": f"Invalid Synapse ID: {project_id}"}
+        return {
+            "error": f"Invalid Synapse ID: {project_id}",
+            "error_type": "ValueError",
+        }
     return await CurationTaskService.create_task(
         ctx,
         project_id=project_id,

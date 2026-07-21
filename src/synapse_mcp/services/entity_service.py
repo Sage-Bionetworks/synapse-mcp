@@ -521,7 +521,12 @@ class EntityService:
             data_file_handle_id=data_file_handle_id,
         )
         if isinstance(model, dict):  # validation error
-            return model
+            return {
+                "error_type": "ValueError",
+                **model,
+                "entity_type": entity_type,
+                "parent_id": parent_id,
+            }
         async with synapse_client(ctx) as client:
             stored = await model.store_async(synapse_client=client)
             return serialize_model(stored)
@@ -754,7 +759,9 @@ class EntityService:
                     "error": (
                         f"'{field}' cannot be cleared to null; supply a "
                         "non-null value or omit it to leave it unchanged."
-                    )
+                    ),
+                    "error_type": "ValueError",
+                    "entity_id": entity_id,
                 }
         if provenance is not UNSET and provenance is None:
             return {
@@ -762,7 +769,9 @@ class EntityService:
                     "provenance cannot be cleared via this tool; delete the "
                     "entity's activity separately, or omit it to leave it "
                     "unchanged."
-                )
+                ),
+                "error_type": "ValueError",
+                "entity_id": entity_id,
             }
         # Type-specific fields keyed by the model attribute they set. All are
         # non-clearable and only valid on entity types that expose the attr.
@@ -781,7 +790,9 @@ class EntityService:
                     "error": (
                         f"'{field}' cannot be cleared to null; supply a "
                         "non-null value or omit it to leave it unchanged."
-                    )
+                    ),
+                    "error_type": "ValueError",
+                    "entity_id": entity_id,
                 }
         async with synapse_client(ctx) as client:
             entity = await _resolve_entity(entity_id, client)

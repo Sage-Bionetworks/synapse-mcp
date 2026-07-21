@@ -165,7 +165,12 @@ class CurationTaskService:
         """
         props = _build_task_properties(task_properties)
         if isinstance(props, dict):  # validation error
-            return props
+            return {
+                "error_type": "ValueError",
+                **props,
+                "project_id": project_id,
+                "data_type": data_type,
+            }
         async with synapse_client(ctx) as client:
             task = CurationTask(
                 project_id=project_id,
