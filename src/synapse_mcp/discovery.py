@@ -85,9 +85,10 @@ class SplitCallTransform(BM25SearchTransform):
         ) -> ToolResult:
             """Call a write/destructive tool discovered via search_tools.
 
-            Only tools that create, update, or delete Synapse objects are
-            reachable here. Read-only tools must be called via
-            call_read_tool.
+            Call search_tools first to get the tool's full argument schema
+            (names, types, and per-argument descriptions), then pass those
+            arguments here. Only tools that create, update, or delete Synapse
+            objects are reachable; read-only tools must use call_read_tool.
             """
             await transform._require_mutation_role(
                 ctx, name, expect_mutation=True
@@ -113,9 +114,10 @@ class SplitCallTransform(BM25SearchTransform):
         ) -> ToolResult:
             """Call a read-only tool discovered via search_tools.
 
-            Only tools that read Synapse state are reachable here. Tools
-            that create, update, or delete must be called via
-            call_write_tool.
+            Call search_tools first to get the tool's full argument schema
+            (names, types, and per-argument descriptions), then pass those
+            arguments here. Only tools that read Synapse state are reachable;
+            tools that create, update, or delete must use call_write_tool.
             """
             await transform._require_mutation_role(
                 ctx, name, expect_mutation=False

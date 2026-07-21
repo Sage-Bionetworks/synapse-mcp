@@ -10,9 +10,10 @@ the full catalog to index.
 """
 
 import warnings
-from typing import Any, Dict, List, Optional
+from typing import Annotated, Any, Dict, List, Optional
 
 from fastmcp import Context
+from pydantic import Field
 from pydantic.json_schema import PydanticJsonSchemaWarning
 
 from .app import mcp
@@ -50,7 +51,12 @@ from .utils import validate_synapse_id
 # argument (leave unchanged) is distinguishable from an explicit null (clear).
 # pydantic warns that this non-JSON default is dropped from the schema, which
 # is exactly what we want — silence that one cosmetic warning at import.
-warnings.filterwarnings("ignore", category=PydanticJsonSchemaWarning)
+# Match by message so unrelated PydanticJsonSchemaWarnings still surface.
+warnings.filterwarnings(
+    "ignore",
+    message=r"Default value UNSET is not JSON serializable",
+    category=PydanticJsonSchemaWarning,
+)
 
 
 # Reusable synonym sets so BM25 indexes user-language aliases for every
@@ -1626,19 +1632,59 @@ async def search_entities_by_md5(
 )
 async def create_entity(
     ctx: Context,
-    entity_type: EntityType,
-    name: str,
-    parent_id: Optional[str] = None,
-    description: Optional[str] = None,
-    annotations: Optional[Dict[str, List[Any]]] = None,
-    columns: Optional[List[ColumnSpec]] = None,
-    defining_sql: Optional[str] = None,
-    view_type_mask: Optional[List[ViewScopeType]] = None,
-    scope_ids: Optional[List[str]] = None,
-    target_id: Optional[str] = None,
-    target_version_number: Optional[int] = None,
-    external_url: Optional[str] = None,
-    data_file_handle_id: Optional[str] = None,
+    entity_type: Annotated[
+        EntityType,
+        Field(description="The type of entity to create (e.g. project, folder, file)."),
+    ],
+    name: Annotated[str, Field(description="Name for the new entity.")],
+    parent_id: Annotated[
+        Optional[str],
+        Field(
+            description=(
+                "Parent container Synapse ID, e.g. syn123456. Required for "
+                "every type except project."
+            )
+        ),
+    ] = None,
+    description: Annotated[
+        Optional[str], Field(description="Optional entity description.")
+    ] = None,
+    annotations: Annotated[
+        Optional[Dict[str, List[Any]]],
+        Field(description="Optional annotations; each key maps to a list of values."),
+    ] = None,
+    columns: Annotated[
+        Optional[List[ColumnSpec]],
+        Field(description="Column definitions for table-like entities."),
+    ] = None,
+    defining_sql: Annotated[
+        Optional[str],
+        Field(description="SQL for materializedview / virtualtable entities."),
+    ] = None,
+    view_type_mask: Annotated[
+        Optional[List[ViewScopeType]],
+        Field(description="Scope types for view/dataset entities, e.g. ['file']."),
+    ] = None,
+    scope_ids: Annotated[
+        Optional[List[str]],
+        Field(description="Container IDs an entityview scopes over."),
+    ] = None,
+    target_id: Annotated[
+        Optional[str],
+        Field(description="For link entities, the entity the link points at."),
+    ] = None,
+    target_version_number: Annotated[
+        Optional[int],
+        Field(description="Optional pinned version for a link entity."),
+    ] = None,
+    external_url: Annotated[
+        Optional[str],
+        Field(description="For file entities, the external URL to link to."),
+    ] = None,
+    data_file_handle_id: Annotated[
+        Optional[str],
+        Field(description="For file/recordset entities, an existing file handle ID."),
+    ] = None,
 ) -> Dict[str, Any]:
     """Create a new Synapse entity from metadata."""
     if parent_id is not None and not validate_synapse_id(parent_id):
@@ -1668,26 +1714,79 @@ async def create_entity(
     synapse_object="Synapse entity",
     title="Update Entity",
     description=(
-        "Use this when the user wants to update a Synapse entity's "
-        "metadata — rename it, move it to a new parent, change its "
-        "description, replace its annotations, or set its provenance "
-        "(the activity/lineage that produced it). Annotations and "
-        "provenance are attributes stored on the entity; there is no "
-        "separate provenance tool. Entity ID example: syn123456. Each "
-        "field is only changed when supplied; pass an explicit null to "
-        "clear description or annotations."
+        "Use this to rename a Synapse entity, move it to a new parent, "
+        "change its description, replace its annotations, or set its "
+        "provenance. Type-specific fields are set via the individual "
+        "arguments. Pass an explicit null to clear description or "
+        "annotations. To change table columns, use update_columns. "
+        "Entity ID example: syn123456."
     ),
     synonyms=_UPDATE_SYNONYMS + _ANNOTATION_SYNONYMS + _PROVENANCE_SYNONYMS,
-    siblings=("create_entity", "delete_entity", "get_entity"),
+    siblings=("create_entity", "delete_entity", "get_entity", "update_columns"),
 )
 async def update_entity(
     ctx: Context,
-    entity_id: str,
-    name: Optional[str] = UNSET,
-    parent_id: Optional[str] = UNSET,
-    description: Optional[str] = UNSET,
-    annotations: Optional[Dict[str, List[Any]]] = UNSET,
-    provenance: Optional[ProvenanceSpec] = UNSET,
+    entity_id: Annotated[
+        str, Field(description="Synapse ID of the entity to update, e.g. syn123456.")
+    ],
+    name: Annotated[
+        Optional[str],
+        Field(description="New name (rename). Omit to leave unchanged."),
+    ] = UNSET,
+    parent_id: Annotated[
+        Optional[str],
+        Field(description="New parent container ID (move), e.g. syn123456."),
+    ] = UNSET,
+    description: Annotated[
+        Optional[str],
+        Field(description="New description; pass null to clear it."),
+    ] = UNSET,
+    annotations: Annotated[
+        Optional[Dict[str, List[Any]]],
+        Field(
+            description=(
+                "Full replacement annotations (each key maps to a list of "
+                "values); null or {} clears all annotations."
+            )
+        ),
+    ] = UNSET,
+    provenance: Annotated[
+        Optional[ProvenanceSpec],
+        Field(
+            description=(
+                "Provenance/activity that produced this entity. Cannot be "
+                "cleared here."
+            )
+        ),
+    ] = UNSET,
+    external_url: Annotated[
+        Optional[str],
+        Field(description="New external URL (file entities only)."),
+    ] = UNSET,
+    data_file_handle_id: Annotated[
+        Optional[str],
+        Field(description="New file handle to attach (file entities only)."),
+    ] = UNSET,
+    target_id: Annotated[
+        Optional[str],
+        Field(description="New link target entity ID (link entities only)."),
+    ] = UNSET,
+    target_version_number: Annotated[
+        Optional[int],
+        Field(description="Pinned target version (link entities only)."),
+    ] = UNSET,
+    scope_ids: Annotated[
+        Optional[List[str]],
+        Field(description="Container IDs an entityview scopes over."),
+    ] = UNSET,
+    view_type_mask: Annotated[
+        Optional[List[ViewScopeType]],
+        Field(description="Scope types for view/dataset entities."),
+    ] = UNSET,
+    defining_sql: Annotated[
+        Optional[str],
+        Field(description="SQL for materializedview / virtualtable."),
+    ] = UNSET,
 ) -> Dict[str, Any]:
     """Update a Synapse entity's metadata, annotations, or provenance."""
     if not validate_synapse_id(entity_id):
@@ -1706,6 +1805,13 @@ async def update_entity(
         description=description,
         annotations=annotations,
         provenance=provenance,
+        external_url=external_url,
+        data_file_handle_id=data_file_handle_id,
+        target_id=target_id,
+        target_version_number=target_version_number,
+        scope_ids=scope_ids,
+        view_type_mask=view_type_mask,
+        defining_sql=defining_sql,
     )
 
 
@@ -1847,26 +1953,58 @@ async def delete_entity_schema(
     synapse_object="Synapse table",
     title="Update Columns",
     description=(
-        "Use this when the user wants to change the columns (schema) of a "
-        "Synapse table, view, or dataset — add new columns or delete "
-        "existing ones. This only changes the schema; it never loads row "
-        "data. Entity ID example: syn123456. add_columns are dicts "
-        "with 'name' and 'column_type'; delete_columns are column names."
+        "Use this when the user wants to change a Synapse table, view, or "
+        "dataset column layout — add, delete, rename, or reorder columns. "
+        "This only changes the schema; it never loads row data. Operations "
+        "apply in order: delete, add, rename, reorder. Entity ID example: "
+        "syn123456."
     ),
-    synonyms=("column", "schema", "add column", "delete column") + _UPDATE_SYNONYMS,
+    synonyms=(
+        "column",
+        "schema",
+        "add column",
+        "delete column",
+    ),
     siblings=("create_entity", "update_entity"),
 )
 async def update_columns(
-    entity_id: str,
+    entity_id: Annotated[
+        str,
+        Field(description="Synapse ID of the table, view, or dataset, e.g. syn123456."),
+    ],
     ctx: Context,
-    add_columns: Optional[List[ColumnSpec]] = None,
-    delete_columns: Optional[List[str]] = None,
+    add_columns: Annotated[
+        Optional[List[ColumnSpec]],
+        Field(description="Column specs to add (name + column_type at minimum)."),
+    ] = None,
+    delete_columns: Annotated[
+        Optional[List[str]],
+        Field(description="Names of existing columns to delete."),
+    ] = None,
+    rename_columns: Annotated[
+        Optional[Dict[str, str]],
+        Field(description="Map of {old_name: new_name} for existing columns."),
+    ] = None,
+    reorder_columns: Annotated[
+        Optional[List[str]],
+        Field(
+            description=(
+                "Complete desired column order as a list of the final column "
+                "names (all of them, no duplicates)."
+            )
+        ),
+    ] = None,
 ) -> Dict[str, Any]:
-    """Add or remove columns on a Synapse table, view, or dataset."""
+    """Add, remove, rename, or reorder columns on a Synapse table/view/dataset."""
     if not validate_synapse_id(entity_id):
         return {"error": f"Invalid Synapse ID: {entity_id}"}
     return await EntityService.update_columns(
-        ctx, entity_id, add_columns, delete_columns
+        ctx,
+        entity_id,
+        add_columns,
+        delete_columns,
+        rename_columns,
+        reorder_columns,
     )
 
 
@@ -1965,11 +2103,22 @@ async def create_team_invitation(
     siblings=("update_evaluation", "delete_evaluation", "get_evaluation"),
 )
 async def create_evaluation(
-    name: str,
-    content_source: str,
-    description: str,
-    submission_instructions_message: str,
-    submission_receipt_message: str,
+    name: Annotated[str, Field(description="Name for the new evaluation queue.")],
+    content_source: Annotated[
+        str,
+        Field(description="Owning project Synapse ID, e.g. syn123456."),
+    ],
+    description: Annotated[
+        str, Field(description="Description of the queue (required by Synapse).")
+    ],
+    submission_instructions_message: Annotated[
+        str,
+        Field(description="Instructions shown to submitters (required by Synapse)."),
+    ],
+    submission_receipt_message: Annotated[
+        str,
+        Field(description="Message shown after a submission (required by Synapse)."),
+    ],
     ctx: Context,
 ) -> Dict[str, Any]:
     """Create a new Evaluation queue."""
@@ -2160,8 +2309,8 @@ async def create_organization(
     title="Delete Organization",
     description=(
         "Use this when the user wants to delete a Synapse Organization "
-        "(a namespace) by name. Organization name example: 'my.org'. "
-        "This is irreversible."
+        "(a namespace) by name. Organizations are addressed by their name "
+        "(e.g. 'my.org'), not a numeric or syn id. This is irreversible."
     ),
     synonyms=_DELETE_SYNONYMS + _SCHEMA_SYNONYMS + ("namespace",),
     siblings=("create_organization", "get_schema_organization"),
@@ -2211,8 +2360,9 @@ async def update_organization_acl(
     title="Register JSON Schema",
     description=(
         "Use this when the user wants to register (publish a version of) a "
-        "Synapse JSON Schema from an inline JSON document. Organization "
-        "name example: 'my.org'. Schema name example: 'MySchema'. Optional "
+        "Synapse JSON Schema from an inline JSON document. The owning "
+        "organization is addressed by its name (e.g. 'my.org'), not a "
+        "numeric or syn id. Schema name example: 'MySchema'. Optional "
         "version example: '1.0.0'."
     ),
     synonyms=_SCHEMA_SYNONYMS + _CREATE_SYNONYMS + ("register", "publish"),
@@ -2277,11 +2427,25 @@ async def delete_json_schema(
     siblings=("delete_curation_task", "get_curation_task"),
 )
 async def create_curation_task(
-    project_id: str,
-    data_type: str,
-    task_properties: TaskProperties,
+    project_id: Annotated[
+        str, Field(description="Project Synapse ID the task belongs to, e.g. syn123456.")
+    ],
+    data_type: Annotated[
+        str, Field(description="The kind of data being curated.")
+    ],
+    task_properties: Annotated[
+        TaskProperties,
+        Field(
+            description=(
+                "Selects the task shape: record_set_id for record-based, or "
+                "upload_folder_id (+ optional file_view_id) for file-based."
+            )
+        ),
+    ],
     ctx: Context,
-    instructions: Optional[str] = None,
+    instructions: Annotated[
+        Optional[str], Field(description="Optional free-text instructions.")
+    ] = None,
 ) -> Dict[str, Any]:
     """Create a curation task on a project."""
     if not validate_synapse_id(project_id):

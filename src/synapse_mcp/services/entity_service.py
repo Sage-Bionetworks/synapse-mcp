@@ -701,6 +701,13 @@ class EntityService:
         description: Optional[str] = UNSET,
         annotations: Optional[Dict[str, List[Any]]] = UNSET,
         provenance: Optional[ProvenanceSpec] = UNSET,
+        external_url: Optional[str] = UNSET,
+        data_file_handle_id: Optional[str] = UNSET,
+        target_id: Optional[str] = UNSET,
+        target_version_number: Optional[int] = UNSET,
+        scope_ids: Optional[List[str]] = UNSET,
+        view_type_mask: Optional[List[ViewScopeType]] = UNSET,
+        defining_sql: Optional[str] = UNSET,
     ) -> Dict[str, Any]:
         """Update a Synapse entity's metadata, annotations, or provenance.
 
@@ -712,8 +719,10 @@ class EntityService:
         Each optional field is only touched when supplied. Passing an
         explicit ``null`` clears that field: ``description=null`` blanks
         the description and ``annotations=null`` (or ``{}``) removes all
-        annotations. Provenance cannot be cleared via this tool — delete
-        the entity's activity separately.
+        annotations. Every other field is non-clearable — a null is
+        rejected. Type-specific fields (``external_url``, ``target_id``,
+        ``scope_ids``, ``defining_sql``, ...) are rejected when the resolved
+        entity type does not support them.
 
         Arguments:
             ctx: The FastMCP request context.
@@ -725,10 +734,20 @@ class EntityService:
                 list of values); null or {} clears all annotations.
             provenance: Provenance/activity spec — ``name``, ``description``,
                 and ``used`` / ``executed`` lists of entity refs or URLs.
+            external_url: New external URL (file entities only).
+            data_file_handle_id: New file handle to attach (file entities
+                only).
+            target_id: New link target entity ID (link entities only).
+            target_version_number: Pinned target version (link entities
+                only).
+            scope_ids: Container IDs an entityview scopes over.
+            view_type_mask: Scope types for view/dataset entities.
+            defining_sql: SQL for materializedview / virtualtable.
 
         Returns:
             Dict with the updated entity metadata.
         """
+        # Generic non-clearable fields (a null is meaningless server-side).
         for field, value in (("name", name), ("parent_id", parent_id)):
             if value is not UNSET and value is None:
                 return {
@@ -745,6 +764,25 @@ class EntityService:
                     "unchanged."
                 )
             }
+        # Type-specific fields keyed by the model attribute they set. All are
+        # non-clearable and only valid on entity types that expose the attr.
+        type_specific = {
+            "external_url": external_url,
+            "data_file_handle_id": data_file_handle_id,
+            "target_id": target_id,
+            "target_version_number": target_version_number,
+            "scope_ids": scope_ids,
+            "view_type_mask": view_type_mask,
+            "defining_sql": defining_sql,
+        }
+        for field, value in type_specific.items():
+            if value is not UNSET and value is None:
+                return {
+                    "error": (
+                        f"'{field}' cannot be cleared to null; supply a "
+                        "non-null value or omit it to leave it unchanged."
+                    )
+                }
         async with synapse_client(ctx) as client:
             entity = await _resolve_entity(entity_id, client)
             if name is not UNSET:
@@ -757,6 +795,24 @@ class EntityService:
                 entity.annotations = annotations or {}
             if provenance is not UNSET:
                 entity.activity = EntityService._build_activity(provenance)
+            for field, value in type_specific.items():
+                if value is UNSET:
+                    continue
+                if not hasattr(entity, field):
+                    return {
+                        "error": (
+                            f"'{field}' is not valid for a "
+                            f"{type(entity).__name__}."
+                        ),
+                        "entity_id": entity_id,
+                    }
+                if field == "view_type_mask":
+                    value = EntityService._resolve_view_mask(value)
+                setattr(entity, field, value)
+            # Setting an external_url means the file is an external link, not
+            # a local upload — mirror create_entity's synapse_store guard.
+            if external_url is not UNSET and hasattr(entity, "synapse_store"):
+                entity.synapse_store = False
             stored = await entity.store_async(synapse_client=client)
             return serialize_model(stored)
 
@@ -935,24 +991,36 @@ class EntityService:
         entity_id: str,
         add_columns: Optional[List[ColumnSpec]] = None,
         delete_columns: Optional[List[str]] = None,
+        rename_columns: Optional[Dict[str, str]] = None,
+        reorder_columns: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
-        """Add or remove columns on a table/view/dataset (schema change only).
+        """Change the columns (schema) of a table/view/dataset.
 
         Resolves the entity to its concrete columnar type (Table,
-        EntityView, Dataset, ...), applies column additions/removals, and
-        stores the schema change. This never loads row data.
-        ``delete_columns`` names columns to drop; ``add_columns`` are
-        column dict specs (``name`` + ``column_type`` at minimum).
+        EntityView, Dataset, ...), applies the requested column operations,
+        and stores the schema change. This never loads row data.
+
+        Operations are applied in a fixed order — delete, then add, then
+        rename, then reorder — so names in later operations refer to the
+        post-add/post-delete state. ``reorder_columns``, when supplied, must
+        list exactly the final set of column names (all of them, no
+        duplicates).
 
         Arguments:
             ctx: The FastMCP request context.
             entity_id: Synapse ID of the table, view, or dataset.
-            add_columns: Column specs to add.
+            add_columns: Column specs to add (``name`` + ``column_type`` at
+                minimum).
             delete_columns: Column names to delete.
+            rename_columns: Map of ``{old_name: new_name}`` for existing
+                columns.
+            reorder_columns: Complete desired column order, as a list of the
+                final column names.
 
         Returns:
             Dict with the updated entity metadata. Returns an error dict if
-            the entity type does not support columns.
+            the entity type does not support columns or the reorder list is
+            incomplete.
         """
         async with synapse_client(ctx) as client:
             entity = await _resolve_entity(entity_id, client)
@@ -972,5 +1040,39 @@ class EntityService:
                 entity.delete_column(name=name)
             for spec in add_columns or []:
                 entity.add_column(EntityService._build_column(spec))
+            # Rename by mutating Column.name in place; store diffs by column
+            # id, so the OrderedDict key is cosmetic. Re-key here so a later
+            # reorder can reference the new names.
+            if rename_columns:
+                for old_name, new_name in rename_columns.items():
+                    col = entity.columns.get(old_name)
+                    if col is None:
+                        return {
+                            "error": (
+                                f"Cannot rename column '{old_name}': no such "
+                                "column."
+                            ),
+                            "entity_id": entity_id,
+                        }
+                    col.name = new_name
+                entity.columns = type(entity.columns)(
+                    (col.name, col) for col in entity.columns.values()
+                )
+            if reorder_columns is not None:
+                current = set(entity.columns.keys())
+                requested = set(reorder_columns)
+                if requested != current or len(reorder_columns) != len(
+                    current
+                ):
+                    return {
+                        "error": (
+                            "reorder_columns must list exactly the final set "
+                            f"of column names. Expected {sorted(current)}, "
+                            f"got {reorder_columns}."
+                        ),
+                        "entity_id": entity_id,
+                    }
+                for index, name in enumerate(reorder_columns):
+                    entity.reorder_column(name=name, index=index)
             stored = await entity.store_async(synapse_client=client)
             return serialize_model(stored)

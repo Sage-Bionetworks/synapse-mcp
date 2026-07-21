@@ -7,7 +7,7 @@ and permissions operations using the new SDK patterns
 
 from dataclasses import dataclass
 from typing import Optional
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
@@ -716,6 +716,79 @@ class TestUpdateEntity:
         assert "cannot be cleared" in result["error"]
         mock_ops_get.assert_not_called()
 
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.operations_get_async", new_callable=AsyncMock)
+    async def test_given_external_url_then_sets_and_disables_store(
+        self, mock_ops_get, mock_get_client
+    ):
+        # A new external_url makes the file an external link, so
+        # synapse_store must be flipped off (mirrors create_entity).
+        mock_get_client.return_value = MagicMock()
+        entity = MagicMock()
+        entity.store_async = AsyncMock(return_value=FakeEntity())
+        mock_ops_get.return_value = entity
+
+        await EntityService.update_entity(
+            MagicMock(), "syn1", external_url="http://x/data.csv"
+        )
+
+        assert entity.external_url == "http://x/data.csv"
+        assert entity.synapse_store is False
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.operations_get_async", new_callable=AsyncMock)
+    async def test_given_view_type_mask_then_resolves_flag(
+        self, mock_ops_get, mock_get_client
+    ):
+        from synapseclient.models import ViewTypeMask
+
+        mock_get_client.return_value = MagicMock()
+        entity = MagicMock()
+        entity.store_async = AsyncMock(return_value=FakeEntity())
+        mock_ops_get.return_value = entity
+
+        await EntityService.update_entity(
+            MagicMock(), "syn1", view_type_mask=["file"]
+        )
+
+        assert entity.view_type_mask == ViewTypeMask.FILE
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.operations_get_async", new_callable=AsyncMock)
+    async def test_given_type_specific_field_on_wrong_type_then_errors(
+        self, mock_ops_get, mock_get_client
+    ):
+        # external_url on a type that lacks the attribute (e.g. a Folder)
+        # is rejected rather than silently setting a bogus attribute.
+        mock_get_client.return_value = MagicMock()
+
+        class FakeFolder:
+            name = "F"
+
+        folder = FakeFolder()
+        mock_ops_get.return_value = folder
+
+        result = await EntityService.update_entity(
+            MagicMock(), "syn1", external_url="http://x/data.csv"
+        )
+
+        assert "not valid for a FakeFolder" in result["error"]
+        assert result["entity_id"] == "syn1"
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.operations_get_async", new_callable=AsyncMock)
+    async def test_given_explicit_null_type_specific_then_returns_error(
+        self, mock_ops_get, mock_get_client
+    ):
+        # Type-specific fields are non-clearable; an explicit null is
+        # rejected before the entity is fetched.
+        result = await EntityService.update_entity(
+            MagicMock(), "syn1", target_id=None
+        )
+
+        assert "cannot be cleared" in result["error"]
+        mock_ops_get.assert_not_called()
+
 
 class TestUpdateEntityChangeTracking:
     """Pin the SDK change-tracking contract that makes clearing persist.
@@ -933,6 +1006,27 @@ class TestUnbindSchema:
         entity.unbind_schema_async.assert_called_once()
 
 
+def _columnar_entity(col_names) -> MagicMock:
+    """Mock table-like entity for update_columns tests.
+
+    Each key in ``col_names`` becomes a mock Column whose ``.name`` matches
+    the key, stored in a real dict so the service's re-key/reorder logic runs
+    against genuine dict semantics. ``store_async`` returns a FakeEntity so a
+    result can be serialized.
+    """
+    entity = MagicMock()
+    columns = {}
+    for name in col_names:
+        col = MagicMock()
+        col.name = name
+        columns[name] = col
+    entity.columns = columns
+    entity.store_async = AsyncMock(
+        return_value=FakeEntity(id="syn5", name="T")
+    )
+    return entity
+
+
 class TestUpdateColumns:
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
     @patch(f"{SVC}.operations_get_async", new_callable=AsyncMock)
@@ -983,3 +1077,112 @@ class TestUpdateColumns:
         # THEN a clear error is returned instead of an AttributeError
         assert "does not have" in result["error"]
         assert result["entity_id"] == "syn5"
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.operations_get_async", new_callable=AsyncMock)
+    async def test_given_rename_then_renames_and_rekeys(
+        self, mock_ops_get, mock_get_client
+    ):
+        # A rename mutates Column.name in place AND re-keys the columns
+        # dict so a later reorder can reference the new name.
+        mock_get_client.return_value = MagicMock()
+        entity = _columnar_entity({"age": None, "name": None})
+        mock_ops_get.return_value = entity
+
+        result = await EntityService.update_columns(
+            MagicMock(), "syn5", rename_columns={"age": "years"}
+        )
+
+        assert list(entity.columns.keys()) == ["years", "name"]
+        assert entity.columns["years"].name == "years"
+        assert result["id"] == "syn5"
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.operations_get_async", new_callable=AsyncMock)
+    async def test_given_rename_unknown_column_then_returns_error(
+        self, mock_ops_get, mock_get_client
+    ):
+        mock_get_client.return_value = MagicMock()
+        entity = _columnar_entity({"age": None})
+        mock_ops_get.return_value = entity
+
+        result = await EntityService.update_columns(
+            MagicMock(), "syn5", rename_columns={"nope": "x"}
+        )
+
+        assert "no such column" in result["error"]
+        entity.store_async.assert_not_called()
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.operations_get_async", new_callable=AsyncMock)
+    async def test_given_reorder_then_reorders_each_by_index(
+        self, mock_ops_get, mock_get_client
+    ):
+        mock_get_client.return_value = MagicMock()
+        entity = _columnar_entity({"a": None, "b": None})
+        mock_ops_get.return_value = entity
+
+        await EntityService.update_columns(
+            MagicMock(), "syn5", reorder_columns=["b", "a"]
+        )
+
+        assert entity.reorder_column.call_args_list == [
+            call(name="b", index=0),
+            call(name="a", index=1),
+        ]
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.operations_get_async", new_callable=AsyncMock)
+    async def test_given_incomplete_reorder_then_returns_error(
+        self, mock_ops_get, mock_get_client
+    ):
+        # reorder_columns must list EXACTLY the final columns — a partial
+        # list is rejected rather than dropping columns silently.
+        mock_get_client.return_value = MagicMock()
+        entity = _columnar_entity({"a": None, "b": None})
+        mock_ops_get.return_value = entity
+
+        result = await EntityService.update_columns(
+            MagicMock(), "syn5", reorder_columns=["a"]
+        )
+
+        assert "exactly the final set" in result["error"]
+        entity.reorder_column.assert_not_called()
+        entity.store_async.assert_not_called()
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.operations_get_async", new_callable=AsyncMock)
+    async def test_given_all_ops_then_applies_in_delete_add_rename_reorder_order(
+        self, mock_ops_get, mock_get_client
+    ):
+        # The four operations compose: delete drops a column, add appends
+        # one, rename re-keys, and reorder references the post-add/rename
+        # names. Ordering matters — reorder must see the final name set.
+        mock_get_client.return_value = MagicMock()
+        entity = _columnar_entity({"old": None, "keep": None})
+
+        def _add(col):
+            entity.columns[col.name] = col
+
+        def _delete(*, name):
+            entity.columns.pop(name)
+
+        entity.add_column.side_effect = _add
+        entity.delete_column.side_effect = _delete
+        mock_ops_get.return_value = entity
+
+        result = await EntityService.update_columns(
+            MagicMock(),
+            "syn5",
+            delete_columns=["old"],
+            add_columns=[{"name": "added", "column_type": "INTEGER"}],
+            rename_columns={"keep": "kept"},
+            reorder_columns=["added", "kept"],
+        )
+
+        assert result["id"] == "syn5"
+        assert set(entity.columns.keys()) == {"added", "kept"}
+        assert entity.reorder_column.call_args_list == [
+            call(name="added", index=0),
+            call(name="kept", index=1),
+        ]

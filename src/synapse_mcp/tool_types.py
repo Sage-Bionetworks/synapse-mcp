@@ -9,7 +9,8 @@ JSON-schema ``enum`` lists (so the LLM sees the exact allowed values) and
 
 from typing import List, Literal, Optional
 
-from typing_extensions import TypedDict
+from pydantic import Field
+from typing_extensions import Annotated, TypedDict
 
 # Entity types ``create_entity`` can build without uploading file content.
 EntityType = Literal[
@@ -116,11 +117,22 @@ ViewScopeType = Literal[
 class ColumnSpec(TypedDict, total=False):
     """A single table/view column definition."""
 
-    name: str
-    column_type: ColumnDataType
-    maximum_size: int
-    default_value: str
-    enum_values: List[str]
+    name: Annotated[str, Field(description="Column name. Required.")]
+    column_type: Annotated[
+        ColumnDataType,
+        Field(description="Column data type (e.g. STRING, INTEGER). Required."),
+    ]
+    maximum_size: Annotated[
+        int,
+        Field(description="Max character length for STRING/STRING_LIST columns."),
+    ]
+    default_value: Annotated[
+        str, Field(description="Default value applied when a cell is empty.")
+    ]
+    enum_values: Annotated[
+        List[str],
+        Field(description="Allowed values, restricting the column to this set."),
+    ]
 
 
 class UsedItem(TypedDict, total=False):
@@ -130,19 +142,35 @@ class UsedItem(TypedDict, total=False):
     Synapse entity, or ``url`` (and optionally ``name``) for an external URL.
     """
 
-    target_id: str
-    target_version_number: int
-    name: str
-    url: str
+    target_id: Annotated[
+        str, Field(description="Synapse ID of the referenced entity, e.g. syn123456.")
+    ]
+    target_version_number: Annotated[
+        int, Field(description="Optional pinned version of the referenced entity.")
+    ]
+    name: Annotated[
+        str, Field(description="Display name for a URL reference.")
+    ]
+    url: Annotated[
+        str, Field(description="External URL, used instead of target_id.")
+    ]
 
 
 class ProvenanceSpec(TypedDict, total=False):
     """Provenance/Activity attached to an entity on store."""
 
-    name: str
-    description: str
-    used: List[UsedItem]
-    executed: List[UsedItem]
+    name: Annotated[str, Field(description="Name of the activity/run.")]
+    description: Annotated[
+        str, Field(description="Description of what the activity did.")
+    ]
+    used: Annotated[
+        List[UsedItem],
+        Field(description="Inputs the activity consumed (entity refs or URLs)."),
+    ]
+    executed: Annotated[
+        List[UsedItem],
+        Field(description="Code/tools the activity ran (entity refs or URLs)."),
+    ]
 
 
 class TaskProperties(TypedDict, total=False):
@@ -153,9 +181,30 @@ class TaskProperties(TypedDict, total=False):
     task.
     """
 
-    record_set_id: str
-    upload_folder_id: str
-    file_view_id: str
+    record_set_id: Annotated[
+        str,
+        Field(
+            description=(
+                "Synapse ID of the record set for a record-based task. "
+                "Mutually exclusive with upload_folder_id."
+            )
+        ),
+    ]
+    upload_folder_id: Annotated[
+        str,
+        Field(
+            description=(
+                "Synapse ID of the upload folder for a file-based task. "
+                "Mutually exclusive with record_set_id."
+            )
+        ),
+    ]
+    file_view_id: Annotated[
+        str,
+        Field(
+            description="Optional file view Synapse ID for a file-based task."
+        ),
+    ]
 
 
 class _Unset:

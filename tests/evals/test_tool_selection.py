@@ -136,6 +136,10 @@ QUERY_FIXTURES: List[Tuple[str, str]] = [
     ("attach the JSON schema my.org-MySchema-1.0.0 to syn123", "update_entity_schema"),
     ("remove the bound schema from syn123", "delete_entity_schema"),
     ("add a column to table syn123", "update_columns"),
+    ("rename a column in table syn123", "update_columns"),
+    ("reorder the columns on view syn123", "update_columns"),
+    ("set the provenance on syn123", "update_entity"),
+    ("point link syn123 at a different target entity", "update_entity"),
     # team writes
     ("create a new team called My Collaborators", "create_team"),
     ("delete team 3379097", "delete_team"),
