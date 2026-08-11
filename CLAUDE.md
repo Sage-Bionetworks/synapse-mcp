@@ -42,6 +42,12 @@ Every tool is declared via `@service_tool` (from `synapse_mcp.services`), never 
 
 All tool errors are dicts with at minimum `error: str` and `error_type: str`, optional `status_code: int`, plus any context keys declared on the service method's `@error_boundary(error_context_keys=(...))`. Don't invent a different error shape — MCP clients parse this one.
 
+## Dependency and vulnerability triage
+
+`uv.lock` is the single install source for local dev, CI (`uv sync --locked`), and the container image — so an upper bound in `pyproject.toml` is itself an exposure, not just a version pin. `cryptography>=48.0.1,<50` shipped vulnerable 49.x into CI and the image while the Dependabot alert that prompted the DPE-1769 bump was lockfile-only; the cap was the real hole.
+
+Triage Dependabot alerts by whether the vulnerable version is actually installed on a shipped path (lockfile vs. `pyproject.toml` cap vs. transitive-only), comparing each alert's `first_patched_version` against the floor already being adopted — before ranking by bump size or deferring to a follow-up ticket.
+
 ## Related docs
 
 - `doc/tool-authoring.md` — full tool-authoring convention with a canonical example.
