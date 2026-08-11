@@ -1,8 +1,11 @@
 """
-Connection-scoped authentication for production multi-user support.
+Request-scoped authentication for production multi-user support.
 
-This module provides per-connection synapseclient management to ensure
+This module provides per-request synapseclient management to ensure
 user isolation and prevent cross-user data leakage in production deployments.
+The client and auth state are stored request-scoped (serializable=False), so
+they live only for the current MCP request and are never shared across
+requests or placed in the process-global session store.
 
 ## Architecture
 
@@ -91,7 +94,7 @@ async def _set_state(ctx: Context, key: str, value: Any, serializable: bool = Tr
                      type(ctx).__name__, key)
         return
     try:
-        await setter(key, value, serializable)
+        await setter(key, value, serializable=serializable)
     except (TypeError, AttributeError) as exc:
         logger.debug("Context %s rejected set_state for %s: %s",
                      type(ctx).__name__, key, exc)
@@ -104,21 +107,23 @@ class ConnectionAuthError(Exception):
 
 async def get_synapse_client(ctx: Context) -> synapseclient.Synapse:
     """
-    Get or create a synapseclient instance for this connection.
+    Get or create a synapseclient instance for this request.
 
-    This function ensures each connection has its own isolated synapseclient
+    This function ensures each request has its own isolated synapseclient
     instance, preventing cross-user authentication issues and data leakage.
+    The client is cached in request-scoped state, so repeated calls within the
+    same request reuse it, but each new request builds a fresh client.
 
     Args:
-        ctx: FastMCP context object for this connection
+        ctx: FastMCP context object for this request
 
     Returns:
-        synapseclient.Synapse: Authenticated client for this connection
+        synapseclient.Synapse: Authenticated client for this request
 
     Raises:
         ConnectionAuthError: If authentication fails or is not configured
     """
-    # Check if client already exists for this connection
+    # Check if client already exists for this request
     logger.debug("get_synapse_client called with context type=%s attrs=%s", type(
         ctx).__name__, dir(ctx))
     client = await _get_state(ctx, SYNAPSE_CLIENT_KEY)
@@ -137,9 +142,10 @@ async def get_synapse_client(ctx: Context) -> synapseclient.Synapse:
         raise ConnectionAuthError(
             "Authentication for connection needed (or re-authentication for expired sessions).")
 
-    # Store client in connection context (not JSON-serializable)
+    # Store client in request-scoped state (not JSON-serializable, does not
+    # persist across requests)
     await _set_state(ctx, SYNAPSE_CLIENT_KEY, client, serializable=False)
-    await _set_state(ctx, AUTH_INITIALIZED_KEY, True)
+    await _set_state(ctx, AUTH_INITIALIZED_KEY, True, serializable=False)
 
     logger.info(
         "Successfully created and authenticated synapseclient for connection")
@@ -208,7 +214,7 @@ async def _authenticate_with_oauth(client: synapseclient.Synapse, ctx: Context, 
             "method": "oauth",
             "user_id": profile.get("ownerId"),
             "username": profile.get("userName"),
-        })
+        }, serializable=False)
 
         logger.info(
             f"OAuth authentication successful for user: {profile.get('userName')}")
@@ -246,7 +252,7 @@ async def _authenticate_with_pat(client: synapseclient.Synapse, ctx: Context, to
             "user_id": profile.get("ownerId"),
             "username": profile.get("userName"),
             "scopes": ["full_access"]  # PATs have full access
-        })
+        }, serializable=False)
 
         logger.info(
             f"PAT authentication successful for user: {profile.get('userName')}")
