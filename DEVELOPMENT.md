@@ -13,6 +13,14 @@ cd synapse-mcp
 uv sync
 ```
 
+**Alternative: plain venv + pip.** Convenience-only, for contributors who don't want `uv` installed. This installs from `pyproject.toml` directly and does **not** use `uv.lock`, so it can pull different (potentially vulnerable) transitive versions than CI/the image use — prefer `uv sync` above when possible.
+
+```bash
+python -m venv .venv
+source .venv/bin/activate  # On Windows use `.venv\Scripts\activate`
+pip install --upgrade -e .
+```
+
 ### Pre-commit hooks
 
 Install the pre-commit hooks once after setup so the README tool table stays in sync with the code:
