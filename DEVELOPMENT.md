@@ -71,7 +71,7 @@ To run the test suite, use `pytest`:
 
 ```bash
 # Run all tests
-uv run pytest
+python -m pytest
 ```
 
 ### Redis session storage smoke test
