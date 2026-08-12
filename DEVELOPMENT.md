@@ -26,7 +26,7 @@ pip install --upgrade -e .
 Install the pre-commit hooks once after setup so the README tool table stays in sync with the code:
 
 ```bash
-pre-commit install
+uv run pre-commit install
 ```
 
 The `sync-readme-tools` hook regenerates the Available Tools table in `README.md` from the registered MCP tools whenever `src/synapse_mcp/tools.py`, the generator script, or `README.md` changes. If it rewrites the table during a commit, re-stage `README.md` and commit again. You can also run it manually: `uv run python scripts/gen_tool_table.py`.
@@ -49,7 +49,7 @@ Currently, the server default is **stdio transport** for local use. For developm
 
 ```bash
 export SYNAPSE_PAT=$SYNAPSE_AUTH_TOKEN
-synapse-mcp --http --debug
+uv run synapse-mcp --http --debug
 ```
 
 **To also test OAuth2**
@@ -64,7 +64,7 @@ export SYNAPSE_OAUTH_CLIENT_ID=$CLIENT_ID
 export SYNAPSE_OAUTH_CLIENT_SECRET=$CLIENT_SECRET
 export SYNAPSE_OAUTH_REDIRECT_URI="http://127.0.0.1:9000/oauth/callback"
 export MCP_SERVER_URL="http://127.0.0.1:9000/mcp"
-synapse-mcp --http --debug
+uv run synapse-mcp --http --debug
 ```
 
 ### 3. Add to local AI client like Claude Code
