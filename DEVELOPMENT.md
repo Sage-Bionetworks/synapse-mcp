@@ -9,15 +9,22 @@ This guide provides instructions for setting up and running the Synapse MCP serv
 git clone https://github.com/SageBionetworks/synapse-mcp.git
 cd synapse-mcp
 
-# 2. Install dependencies from the lock file
-uv sync
+# 2. Create and activate a virtual environment
+python -m venv .venv
+source .venv/bin/activate  # On Windows use `.venv\Scripts\activate`
+
+# 3. Install the package in editable mode
+pip install --upgrade -e .
 ```
+
+If you have previously installed the package, it is important to use the `--upgrade` flag to ensure the console script is properly generated.
 
 ### Pre-commit hooks
 
 Install the pre-commit hooks once after setup so the README tool table stays in sync with the code:
 
 ```bash
+pip install pre-commit  # included in requirements-dev.txt
 pre-commit install
 ```
 
