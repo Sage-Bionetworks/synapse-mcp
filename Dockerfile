@@ -10,21 +10,19 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Create an unprivileged user to run the application
-RUN groupadd --system synapse && useradd --system --gid synapse --home /app synapse \
-    && chown synapse:synapse /app
+RUN groupadd --system synapse && useradd --system --gid synapse --home /app synapse
 
-# uv installs the exact versions recorded in uv.lock
-COPY --from=ghcr.io/astral-sh/uv:0.12.3 /uv /usr/local/bin/uv
+# Copy the project files
+COPY . .
 
-# Copy the project files, owned by the runtime user
-COPY --chown=synapse:synapse . .
+# Install the package in development mode
+RUN pip install --no-cache-dir -e .
 
-# Drop root before installing so the virtualenv belongs to the runtime user
+# Ensure application files are owned by the runtime user
+RUN chown -R synapse:synapse /app
+
+# Drop root privileges for runtime
 USER synapse
-
-RUN uv sync --frozen --no-dev --no-editable --no-cache --python-preference only-system
-
-ENV PATH="/app/.venv/bin:$PATH"
 
 # Expose the port
 EXPOSE 9000
