@@ -46,6 +46,10 @@ No tool uploads or downloads file bytes. A File entity is creatable only via ext
 
 All tool errors are dicts with at minimum `error: str` and `error_type: str`, optional `status_code: int`, plus any context keys declared on the service method's `@error_boundary(error_context_keys=(...))`. Don't invent a different error shape — MCP clients parse this one.
 
+## PR review threads
+
+Resolve a review thread without posting a reply comment — the resolution itself is the answer, and every already-resolved thread on this repo's PRs carries exactly one comment. Push the PR's head branch to update it; the branch is the deliverable. Never merge, and never push to the default branch.
+
 ## Related docs
 
 - `doc/tool-authoring.md` — full tool-authoring convention with a canonical example.
