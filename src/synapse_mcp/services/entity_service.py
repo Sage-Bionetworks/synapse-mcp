@@ -1055,6 +1055,7 @@ class EntityService:
                         "columns. Columns can only be changed on tables, "
                         "views, and datasets."
                     ),
+                    "error_type": "ValueError",
                     "entity_id": entity_id,
                 }
             for name in delete_columns or []:
@@ -1063,19 +1064,38 @@ class EntityService:
                 entity.add_column(EntityService._build_column(spec))
             # Rename by mutating Column.name in place; store diffs by column
             # id, so the OrderedDict key is cosmetic. Re-key here so a later
-            # reorder can reference the new names.
+            # reorder can reference the new names. Validate the full
+            # projected post-rename name set for collisions before mutating
+            # anything, so the in-memory model is never left half-renamed.
             if rename_columns:
-                for old_name, new_name in rename_columns.items():
-                    col = entity.columns.get(old_name)
-                    if col is None:
+                for old_name in rename_columns:
+                    if entity.columns.get(old_name) is None:
                         return {
                             "error": (
                                 f"Cannot rename column '{old_name}': no such "
                                 "column."
                             ),
+                            "error_type": "ValueError",
                             "entity_id": entity_id,
                         }
-                    col.name = new_name
+                projected = [
+                    rename_columns.get(name, name)
+                    for name in entity.columns
+                ]
+                seen: set = set()
+                for name in projected:
+                    if name in seen:
+                        return {
+                            "error": (
+                                f"Cannot rename to '{name}': a column with "
+                                "that name already exists."
+                            ),
+                            "error_type": "ValueError",
+                            "entity_id": entity_id,
+                        }
+                    seen.add(name)
+                for old_name, new_name in rename_columns.items():
+                    entity.columns[old_name].name = new_name
                 entity.columns = type(entity.columns)(
                     (col.name, col) for col in entity.columns.values()
                 )
@@ -1091,6 +1111,7 @@ class EntityService:
                             f"of column names. Expected {sorted(current)}, "
                             f"got {reorder_columns}."
                         ),
+                        "error_type": "ValueError",
                         "entity_id": entity_id,
                     }
                 for index, name in enumerate(reorder_columns):

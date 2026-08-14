@@ -1097,7 +1097,9 @@ def _columnar_entity(col_names) -> MagicMock:
     Each key in ``col_names`` becomes a mock Column whose ``.name`` matches
     the key, stored in a real dict so the service's re-key/reorder logic runs
     against genuine dict semantics. ``store_async`` returns a FakeEntity so a
-    result can be serialized.
+    result can be serialized. ``add_column``/``delete_column`` mutate
+    ``entity.columns`` in place, mirroring the real SDK, so a delete freeing
+    a name and a later rename onto that name is expressible under the mock.
     """
     entity = MagicMock()
     columns = {}
@@ -1106,6 +1108,15 @@ def _columnar_entity(col_names) -> MagicMock:
         col.name = name
         columns[name] = col
     entity.columns = columns
+
+    def _add(col):
+        entity.columns[col.name] = col
+
+    def _delete(*, name):
+        entity.columns.pop(name)
+
+    entity.add_column.side_effect = _add
+    entity.delete_column.side_effect = _delete
     entity.store_async = AsyncMock(
         return_value=FakeEntity(id="syn5", name="T")
     )
@@ -1161,6 +1172,7 @@ class TestUpdateColumns:
 
         # THEN a clear error is returned instead of an AttributeError
         assert "does not have" in result["error"]
+        assert result["error_type"] == "ValueError"
         assert result["entity_id"] == "syn5"
 
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
@@ -1196,7 +1208,73 @@ class TestUpdateColumns:
         )
 
         assert "no such column" in result["error"]
+        assert result["error_type"] == "ValueError"
         entity.store_async.assert_not_called()
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.operations_get_async", new_callable=AsyncMock)
+    async def test_given_two_renames_onto_same_target_then_returns_error(
+        self, mock_ops_get, mock_get_client
+    ):
+        mock_get_client.return_value = MagicMock()
+        entity = _columnar_entity({"a": None, "b": None})
+        mock_ops_get.return_value = entity
+
+        result = await EntityService.update_columns(
+            MagicMock(),
+            "syn5",
+            rename_columns={"a": "x", "b": "x"},
+        )
+
+        assert "x" in result["error"]
+        assert result["error_type"] == "ValueError"
+        assert result["entity_id"] == "syn5"
+        entity.store_async.assert_not_called()
+        # The in-memory model is untouched — validated before any mutation.
+        assert entity.columns["a"].name == "a"
+        assert entity.columns["b"].name == "b"
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.operations_get_async", new_callable=AsyncMock)
+    async def test_given_rename_onto_surviving_column_name_then_returns_error(
+        self, mock_ops_get, mock_get_client
+    ):
+        mock_get_client.return_value = MagicMock()
+        entity = _columnar_entity({"old": None, "keep": None})
+        mock_ops_get.return_value = entity
+
+        result = await EntityService.update_columns(
+            MagicMock(),
+            "syn5",
+            rename_columns={"old": "keep"},
+        )
+
+        assert "keep" in result["error"]
+        assert result["error_type"] == "ValueError"
+        entity.store_async.assert_not_called()
+        assert entity.columns["old"].name == "old"
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.operations_get_async", new_callable=AsyncMock)
+    async def test_given_delete_then_rename_onto_freed_name_then_succeeds(
+        self, mock_ops_get, mock_get_client
+    ):
+        # "old" is deleted first, freeing its name for "keep" to rename onto
+        # in the same call — legal because deletes apply before renames.
+        mock_get_client.return_value = MagicMock()
+        entity = _columnar_entity({"old": None, "keep": None})
+        mock_ops_get.return_value = entity
+
+        result = await EntityService.update_columns(
+            MagicMock(),
+            "syn5",
+            delete_columns=["old"],
+            rename_columns={"keep": "old"},
+        )
+
+        assert result["id"] == "syn5"
+        assert set(entity.columns.keys()) == {"old"}
+        assert entity.columns["old"].name == "old"
 
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
     @patch(f"{SVC}.operations_get_async", new_callable=AsyncMock)
@@ -1232,6 +1310,7 @@ class TestUpdateColumns:
         )
 
         assert "exactly the final set" in result["error"]
+        assert result["error_type"] == "ValueError"
         entity.reorder_column.assert_not_called()
         entity.store_async.assert_not_called()
 
