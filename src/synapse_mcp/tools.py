@@ -2393,7 +2393,7 @@ async def submit_to_evaluation(
 )
 async def update_submission_status(
     submission_id: Annotated[
-        str, Field(description="Numeric ID of the submission.")
+        str, Field(description="Numeric ID of the submission, e.g. '9722111'.")
     ],
     ctx: Context,
     status: Annotated[
