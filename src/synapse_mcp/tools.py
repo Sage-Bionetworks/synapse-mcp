@@ -2482,7 +2482,10 @@ async def delete_organization(
         "resources (such as JSON schemas) under a Synapse Organization "
         "namespace, addressed by id or by name. Valid access_type values "
         "are READ, CREATE, UPDATE, DELETE, and CHANGE_PERMISSIONS. "
-        "Principal ID example: 3379097."
+        "Principal ID example: 3379097. Warning: access_type replaces the "
+        "principal's existing access list wholesale rather than merging "
+        "into it, so omitting CHANGE_PERMISSIONS for your own principal is "
+        "irreversible."
     ),
     synonyms=_SCHEMA_SYNONYMS + _ACL_SYNONYMS + _UPDATE_SYNONYMS,
     siblings=("get_schema_organization_acl", "get_schema_organization"),
