@@ -1840,7 +1840,10 @@ async def update_entity(
     siblings=("create_entity", "update_entity", "get_entity"),
 )
 async def delete_entity(
-    entity_id: str, ctx: Context
+    entity_id: Annotated[
+        str, Field(description="Synapse ID of the entity to delete, e.g. syn123456.")
+    ],
+    ctx: Context,
 ) -> Dict[str, Any]:
     """Delete a Synapse entity by ID."""
     if not validate_synapse_id(entity_id):
@@ -1869,9 +1872,21 @@ async def delete_entity(
     siblings=("delete_entity_acl", "get_entity_acl", "get_entity_permissions"),
 )
 async def update_entity_acl(
-    entity_id: str,
-    principal_id: int,
-    access_type: List[EntityAccessType],
+    entity_id: Annotated[
+        str, Field(description="Synapse ID of the entity, e.g. syn123456.")
+    ],
+    principal_id: Annotated[
+        int, Field(description="User or team ID to grant access to, e.g. 3379097.")
+    ],
+    access_type: Annotated[
+        List[EntityAccessType],
+        Field(
+            description=(
+                "Permission strings, e.g. ['READ', 'DOWNLOAD']. Pass an "
+                "empty list to remove the principal's access."
+            )
+        ),
+    ],
     ctx: Context,
 ) -> Dict[str, Any]:
     """Set an entity's ACL for one principal."""
@@ -1901,7 +1916,10 @@ async def update_entity_acl(
     siblings=("update_entity_acl", "get_entity_acl"),
 )
 async def delete_entity_acl(
-    entity_id: str, ctx: Context
+    entity_id: Annotated[
+        str, Field(description="Synapse ID of the entity, e.g. syn123456.")
+    ],
+    ctx: Context,
 ) -> Dict[str, Any]:
     """Delete an entity's local ACL."""
     if not validate_synapse_id(entity_id):
@@ -1928,10 +1946,23 @@ async def delete_entity_acl(
     siblings=("delete_entity_schema", "get_entity_schema"),
 )
 async def update_entity_schema(
-    entity_id: str,
-    json_schema_uri: str,
+    entity_id: Annotated[
+        str, Field(description="Synapse ID of the entity, e.g. syn123456.")
+    ],
+    json_schema_uri: Annotated[
+        str,
+        Field(description="JSON Schema $id to bind, e.g. 'my.org-MySchema-1.0.0'."),
+    ],
     ctx: Context,
-    enable_derived_annotations: bool = False,
+    enable_derived_annotations: Annotated[
+        bool,
+        Field(
+            description=(
+                "Whether Synapse should derive annotations from the schema "
+                "on this entity."
+            )
+        ),
+    ] = False,
 ) -> Dict[str, Any]:
     """Bind a JSON schema to a Synapse entity."""
     if not validate_synapse_id(entity_id):
@@ -1959,7 +1990,10 @@ async def update_entity_schema(
     siblings=("update_entity_schema", "get_entity_schema"),
 )
 async def delete_entity_schema(
-    entity_id: str, ctx: Context
+    entity_id: Annotated[
+        str, Field(description="Synapse ID of the entity, e.g. syn123456.")
+    ],
+    ctx: Context,
 ) -> Dict[str, Any]:
     """Unbind the JSON schema from a Synapse entity."""
     if not validate_synapse_id(entity_id):
@@ -2050,11 +2084,19 @@ async def update_columns(
     siblings=("delete_team", "create_team_invitation", "get_team"),
 )
 async def create_team(
-    name: str,
+    name: Annotated[
+        str, Field(description="Team name, e.g. 'NF-OSI Curators'.")
+    ],
     ctx: Context,
-    description: Optional[str] = None,
-    can_public_join: bool = False,
-    can_request_membership: bool = True,
+    description: Annotated[
+        Optional[str], Field(description="Description of the team.")
+    ] = None,
+    can_public_join: Annotated[
+        bool, Field(description="Whether anyone can join without an invitation.")
+    ] = False,
+    can_request_membership: Annotated[
+        bool, Field(description="Whether users can request to join.")
+    ] = True,
 ) -> Dict[str, Any]:
     """Create a new Synapse Team."""
     return await TeamService.create_team(
@@ -2080,7 +2122,10 @@ async def create_team(
     siblings=("create_team", "get_team"),
 )
 async def delete_team(
-    team_id: int, ctx: Context
+    team_id: Annotated[
+        int, Field(description="Numeric ID of the team to delete, e.g. 3379097.")
+    ],
+    ctx: Context,
 ) -> Dict[str, Any]:
     """Delete a Synapse Team by ID."""
     return await TeamService.delete_team(ctx, team_id)
@@ -2101,11 +2146,30 @@ async def delete_team(
     siblings=("create_team", "get_team_open_invitations"),
 )
 async def create_team_invitation(
-    team_id: int,
-    user: str,
+    team_id: Annotated[
+        int, Field(description="Numeric ID of the team, e.g. 3379097.")
+    ],
+    user: Annotated[
+        str,
+        Field(
+            description=(
+                "Username or numeric user ID to invite, e.g. '1234567'."
+            )
+        ),
+    ],
     ctx: Context,
-    message: Optional[str] = None,
-    force: bool = True,
+    message: Annotated[
+        Optional[str], Field(description="Optional message shown with the invitation.")
+    ] = None,
+    force: Annotated[
+        bool,
+        Field(
+            description=(
+                "Whether to send the invitation even if the user is "
+                "already a member or has a pending invitation."
+            )
+        ),
+    ] = True,
 ) -> Dict[str, Any]:
     """Invite a user to a Synapse Team."""
     return await TeamService.invite_to_team(
@@ -2179,11 +2243,20 @@ async def create_evaluation(
     siblings=("create_evaluation", "delete_evaluation", "get_evaluation"),
 )
 async def update_evaluation(
-    evaluation_id: str,
+    evaluation_id: Annotated[
+        str, Field(description="Numeric ID of the evaluation queue, e.g. '9600001'.")
+    ],
     ctx: Context,
-    name: Optional[str] = UNSET,
-    description: Optional[str] = UNSET,
-    submission_instructions_message: Optional[str] = UNSET,
+    name: Annotated[
+        Optional[str], Field(description="New name for the queue.")
+    ] = UNSET,
+    description: Annotated[
+        Optional[str], Field(description="New description for the queue.")
+    ] = UNSET,
+    submission_instructions_message: Annotated[
+        Optional[str],
+        Field(description="New instructions shown to submitters."),
+    ] = UNSET,
 ) -> Dict[str, Any]:
     """Update an Evaluation queue's metadata."""
     return await EvaluationService.update_evaluation(
@@ -2210,7 +2283,10 @@ async def update_evaluation(
     siblings=("create_evaluation", "get_evaluation"),
 )
 async def delete_evaluation(
-    evaluation_id: str, ctx: Context
+    evaluation_id: Annotated[
+        str, Field(description="Numeric ID of the evaluation queue, e.g. '9600001'.")
+    ],
+    ctx: Context,
 ) -> Dict[str, Any]:
     """Delete an Evaluation queue by ID."""
     return await EvaluationService.delete_evaluation(ctx, evaluation_id)
@@ -2234,9 +2310,16 @@ async def delete_evaluation(
     siblings=("get_evaluation_acl", "get_evaluation_permissions"),
 )
 async def update_evaluation_acl(
-    evaluation_id: str,
-    principal_id: int,
-    access_type: List[EvaluationAccessType],
+    evaluation_id: Annotated[
+        str, Field(description="Numeric ID of the evaluation queue, e.g. '9600001'.")
+    ],
+    principal_id: Annotated[
+        int, Field(description="User or team ID to grant access to, e.g. 3379097.")
+    ],
+    access_type: Annotated[
+        List[EvaluationAccessType],
+        Field(description="Permission strings, e.g. ['READ', 'SUBMIT']."),
+    ],
     ctx: Context,
 ) -> Dict[str, Any]:
     """Update an Evaluation queue's ACL for one principal."""
@@ -2261,11 +2344,20 @@ async def update_evaluation_acl(
     siblings=("get_submission", "update_submission_status"),
 )
 async def submit_to_evaluation(
-    evaluation_id: str,
-    entity_id: str,
+    evaluation_id: Annotated[
+        str, Field(description="Numeric ID of the evaluation queue, e.g. '9600001'.")
+    ],
+    entity_id: Annotated[
+        str, Field(description="Synapse ID of the entity to submit, e.g. syn123456.")
+    ],
     ctx: Context,
-    name: Optional[str] = None,
-    submitter_alias: Optional[str] = None,
+    name: Annotated[
+        Optional[str], Field(description="Optional name for the submission.")
+    ] = None,
+    submitter_alias: Annotated[
+        Optional[str],
+        Field(description="Optional display name shown for the submitter."),
+    ] = None,
 ) -> Dict[str, Any]:
     """Submit an existing entity to an Evaluation queue."""
     if not validate_synapse_id(entity_id):
@@ -2300,10 +2392,22 @@ async def submit_to_evaluation(
     siblings=("get_submission_status", "submit_to_evaluation"),
 )
 async def update_submission_status(
-    submission_id: str,
+    submission_id: Annotated[
+        str, Field(description="Numeric ID of the submission, e.g. '9722112'.")
+    ],
     ctx: Context,
-    status: Optional[SubmissionStatusValue] = UNSET,
-    annotations: Optional[Dict[str, List[Any]]] = UNSET,
+    status: Annotated[
+        Optional[SubmissionStatusValue],
+        Field(description="New scoring status, e.g. 'SCORED'."),
+    ] = UNSET,
+    annotations: Annotated[
+        Optional[Dict[str, List[Any]]],
+        Field(
+            description=(
+                "Full replacement status annotations; null clears them."
+            )
+        ),
+    ] = UNSET,
 ) -> Dict[str, Any]:
     """Update a submission's scoring status."""
     return await SubmissionService.update_submission_status(
@@ -2326,7 +2430,10 @@ async def update_submission_status(
     siblings=("delete_organization", "get_schema_organization"),
 )
 async def create_organization(
-    organization_name: str, ctx: Context
+    organization_name: Annotated[
+        str, Field(description="Namespace to register, e.g. 'my.org'.")
+    ],
+    ctx: Context,
 ) -> Dict[str, Any]:
     """Create a new Synapse Organization."""
     return await SchemaOrganizationService.create_organization(
@@ -2422,11 +2529,19 @@ async def update_organization_acl(
     siblings=("delete_json_schema", "get_json_schema"),
 )
 async def register_json_schema(
-    organization_name: str,
-    schema_name: str,
-    schema_body: Dict[str, Any],
+    organization_name: Annotated[
+        str, Field(description="Owning organization name, e.g. 'my.org'.")
+    ],
+    schema_name: Annotated[
+        str, Field(description="Schema name, e.g. 'MySchema'.")
+    ],
+    schema_body: Annotated[
+        Dict[str, Any], Field(description="The JSON Schema document as an inline dict.")
+    ],
     ctx: Context,
-    version: Optional[str] = None,
+    version: Annotated[
+        Optional[str], Field(description="Optional semantic version, e.g. '1.0.0'.")
+    ] = None,
 ) -> Dict[str, Any]:
     """Register a JSON Schema from an inline body."""
     return await SchemaOrganizationService.register_json_schema(
@@ -2453,8 +2568,12 @@ async def register_json_schema(
     siblings=("register_json_schema", "get_json_schema"),
 )
 async def delete_json_schema(
-    organization_name: str,
-    schema_name: str,
+    organization_name: Annotated[
+        str, Field(description="Owning organization name, e.g. 'my.org'.")
+    ],
+    schema_name: Annotated[
+        str, Field(description="Schema name to delete, e.g. 'MySchema'.")
+    ],
     ctx: Context,
 ) -> Dict[str, Any]:
     """Delete a JSON Schema by organization and name."""
@@ -2529,7 +2648,10 @@ async def create_curation_task(
     siblings=("create_curation_task", "get_curation_task"),
 )
 async def delete_curation_task(
-    task_id: int, ctx: Context
+    task_id: Annotated[
+        int, Field(description="Numeric ID of the curation task, e.g. 42.")
+    ],
+    ctx: Context,
 ) -> Dict[str, Any]:
     """Delete a curation task by ID."""
     return await CurationTaskService.delete_task(ctx, task_id)
