@@ -9,23 +9,24 @@ This guide provides instructions for setting up and running the Synapse MCP serv
 git clone https://github.com/SageBionetworks/synapse-mcp.git
 cd synapse-mcp
 
-# 2. Create and activate a virtual environment
-python -m venv .venv
-source .venv/bin/activate  # On Windows use `.venv\Scripts\activate`
-
-# 3. Install the package in editable mode
-pip install --upgrade -e .
+# 2. Install dependencies from the lock file
+uv sync
 ```
 
-If you have previously installed the package, it is important to use the `--upgrade` flag to ensure the console script is properly generated.
+**Alternative: plain venv + pip.** Convenience-only, for contributors who don't want `uv` installed. This installs from `pyproject.toml` directly and does **not** use `uv.lock`, so it can pull different (potentially vulnerable) transitive versions than CI/the image use — prefer `uv sync` above when possible.
+
+```bash
+python -m venv .venv
+source .venv/bin/activate  # On Windows use `.venv\Scripts\activate`
+pip install --upgrade -e .
+```
 
 ### Pre-commit hooks
 
 Install the pre-commit hooks once after setup so the README tool table stays in sync with the code:
 
 ```bash
-pip install pre-commit  # included in requirements-dev.txt
-pre-commit install
+uv run pre-commit install
 ```
 
 The `sync-readme-tools` hook regenerates the Available Tools table in `README.md` from the registered MCP tools whenever `src/synapse_mcp/tools.py`, the generator script, or `README.md` changes. If it rewrites the table during a commit, re-stage `README.md` and commit again. You can also run it manually: `uv run python scripts/gen_tool_table.py`.
@@ -48,7 +49,7 @@ Currently, the server default is **stdio transport** for local use. For developm
 
 ```bash
 export SYNAPSE_PAT=$SYNAPSE_AUTH_TOKEN
-synapse-mcp --http --debug
+uv run synapse-mcp --http --debug
 ```
 
 **To also test OAuth2**
@@ -63,7 +64,7 @@ export SYNAPSE_OAUTH_CLIENT_ID=$CLIENT_ID
 export SYNAPSE_OAUTH_CLIENT_SECRET=$CLIENT_SECRET
 export SYNAPSE_OAUTH_REDIRECT_URI="http://127.0.0.1:9000/oauth/callback"
 export MCP_SERVER_URL="http://127.0.0.1:9000/mcp"
-synapse-mcp --http --debug
+uv run synapse-mcp --http --debug
 ```
 
 ### 3. Add to local AI client like Claude Code
@@ -78,7 +79,7 @@ To run the test suite, use `pytest`:
 
 ```bash
 # Run all tests
-python -m pytest
+uv run pytest
 ```
 
 ### Redis session storage smoke test
