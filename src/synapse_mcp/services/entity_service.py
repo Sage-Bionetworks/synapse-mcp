@@ -794,6 +794,15 @@ class EntityService:
                     "error_type": "ValueError",
                     "entity_id": entity_id,
                 }
+        if external_url is not UNSET and data_file_handle_id is not UNSET:
+            return {
+                "error": (
+                    "Provide either external_url or data_file_handle_id for "
+                    "a file, not both."
+                ),
+                "error_type": "ValueError",
+                "entity_id": entity_id,
+            }
         async with synapse_client(ctx) as client:
             entity = await _resolve_entity(entity_id, client)
             if name is not UNSET:
@@ -815,6 +824,7 @@ class EntityService:
                             f"'{field}' is not valid for a "
                             f"{type(entity).__name__}."
                         ),
+                        "error_type": "ValueError",
                         "entity_id": entity_id,
                     }
                 if field == "view_type_mask":

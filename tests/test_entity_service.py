@@ -801,7 +801,64 @@ class TestUpdateEntity:
         )
 
         assert "not valid for a FakeFolder" in result["error"]
+        assert result["error_type"] == "ValueError"
         assert result["entity_id"] == "syn1"
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.operations_get_async", new_callable=AsyncMock)
+    async def test_given_both_external_url_and_data_file_handle_id_then_errors(
+        self, mock_ops_get, mock_get_client
+    ):
+        # The two are mutually exclusive, mirroring create_entity's check.
+        # No client is opened and the entity is never fetched.
+        result = await EntityService.update_entity(
+            MagicMock(),
+            "syn1",
+            external_url="http://x/data.csv",
+            data_file_handle_id="456",
+        )
+
+        assert result["error"] == (
+            "Provide either external_url or data_file_handle_id for a "
+            "file, not both."
+        )
+        assert result["error_type"] == "ValueError"
+        assert result["entity_id"] == "syn1"
+        mock_get_client.assert_not_awaited()
+        mock_ops_get.assert_not_called()
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.operations_get_async", new_callable=AsyncMock)
+    async def test_given_data_file_handle_id_alone_then_sets_it(
+        self, mock_ops_get, mock_get_client
+    ):
+        mock_get_client.return_value = MagicMock()
+        entity = MagicMock()
+        entity.store_async = AsyncMock(return_value=FakeEntity())
+        mock_ops_get.return_value = entity
+
+        await EntityService.update_entity(
+            MagicMock(), "syn1", data_file_handle_id="456"
+        )
+
+        assert entity.data_file_handle_id == "456"
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.operations_get_async", new_callable=AsyncMock)
+    async def test_given_null_external_url_and_data_file_handle_id_then_null_clear_error_wins(
+        self, mock_ops_get, mock_get_client
+    ):
+        # The pre-existing "cannot be cleared to null" check runs before the
+        # new exclusivity guard, so the null-clear error takes priority.
+        result = await EntityService.update_entity(
+            MagicMock(),
+            "syn1",
+            external_url=None,
+            data_file_handle_id="456",
+        )
+
+        assert "cannot be cleared" in result["error"]
+        mock_ops_get.assert_not_called()
 
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
     @patch(f"{SVC}.operations_get_async", new_callable=AsyncMock)
