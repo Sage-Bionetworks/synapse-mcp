@@ -1667,11 +1667,13 @@ async def create_entity(
     ] = None,
     scope_ids: Annotated[
         Optional[List[str]],
-        Field(description="Container IDs an entityview scopes over."),
+        Field(description="Container IDs an entityview scopes over, e.g. ['syn123456']."),
     ] = None,
     target_id: Annotated[
         Optional[str],
-        Field(description="For link entities, the entity the link points at."),
+        Field(
+            description="For link entities, the entity the link points at, e.g. syn123456."
+        ),
     ] = None,
     target_version_number: Annotated[
         Optional[int],
@@ -1683,7 +1685,9 @@ async def create_entity(
     ] = None,
     data_file_handle_id: Annotated[
         Optional[str],
-        Field(description="For file/recordset entities, an existing file handle ID."),
+        Field(
+            description="For file/recordset entities, an existing file handle ID, e.g. '9876543'."
+        ),
     ] = None,
 ) -> Dict[str, Any]:
     """Create a new Synapse entity from metadata."""
@@ -1768,11 +1772,15 @@ async def update_entity(
     ] = UNSET,
     data_file_handle_id: Annotated[
         Optional[str],
-        Field(description="New file handle to attach (file entities only)."),
+        Field(
+            description="New file handle to attach (file entities only), e.g. '9876543'."
+        ),
     ] = UNSET,
     target_id: Annotated[
         Optional[str],
-        Field(description="New link target entity ID (link entities only)."),
+        Field(
+            description="New link target entity ID (link entities only), e.g. syn123456."
+        ),
     ] = UNSET,
     target_version_number: Annotated[
         Optional[int],
@@ -1780,7 +1788,7 @@ async def update_entity(
     ] = UNSET,
     scope_ids: Annotated[
         Optional[List[str]],
-        Field(description="Container IDs an entityview scopes over."),
+        Field(description="Container IDs an entityview scopes over, e.g. ['syn123456']."),
     ] = UNSET,
     view_type_mask: Annotated[
         Optional[List[ViewScopeType]],
