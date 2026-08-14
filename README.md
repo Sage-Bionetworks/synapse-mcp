@@ -90,10 +90,10 @@ Read and write tools are dispatched through separate proxies — `call_read_tool
 | `get_curation_task_resources(task_id)` | curation | Use this when the user wants the Synapse resources (RecordSets, Folders, EntityViews) linked to a curation task — the data the curator will act on. |
 | `list_curation_tasks(project_id)` | curation | Use this when the user wants every Synapse curation task in a project — the queue of data-curation work items attached to that project. |
 | `create_organization(organization_name)` | organization | Use this when the user wants to create a new Synapse Organization — a named namespace under which resources such as JSON schemas are published. |
-| `delete_organization(organization_name)` | organization | Use this when the user wants to delete a Synapse Organization (a namespace) by name. |
+| `delete_organization(organization)` | organization | Use this when the user wants to delete a Synapse Organization (a namespace) by id or by name. |
 | `get_schema_organization(organization_name)` | organization | Use this when the user wants a Synapse JSON Schema Organization (namespace that owns a set of JSON schemas / data models) by name or numeric ID. |
 | `get_schema_organization_acl(organization_name)` | organization | Use this when the user wants the ACL of a Synapse JSON Schema Organization — who may publish schemas under that namespace. |
-| `update_organization_acl(organization_name, principal_id, access_type)` | organization | Use this when the user wants to grant or change who can publish resources (such as JSON schemas) under a Synapse Organization namespace. |
+| `update_organization_acl(organization, principal_id, access_type)` | organization | Use this when the user wants to grant or change who can publish resources (such as JSON schemas) under a Synapse Organization namespace, addressed by id or by name. |
 | `list_form_data(group_id)` | form | Use this when the user wants the form submissions for a Synapse FormGroup — a collection of structured-data forms submitted by users. |
 | `check_synapse_id(syn_id)` | utility | Use this when the user has a string that looks like a Synapse ID (e.g. syn123456) and wants to check whether it exists in Synapse — verifies validity by querying the Synapse backend. |
 | `search_entities_by_md5(md5)` | utility | Use this when the user has an MD5 hash of a file and wants the Synapse entities (file entities) whose attached file has that exact MD5 — useful for deduplication and 'is this already in Synapse' checks. |

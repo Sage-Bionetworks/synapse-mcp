@@ -14,6 +14,15 @@ from .tool_service import (
 )
 
 
+def _org_ref(organization: str) -> SchemaOrganization:
+    """Address an organization by id (all digits) or by name."""
+    return (
+        SchemaOrganization(id=organization)
+        if organization.isdigit()
+        else SchemaOrganization(name=organization)
+    )
+
+
 async def _post_one_page(
     client,
     uri: str,
@@ -246,35 +255,33 @@ class SchemaOrganizationService:
             return serialize_model(created)
 
     @staticmethod
-    @error_boundary(error_context_keys=("organization_name",))
+    @error_boundary(error_context_keys=("organization",))
     async def delete_organization(
-        ctx: Context, organization_name: str
+        ctx: Context, organization: str
     ) -> Dict[str, Any]:
-        """Delete an Organization by name.
+        """Delete an Organization by id or by name.
 
         Arguments:
             ctx: The FastMCP request context.
-            organization_name: Namespace to delete (e.g. "my.org").
+            organization: Organization id (all digits) or name (e.g. "my.org").
 
         Returns:
             Dict confirming the deletion.
         """
         async with synapse_client(ctx) as client:
-            org = SchemaOrganization(name=organization_name)
-            await org.get_async(synapse_client=client)
+            org = _org_ref(organization)
             await org.delete_async(synapse_client=client)
             return {
-                "organization_name": organization_name,
+                "organization_id": org.id,
+                "organization_name": org.name,
                 "deleted": True,
             }
 
     @staticmethod
-    @error_boundary(
-        error_context_keys=("organization_name", "principal_id")
-    )
+    @error_boundary(error_context_keys=("organization", "principal_id"))
     async def update_organization_acl(
         ctx: Context,
-        organization_name: str,
+        organization: str,
         principal_id: int,
         access_type: List[OrganizationAccessType],
     ) -> Dict[str, Any]:
@@ -282,7 +289,7 @@ class SchemaOrganizationService:
 
         Arguments:
             ctx: The FastMCP request context.
-            organization_name: Organization name (e.g. "my.org").
+            organization: Organization id (all digits) or name (e.g. "my.org").
             principal_id: User or team ID to grant access to.
             access_type: Permission strings (e.g. ["READ", "CREATE"]).
 
@@ -290,15 +297,15 @@ class SchemaOrganizationService:
             Dict confirming the ACL update.
         """
         async with synapse_client(ctx) as client:
-            org = SchemaOrganization(name=organization_name)
-            await org.get_async(synapse_client=client)
+            org = _org_ref(organization)
             await org.update_acl_async(
                 principal_id=principal_id,
                 access_type=access_type,
                 synapse_client=client,
             )
             return {
-                "organization_name": organization_name,
+                "organization_id": org.id,
+                "organization_name": org.name,
                 "principal_id": principal_id,
                 "access_type": access_type,
                 "updated": True,

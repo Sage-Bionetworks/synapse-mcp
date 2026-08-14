@@ -2342,18 +2342,25 @@ async def create_organization(
     title="Delete Organization",
     description=(
         "Use this when the user wants to delete a Synapse Organization "
-        "(a namespace) by name. Organizations are addressed by their name "
-        "(e.g. 'my.org'), not a numeric or syn id. This is irreversible."
+        "(a namespace) by id or by name. This is irreversible."
     ),
     synonyms=_DELETE_SYNONYMS + _SCHEMA_SYNONYMS + ("namespace",),
     siblings=("create_organization", "get_schema_organization"),
 )
 async def delete_organization(
-    organization_name: str, ctx: Context
+    organization: Annotated[
+        str,
+        Field(
+            description=(
+                "Organization id or name, e.g. '1075' or 'my.org'."
+            )
+        ),
+    ],
+    ctx: Context,
 ) -> Dict[str, Any]:
-    """Delete a Synapse Organization by name."""
+    """Delete a Synapse Organization by id or by name."""
     return await SchemaOrganizationService.delete_organization(
-        ctx, organization_name
+        ctx, organization
     )
 
 
@@ -2366,22 +2373,35 @@ async def delete_organization(
     description=(
         "Use this when the user wants to grant or change who can publish "
         "resources (such as JSON schemas) under a Synapse Organization "
-        "namespace. Valid access_type values are READ, CREATE, UPDATE, "
-        "DELETE, and CHANGE_PERMISSIONS. Organization name example: "
-        "'my.org'. Principal ID example: 3379097."
+        "namespace, addressed by id or by name. Valid access_type values "
+        "are READ, CREATE, UPDATE, DELETE, and CHANGE_PERMISSIONS. "
+        "Principal ID example: 3379097."
     ),
     synonyms=_SCHEMA_SYNONYMS + _ACL_SYNONYMS + _UPDATE_SYNONYMS,
     siblings=("get_schema_organization_acl", "get_schema_organization"),
 )
 async def update_organization_acl(
-    organization_name: str,
-    principal_id: int,
-    access_type: List[OrganizationAccessType],
+    organization: Annotated[
+        str,
+        Field(
+            description=(
+                "Organization id or name, e.g. '1075' or 'my.org'."
+            )
+        ),
+    ],
+    principal_id: Annotated[
+        int,
+        Field(description="User or team ID to grant access to, e.g. 3379097."),
+    ],
+    access_type: Annotated[
+        List[OrganizationAccessType],
+        Field(description="Permission strings, e.g. ['READ', 'CREATE']."),
+    ],
     ctx: Context,
 ) -> Dict[str, Any]:
     """Set a principal's access on a Synapse Organization."""
     return await SchemaOrganizationService.update_organization_acl(
-        ctx, organization_name, principal_id, access_type
+        ctx, organization, principal_id, access_type
     )
 
 
