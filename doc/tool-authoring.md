@@ -92,6 +92,18 @@ concrete example for every ID parameter:
 Put the example either in the main description or in the parameter
 description.
 
+`delete_organization` and `update_organization_acl` are the one
+exception to "organizations are addressed by name": each takes a
+single `organization` parameter accepting either an id (all-digit)
+or a name, routed by `str.isdigit()`, because their underlying SDK
+calls (`delete_async`, `update_acl_async`) are already id-native.
+This is tool-specific, not a general convention — don't add a shared
+id-or-name helper for a second caller that doesn't exist yet. Every
+other organization-taking tool (`create_organization`,
+`register_json_schema`, `delete_json_schema`, ...) keeps
+`organization_name` and stays name-only, because the JSON schema
+`$id` is composed from the name and Synapse has no id→name lookup.
+
 ## `synonyms`
 
 Synapse terminology rarely matches user language. Users say:
