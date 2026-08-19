@@ -626,6 +626,40 @@ class TestCreateEntity:
         assert "Valid:" in result["error"]
         mock_get_client.assert_not_called()
 
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    async def test_given_dockerrepository_without_name_then_returns_error(
+        self, mock_get_client
+    ):
+        result = await EntityService.create_entity(
+            MagicMock(), "dockerrepository", "d", parent_id="syn1"
+        )
+
+        assert "repository_name" in result["error"]
+        mock_get_client.assert_not_called()
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.DockerRepository.store_async", new_callable=AsyncMock)
+    async def test_given_dockerrepository_with_name_then_creates(
+        self, mock_store, mock_get_client
+    ):
+        # Container types (dockerrepository) are resolved through
+        # _CONTAINER_ENTITY_TYPES which captured the real DockerRepository
+        # class at import — patch store_async on that class rather than
+        # the name.
+        mock_get_client.return_value = MagicMock()
+        mock_store.return_value = FakeEntity(id="syn13", name="d")
+
+        result = await EntityService.create_entity(
+            MagicMock(),
+            "dockerrepository",
+            "d",
+            parent_id="syn1",
+            repository_name="docker.synapse.org/syn1/d",
+        )
+
+        assert result["id"] == "syn13"
+        mock_store.assert_called_once()
+
 
 class TestUpdateEntity:
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
@@ -780,6 +814,26 @@ class TestUpdateEntity:
         )
 
         assert entity.view_type_mask == ViewTypeMask.FILE
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.operations_get_async", new_callable=AsyncMock)
+    async def test_given_empty_view_type_mask_then_returns_error(
+        self, mock_ops_get, mock_get_client
+    ):
+        # An empty list is not None, so it slips past the null-check —
+        # it must still be rejected instead of silently erasing the field.
+        mock_get_client.return_value = MagicMock()
+        entity = MagicMock()
+        entity.store_async = AsyncMock(return_value=FakeEntity())
+        mock_ops_get.return_value = entity
+
+        result = await EntityService.update_entity(
+            MagicMock(), "syn1", view_type_mask=[]
+        )
+
+        assert result["error_type"] == "ValueError"
+        assert "view_type_mask" in result["error"]
+        entity.store_async.assert_not_called()
 
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
     @patch(f"{SVC}.operations_get_async", new_callable=AsyncMock)
@@ -1034,20 +1088,20 @@ class TestDeleteAcl:
         # GIVEN the resolved entity is a Project (root ACL is undeletable)
         mock_get_client.return_value = MagicMock()
 
-        class Project:
-            def __init__(self):
-                self.delete_permissions_async = AsyncMock()
+        from synapseclient.models import Project
 
         entity = Project()
+        entity.delete_permissions_async = AsyncMock()
         mock_ops_get.return_value = entity
 
         # WHEN its ACL delete is requested
         result = await EntityService.delete_acl(MagicMock(), "syn123")
 
-        # THEN the response honestly reports the root ACL was not deleted
+        # THEN the response honestly reports the root ACL was not deleted,
+        # without even attempting the no-op SDK call
         assert result["acl_deleted"] is False
         assert "Project" in result["message"]
-        entity.delete_permissions_async.assert_called_once()
+        entity.delete_permissions_async.assert_not_called()
 
 
 class TestBindSchema:

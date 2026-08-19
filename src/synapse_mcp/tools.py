@@ -1625,7 +1625,8 @@ async def search_entities_by_md5(
         "syn123456). IMPORTANT: a file can only be created here from an "
         "external_url (external link) or an existing data_file_handle_id, "
         "and a record set only from an existing data_file_handle_id — this "
-        "server never uploads local file content."
+        "server never uploads local file content. A docker repository "
+        "requires repository_name."
     ),
     synonyms=_CREATE_SYNONYMS + _ENTITY_TYPES + ("record set",),
     siblings=("update_entity", "delete_entity", "get_entity"),
@@ -1689,6 +1690,15 @@ async def create_entity(
             description="For file/recordset entities, an existing file handle ID, e.g. '9876543'."
         ),
     ] = None,
+    repository_name: Annotated[
+        Optional[str],
+        Field(
+            description=(
+                "For dockerrepository entities, the external image path, "
+                "e.g. 'docker.synapse.org/syn123/my-repo'."
+            )
+        ),
+    ] = None,
 ) -> Dict[str, Any]:
     """Create a new Synapse entity from metadata."""
     if parent_id is not None and not validate_synapse_id(parent_id):
@@ -1696,6 +1706,18 @@ async def create_entity(
             "error": f"Invalid Synapse ID: {parent_id}",
             "error_type": "ValueError",
         }
+    if target_id is not None and not validate_synapse_id(target_id):
+        return {
+            "error": f"Invalid Synapse ID: {target_id}",
+            "error_type": "ValueError",
+        }
+    if scope_ids is not None:
+        for scope_id in scope_ids:
+            if not validate_synapse_id(scope_id):
+                return {
+                    "error": f"Invalid Synapse ID: {scope_id}",
+                    "error_type": "ValueError",
+                }
     return await EntityService.create_entity(
         ctx,
         entity_type=entity_type,
@@ -1711,6 +1733,7 @@ async def create_entity(
         target_version_number=target_version_number,
         external_url=external_url,
         data_file_handle_id=data_file_handle_id,
+        repository_name=repository_name,
     )
 
 
@@ -1814,6 +1837,22 @@ async def update_entity(
             "error": f"Invalid Synapse ID: {parent_id}",
             "error_type": "ValueError",
         }
+    if (
+        target_id is not UNSET
+        and target_id is not None
+        and not validate_synapse_id(target_id)
+    ):
+        return {
+            "error": f"Invalid Synapse ID: {target_id}",
+            "error_type": "ValueError",
+        }
+    if scope_ids is not UNSET and scope_ids is not None:
+        for scope_id in scope_ids:
+            if not validate_synapse_id(scope_id):
+                return {
+                    "error": f"Invalid Synapse ID: {scope_id}",
+                    "error_type": "ValueError",
+                }
     return await EntityService.update_entity(
         ctx,
         entity_id=entity_id,
@@ -2636,6 +2675,13 @@ async def create_curation_task(
             "error": f"Invalid Synapse ID: {project_id}",
             "error_type": "ValueError",
         }
+    for key in ("record_set_id", "upload_folder_id", "file_view_id"):
+        value = task_properties.get(key)
+        if value is not None and not validate_synapse_id(value):
+            return {
+                "error": f"Invalid Synapse ID: {value}",
+                "error_type": "ValueError",
+            }
     return await CurationTaskService.create_task(
         ctx,
         project_id=project_id,

@@ -472,6 +472,7 @@ class EntityService:
         target_version_number: Optional[int] = None,
         external_url: Optional[str] = None,
         data_file_handle_id: Optional[str] = None,
+        repository_name: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Create a new Synapse entity from metadata (no file upload).
 
@@ -500,6 +501,8 @@ class EntityService:
             external_url: For file entities, the external URL to link to.
             data_file_handle_id: For file/recordset entities, an existing
                 file handle ID to attach.
+            repository_name: For dockerrepository entities, the external
+                image path, e.g. "docker.synapse.org/syn123/my-repo".
 
         Returns:
             Dict with the created entity's metadata (id, name, etc.).
@@ -519,6 +522,7 @@ class EntityService:
             target_version_number=target_version_number,
             external_url=external_url,
             data_file_handle_id=data_file_handle_id,
+            repository_name=repository_name,
         )
         if isinstance(model, dict):  # validation error
             return {
@@ -547,6 +551,7 @@ class EntityService:
         target_version_number: Optional[int],
         external_url: Optional[str],
         data_file_handle_id: Optional[str],
+        repository_name: Optional[str],
     ) -> Union[
         Project, Folder, File, Link, RecordSet, Dict[str, Any]
     ]:
@@ -638,6 +643,17 @@ class EntityService:
         if cls is not Project:
             common["parent_id"] = parent_id
 
+        if etype == "dockerrepository":
+            if not repository_name:
+                return {
+                    "error": (
+                        "repository_name is required to create a "
+                        "dockerrepository, e.g. "
+                        "'docker.synapse.org/syn123/my-repo'."
+                    )
+                }
+            common["repository_name"] = repository_name
+
         kwargs: Dict[str, Any] = dict(common)
         if defining_sql is not None:
             kwargs["defining_sql"] = defining_sql
@@ -684,6 +700,11 @@ class EntityService:
     @staticmethod
     def _resolve_view_mask(masks: List[ViewScopeType]) -> ViewTypeMask:
         """OR together ViewTypeMask flags named by ``masks``."""
+        if not masks:
+            raise ValueError(
+                "view_type_mask must include at least one scope type; it "
+                "cannot be cleared to an empty list."
+            )
         resolved = None
         for m in masks:
             try:
@@ -941,8 +962,7 @@ class EntityService:
         """
         async with synapse_client(ctx) as client:
             entity = await _resolve_entity(entity_id, client)
-            await entity.delete_permissions_async(synapse_client=client)
-            if type(entity).__name__.lower() == "project":
+            if isinstance(entity, Project):
                 return {
                     "entity_id": entity_id,
                     "acl_deleted": False,
@@ -952,6 +972,7 @@ class EntityService:
                         "instead."
                     ),
                 }
+            await entity.delete_permissions_async(synapse_client=client)
             return {"entity_id": entity_id, "acl_deleted": True}
 
     @staticmethod
