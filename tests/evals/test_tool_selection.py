@@ -10,10 +10,9 @@ Run with:
 The module-level summary fixture prints top-1 / top-3 / top-5 accuracy
 at the end of the run.
 
-Queries in this file only reference tools that exist in the current
-stack (all 50 are read-only). When write tools ship — create_wiki,
-submit_to_evaluation, register_json_schema, etc. — add their queries
-here.
+Queries in this file cover both the read catalog and the write /
+destructive tools (create_entity, delete_entity, submit_to_evaluation,
+register_json_schema, etc.). Add a query here for every new tool.
 """
 
 from __future__ import annotations
@@ -124,6 +123,44 @@ QUERY_FIXTURES: List[Tuple[str, str]] = [
     ("does syn999 exist", "check_synapse_id"),
     ("find the file with md5 9e107d9d372bb6826bd81d3542a419d6", "search_entities_by_md5"),
     ("what's the synapse id of the file named sample.csv in folder syn100", "search_entity_by_name"),
+    # entity writes
+    ("create a new folder inside syn100", "create_entity"),
+    ("create a new synapse project entity called My Study", "create_entity"),
+    ("create a record set entity from file handle 123 in syn100", "create_entity"),
+    ("rename syn123 to a better name", "update_entity"),
+    ("set annotations on syn456", "update_entity"),
+    ("move syn123 into folder syn200", "update_entity"),
+    ("delete entity syn999", "delete_entity"),
+    ("share syn123 with user 3379097 giving them download access", "update_entity_acl"),
+    ("stop syn123 having its own sharing and inherit from parent", "delete_entity_acl"),
+    ("attach the JSON schema my.org-MySchema-1.0.0 to syn123", "update_entity_schema"),
+    ("remove the bound schema from syn123", "delete_entity_schema"),
+    ("add a column to table syn123", "update_columns"),
+    ("rename a column in table syn123", "update_columns"),
+    ("reorder the columns on view syn123", "update_columns"),
+    ("set the provenance on syn123", "update_entity"),
+    ("point link syn123 at a different target entity", "update_entity"),
+    # team writes
+    ("create a new team called My Collaborators", "create_team"),
+    ("delete team 3379097", "delete_team"),
+    ("invite user jane.doe to team 3379097", "create_team_invitation"),
+    # evaluation writes
+    ("create a new challenge queue on project syn100", "create_evaluation"),
+    ("rename evaluation queue 9600001", "update_evaluation"),
+    ("delete the evaluation queue 9600001", "delete_evaluation"),
+    ("grant user 3379097 permission to submit to queue 9600001", "update_evaluation_acl"),
+    # submission writes
+    ("submit my file syn123 to challenge 9600001", "submit_to_evaluation"),
+    ("mark submission 9722233 as scored", "update_submission_status"),
+    # schema / organization writes
+    ("create a new JSON schema organization named my.org", "create_organization"),
+    ("delete the schema organization my.org", "delete_organization"),
+    ("let user 3379097 publish schemas under my.org", "update_organization_acl"),
+    ("register a new JSON schema MySchema under my.org", "register_json_schema"),
+    ("delete the JSON schema MySchema in my.org", "delete_json_schema"),
+    # curation writes
+    ("create a curation task on project syn123", "create_curation_task"),
+    ("delete curation task 42", "delete_curation_task"),
 ]
 
 

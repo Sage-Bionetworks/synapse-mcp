@@ -9,12 +9,15 @@ end (after every ``@service_tool`` has run), so the transform has
 the full catalog to index.
 """
 
-from typing import Any, Dict, List, Optional
+import warnings
+from typing import Annotated, Any, Dict, List, Optional
 
 from fastmcp import Context
-from fastmcp.server.transforms.search import BM25SearchTransform
+from pydantic import Field
+from pydantic.json_schema import PydanticJsonSchemaWarning
 
 from .app import mcp
+from .discovery import SplitCallTransform
 from .services import (
     ActivityService,
     CurationTaskService,
@@ -30,7 +33,30 @@ from .services import (
     WikiService,
     service_tool,
 )
+from .tool_types import (
+    UNSET,
+    ColumnSpec,
+    EntityAccessType,
+    EntityType,
+    EvaluationAccessType,
+    OrganizationAccessType,
+    ProvenanceSpec,
+    SubmissionStatusValue,
+    TaskProperties,
+    ViewScopeType,
+)
 from .utils import validate_synapse_id
+
+# Update tools default optional fields to the UNSET sentinel so an omitted
+# argument (leave unchanged) is distinguishable from an explicit null (clear).
+# pydantic warns that this non-JSON default is dropped from the schema, which
+# is exactly what we want — silence that one cosmetic warning at import.
+# Match by message so unrelated PydanticJsonSchemaWarnings still surface.
+warnings.filterwarnings(
+    "ignore",
+    message=r"Default value UNSET is not JSON serializable",
+    category=PydanticJsonSchemaWarning,
+)
 
 
 # Reusable synonym sets so BM25 indexes user-language aliases for every
@@ -63,11 +89,9 @@ _WIKI_SYNONYMS = ("documentation", "docs", "markdown", "page")
 _TEAM_SYNONYMS = ("group", "collaborators", "members")
 _SCHEMA_SYNONYMS = ("JSON schema", "validation", "data model")
 _ACL_SYNONYMS = ("permissions", "access control", "sharing", "who can access")
-
-
-# ---------------------------------------------------------------------------
-# Domain 1: Entity Core
-# ---------------------------------------------------------------------------
+_CREATE_SYNONYMS = ("create", "make", "new", "add")
+_UPDATE_SYNONYMS = ("update", "edit", "modify", "change", "set", "rename")
+_DELETE_SYNONYMS = ("delete", "remove", "destroy")
 
 
 @service_tool(
@@ -257,11 +281,6 @@ async def search_synapse(
     )
 
 
-# ---------------------------------------------------------------------------
-# Domain 2: Entity Access Control
-# ---------------------------------------------------------------------------
-
-
 @service_tool(
     mcp,
     service="entity",
@@ -355,11 +374,6 @@ async def list_entity_acl(
         include_container_content,
         target_entity_types,
     )
-
-
-# ---------------------------------------------------------------------------
-# Domain 3: Entity JSON Schema
-# ---------------------------------------------------------------------------
 
 
 @service_tool(
@@ -481,11 +495,6 @@ async def get_entity_schema_invalid_validations(
     )
 
 
-# ---------------------------------------------------------------------------
-# Domain 6: Link
-# ---------------------------------------------------------------------------
-
-
 @service_tool(
     mcp,
     service="entity",
@@ -514,11 +523,6 @@ async def get_link(
     return await EntityService.get_link(
         ctx, entity_id, follow_link
     )
-
-
-# ---------------------------------------------------------------------------
-# Domain 8: Wiki
-# ---------------------------------------------------------------------------
 
 
 @service_tool(
@@ -649,11 +653,6 @@ async def get_wiki_order_hint(
     if not validate_synapse_id(owner_id):
         return {"error": f"Invalid Synapse ID: {owner_id}"}
     return await WikiService.get_wiki_order_hint(ctx, owner_id)
-
-
-# ---------------------------------------------------------------------------
-# Domain 9: Team & User
-# ---------------------------------------------------------------------------
 
 
 @service_tool(
@@ -827,11 +826,6 @@ async def check_user_certified(
     return await UserService.is_user_certified(ctx, user_id)
 
 
-# ---------------------------------------------------------------------------
-# Domain 10: Evaluation (Challenge Queue)
-# ---------------------------------------------------------------------------
-
-
 @service_tool(
     mcp,
     service="evaluation",
@@ -967,11 +961,6 @@ async def get_evaluation_permissions(
     return await EvaluationService.get_evaluation_permissions(
         ctx, evaluation_id
     )
-
-
-# ---------------------------------------------------------------------------
-# Domain 11: Submission
-# ---------------------------------------------------------------------------
 
 
 @service_tool(
@@ -1233,11 +1222,6 @@ async def list_my_submission_bundles(
     )
 
 
-# ---------------------------------------------------------------------------
-# Domain 12: Curation Tasks
-# ---------------------------------------------------------------------------
-
-
 @service_tool(
     mcp,
     service="curation",
@@ -1314,11 +1298,6 @@ async def get_curation_task_resources(
     return await CurationTaskService.get_task_resources(
         ctx, task_id
     )
-
-
-# ---------------------------------------------------------------------------
-# Domain 13: JSON Schema Organizations
-# ---------------------------------------------------------------------------
 
 
 @service_tool(
@@ -1501,11 +1480,6 @@ async def list_json_schema_versions(
     )
 
 
-# ---------------------------------------------------------------------------
-# Domain 14: Forms
-# ---------------------------------------------------------------------------
-
-
 @service_tool(
     mcp,
     service="form",
@@ -1542,11 +1516,6 @@ async def list_form_data(
     return await FormService.list_form_data(
         ctx, group_id, filter_by_state, as_reviewer, next_page_token
     )
-
-
-# ---------------------------------------------------------------------------
-# Domain 15: Utility Operations
-# ---------------------------------------------------------------------------
 
 
 @service_tool(
@@ -1641,22 +1610,1126 @@ async def search_entities_by_md5(
     return await UtilityService.md5_query(ctx, md5)
 
 
-# ---------------------------------------------------------------------------
-# Discovery: BM25 search transform
-# ---------------------------------------------------------------------------
+@service_tool(
+    mcp,
+    service="entity",
+    operation="write",
+    synapse_object="Synapse entity",
+    title="Create Entity",
+    description=(
+        "Use this when the user wants to create a new Synapse entity — a "
+        "project, folder, table, view, dataset, dataset collection, link, "
+        "materialized view, virtual table, submission view, docker "
+        "repository, file, or record set. Set entity_type accordingly. "
+        "Every type except project requires parent_id (example: "
+        "syn123456). IMPORTANT: a file can only be created here from an "
+        "external_url (external link) or an existing data_file_handle_id, "
+        "and a record set only from an existing data_file_handle_id — this "
+        "server never uploads local file content. A docker repository "
+        "requires repository_name."
+    ),
+    synonyms=_CREATE_SYNONYMS + _ENTITY_TYPES + ("record set",),
+    siblings=("update_entity", "delete_entity", "get_entity"),
+)
+async def create_entity(
+    entity_type: Annotated[
+        EntityType,
+        Field(description="The type of entity to create (e.g. project, folder, file)."),
+    ],
+    name: Annotated[str, Field(description="Name for the new entity.")],
+    ctx: Context,
+    parent_id: Annotated[
+        Optional[str],
+        Field(
+            description=(
+                "Parent container Synapse ID, e.g. syn123456. Required for "
+                "every type except project."
+            )
+        ),
+    ] = None,
+    description: Annotated[
+        Optional[str], Field(description="Optional entity description.")
+    ] = None,
+    annotations: Annotated[
+        Optional[Dict[str, List[Any]]],
+        Field(description="Optional annotations; each key maps to a list of values."),
+    ] = None,
+    columns: Annotated[
+        Optional[List[ColumnSpec]],
+        Field(description="Column definitions for table-like entities."),
+    ] = None,
+    defining_sql: Annotated[
+        Optional[str],
+        Field(description="SQL for materializedview / virtualtable entities."),
+    ] = None,
+    view_type_mask: Annotated[
+        Optional[List[ViewScopeType]],
+        Field(description="Scope types for view/dataset entities, e.g. ['file']."),
+    ] = None,
+    scope_ids: Annotated[
+        Optional[List[str]],
+        Field(description="Container IDs an entityview scopes over, e.g. ['syn123456']."),
+    ] = None,
+    target_id: Annotated[
+        Optional[str],
+        Field(
+            description="For link entities, the entity the link points at, e.g. syn123456."
+        ),
+    ] = None,
+    target_version_number: Annotated[
+        Optional[int],
+        Field(description="Optional pinned version for a link entity."),
+    ] = None,
+    external_url: Annotated[
+        Optional[str],
+        Field(description="For file entities, the external URL to link to."),
+    ] = None,
+    data_file_handle_id: Annotated[
+        Optional[str],
+        Field(
+            description="For file/recordset entities, an existing file handle ID, e.g. '9876543'."
+        ),
+    ] = None,
+    repository_name: Annotated[
+        Optional[str],
+        Field(
+            description=(
+                "For dockerrepository entities, the external image path, "
+                "e.g. 'docker.synapse.org/syn123/my-repo'."
+            )
+        ),
+    ] = None,
+) -> Dict[str, Any]:
+    """Create a new Synapse entity from metadata."""
+    if parent_id is not None and not validate_synapse_id(parent_id):
+        return {
+            "error": f"Invalid Synapse ID: {parent_id}",
+            "error_type": "ValueError",
+        }
+    if target_id is not None and not validate_synapse_id(target_id):
+        return {
+            "error": f"Invalid Synapse ID: {target_id}",
+            "error_type": "ValueError",
+        }
+    if scope_ids is not None:
+        for scope_id in scope_ids:
+            if not validate_synapse_id(scope_id):
+                return {
+                    "error": f"Invalid Synapse ID: {scope_id}",
+                    "error_type": "ValueError",
+                }
+    return await EntityService.create_entity(
+        ctx,
+        entity_type=entity_type,
+        name=name,
+        parent_id=parent_id,
+        description=description,
+        annotations=annotations,
+        columns=columns,
+        defining_sql=defining_sql,
+        view_type_mask=view_type_mask,
+        scope_ids=scope_ids,
+        target_id=target_id,
+        target_version_number=target_version_number,
+        external_url=external_url,
+        data_file_handle_id=data_file_handle_id,
+        repository_name=repository_name,
+    )
+
+
+@service_tool(
+    mcp,
+    service="entity",
+    operation="write",
+    synapse_object="Synapse entity",
+    title="Update Entity",
+    description=(
+        "Use this to rename a Synapse entity, move it to a new parent, "
+        "change its description, replace its annotations, or set its "
+        "provenance. Type-specific fields are set via the individual "
+        "arguments. Pass an explicit null to clear description or "
+        "annotations. To change table columns, use update_columns. "
+        "Entity ID example: syn123456."
+    ),
+    synonyms=_UPDATE_SYNONYMS + _ANNOTATION_SYNONYMS + _PROVENANCE_SYNONYMS,
+    siblings=("create_entity", "delete_entity", "get_entity", "update_columns"),
+)
+async def update_entity(
+    entity_id: Annotated[
+        str, Field(description="Synapse ID of the entity to update, e.g. syn123456.")
+    ],
+    ctx: Context,
+    name: Annotated[
+        Optional[str],
+        Field(description="New name (rename). Omit to leave unchanged."),
+    ] = UNSET,
+    parent_id: Annotated[
+        Optional[str],
+        Field(description="New parent container ID (move), e.g. syn123456."),
+    ] = UNSET,
+    description: Annotated[
+        Optional[str],
+        Field(description="New description; pass null to clear it."),
+    ] = UNSET,
+    annotations: Annotated[
+        Optional[Dict[str, List[Any]]],
+        Field(
+            description=(
+                "Full replacement annotations (each key maps to a list of "
+                "values); null or {} clears all annotations."
+            )
+        ),
+    ] = UNSET,
+    provenance: Annotated[
+        Optional[ProvenanceSpec],
+        Field(
+            description=(
+                "Provenance/activity that produced this entity. Cannot be "
+                "cleared here."
+            )
+        ),
+    ] = UNSET,
+    external_url: Annotated[
+        Optional[str],
+        Field(description="New external URL (file entities only)."),
+    ] = UNSET,
+    data_file_handle_id: Annotated[
+        Optional[str],
+        Field(
+            description="New file handle to attach (file entities only), e.g. '9876543'."
+        ),
+    ] = UNSET,
+    target_id: Annotated[
+        Optional[str],
+        Field(
+            description="New link target entity ID (link entities only), e.g. syn123456."
+        ),
+    ] = UNSET,
+    target_version_number: Annotated[
+        Optional[int],
+        Field(description="Pinned target version (link entities only)."),
+    ] = UNSET,
+    scope_ids: Annotated[
+        Optional[List[str]],
+        Field(description="Container IDs an entityview scopes over, e.g. ['syn123456']."),
+    ] = UNSET,
+    view_type_mask: Annotated[
+        Optional[List[ViewScopeType]],
+        Field(description="Scope types for view/dataset entities."),
+    ] = UNSET,
+    defining_sql: Annotated[
+        Optional[str],
+        Field(description="SQL for materializedview / virtualtable."),
+    ] = UNSET,
+) -> Dict[str, Any]:
+    """Update a Synapse entity's metadata, annotations, or provenance."""
+    if not validate_synapse_id(entity_id):
+        return {
+            "error": f"Invalid Synapse ID: {entity_id}",
+            "error_type": "ValueError",
+        }
+    if (
+        parent_id is not UNSET
+        and parent_id is not None
+        and not validate_synapse_id(parent_id)
+    ):
+        return {
+            "error": f"Invalid Synapse ID: {parent_id}",
+            "error_type": "ValueError",
+        }
+    if (
+        target_id is not UNSET
+        and target_id is not None
+        and not validate_synapse_id(target_id)
+    ):
+        return {
+            "error": f"Invalid Synapse ID: {target_id}",
+            "error_type": "ValueError",
+        }
+    if scope_ids is not UNSET and scope_ids is not None:
+        for scope_id in scope_ids:
+            if not validate_synapse_id(scope_id):
+                return {
+                    "error": f"Invalid Synapse ID: {scope_id}",
+                    "error_type": "ValueError",
+                }
+    return await EntityService.update_entity(
+        ctx,
+        entity_id=entity_id,
+        name=name,
+        parent_id=parent_id,
+        description=description,
+        annotations=annotations,
+        provenance=provenance,
+        external_url=external_url,
+        data_file_handle_id=data_file_handle_id,
+        target_id=target_id,
+        target_version_number=target_version_number,
+        scope_ids=scope_ids,
+        view_type_mask=view_type_mask,
+        defining_sql=defining_sql,
+    )
+
+
+@service_tool(
+    mcp,
+    service="entity",
+    operation="destructive",
+    synapse_object="Synapse entity",
+    title="Delete Entity",
+    description=(
+        "Use this when the user wants to delete a Synapse entity — a "
+        "project, folder, file, table, view, or dataset — by its ID. For "
+        "a file this removes the File entity (metadata). Entity ID "
+        "example: syn123456. This is irreversible."
+    ),
+    synonyms=_DELETE_SYNONYMS + _ENTITY_TYPES,
+    siblings=("create_entity", "update_entity", "get_entity"),
+)
+async def delete_entity(
+    entity_id: Annotated[
+        str, Field(description="Synapse ID of the entity to delete, e.g. syn123456.")
+    ],
+    ctx: Context,
+) -> Dict[str, Any]:
+    """Delete a Synapse entity by ID."""
+    if not validate_synapse_id(entity_id):
+        return {
+            "error": f"Invalid Synapse ID: {entity_id}",
+            "error_type": "ValueError",
+        }
+    return await EntityService.delete_entity(ctx, entity_id)
+
+
+@service_tool(
+    mcp,
+    service="entity",
+    operation="write",
+    synapse_object="Synapse entity",
+    title="Set Entity ACL",
+    description=(
+        "Use this when the user wants to share a Synapse entity — grant "
+        "or change what a specific user or team can do with it. Valid "
+        "access_type values are READ, DOWNLOAD, UPDATE, CREATE, DELETE, "
+        "MODERATE, CHANGE_PERMISSIONS, and CHANGE_SETTINGS. Entity ID "
+        "example: syn123456. Principal ID example: 3379097 (user or team). "
+        "Pass an empty access_type list to remove that principal's access."
+    ),
+    synonyms=_ACL_SYNONYMS + _UPDATE_SYNONYMS,
+    siblings=("delete_entity_acl", "get_entity_acl", "get_entity_permissions"),
+)
+async def update_entity_acl(
+    entity_id: Annotated[
+        str, Field(description="Synapse ID of the entity, e.g. syn123456.")
+    ],
+    principal_id: Annotated[
+        int, Field(description="User or team ID to grant access to, e.g. 3379097.")
+    ],
+    access_type: Annotated[
+        List[EntityAccessType],
+        Field(
+            description=(
+                "Permission strings, e.g. ['READ', 'DOWNLOAD']. Pass an "
+                "empty list to remove the principal's access."
+            )
+        ),
+    ],
+    ctx: Context,
+) -> Dict[str, Any]:
+    """Set an entity's ACL for one principal."""
+    if not validate_synapse_id(entity_id):
+        return {
+            "error": f"Invalid Synapse ID: {entity_id}",
+            "error_type": "ValueError",
+        }
+    return await EntityService.set_acl(
+        ctx, entity_id, principal_id, access_type
+    )
+
+
+@service_tool(
+    mcp,
+    service="entity",
+    operation="destructive",
+    synapse_object="Synapse entity",
+    title="Delete Entity ACL",
+    description=(
+        "Use this when the user wants a Synapse entity to stop having its "
+        "own sharing settings and instead inherit permissions from its "
+        "parent container (delete its local ACL). Entity ID example: "
+        "syn123456."
+    ),
+    synonyms=_ACL_SYNONYMS + _DELETE_SYNONYMS + ("inherit", "revert sharing"),
+    siblings=("update_entity_acl", "get_entity_acl"),
+)
+async def delete_entity_acl(
+    entity_id: Annotated[
+        str, Field(description="Synapse ID of the entity, e.g. syn123456.")
+    ],
+    ctx: Context,
+) -> Dict[str, Any]:
+    """Delete an entity's local ACL."""
+    if not validate_synapse_id(entity_id):
+        return {
+            "error": f"Invalid Synapse ID: {entity_id}",
+            "error_type": "ValueError",
+        }
+    return await EntityService.delete_acl(ctx, entity_id)
+
+
+@service_tool(
+    mcp,
+    service="schema",
+    operation="write",
+    synapse_object="Synapse entity",
+    title="Bind Entity Schema",
+    description=(
+        "Use this when the user wants to bind (attach) a JSON schema "
+        "(data model / validation contract) to a Synapse entity so its "
+        "annotations are validated against that schema. Entity ID "
+        "example: syn123456. Schema $id example: 'my.org-MySchema-1.0.0'."
+    ),
+    synonyms=_SCHEMA_SYNONYMS + ("bind", "attach schema", "validate"),
+    siblings=("delete_entity_schema", "get_entity_schema"),
+)
+async def update_entity_schema(
+    entity_id: Annotated[
+        str, Field(description="Synapse ID of the entity, e.g. syn123456.")
+    ],
+    json_schema_uri: Annotated[
+        str,
+        Field(description="JSON Schema $id to bind, e.g. 'my.org-MySchema-1.0.0'."),
+    ],
+    ctx: Context,
+    enable_derived_annotations: Annotated[
+        bool,
+        Field(
+            description=(
+                "Whether Synapse should derive annotations from the schema "
+                "on this entity."
+            )
+        ),
+    ] = False,
+) -> Dict[str, Any]:
+    """Bind a JSON schema to a Synapse entity."""
+    if not validate_synapse_id(entity_id):
+        return {
+            "error": f"Invalid Synapse ID: {entity_id}",
+            "error_type": "ValueError",
+        }
+    return await EntityService.bind_schema(
+        ctx, entity_id, json_schema_uri, enable_derived_annotations
+    )
+
+
+@service_tool(
+    mcp,
+    service="schema",
+    operation="destructive",
+    synapse_object="Synapse entity",
+    title="Unbind Entity Schema",
+    description=(
+        "Use this when the user wants to unbind (remove) the JSON schema "
+        "from a Synapse entity so it is no longer validated. Entity ID "
+        "example: syn123456."
+    ),
+    synonyms=_SCHEMA_SYNONYMS + _DELETE_SYNONYMS + ("unbind", "detach"),
+    siblings=("update_entity_schema", "get_entity_schema"),
+)
+async def delete_entity_schema(
+    entity_id: Annotated[
+        str, Field(description="Synapse ID of the entity, e.g. syn123456.")
+    ],
+    ctx: Context,
+) -> Dict[str, Any]:
+    """Unbind the JSON schema from a Synapse entity."""
+    if not validate_synapse_id(entity_id):
+        return {
+            "error": f"Invalid Synapse ID: {entity_id}",
+            "error_type": "ValueError",
+        }
+    return await EntityService.unbind_schema(ctx, entity_id)
+
+
+@service_tool(
+    mcp,
+    service="entity",
+    operation="write",
+    synapse_object="Synapse table",
+    title="Update Columns",
+    description=(
+        "Use this when the user wants to change a Synapse table, view, or "
+        "dataset column layout — add, delete, rename, or reorder columns. "
+        "This only changes the schema; it never loads row data. Operations "
+        "apply in order: delete, add, rename, reorder. Entity ID example: "
+        "syn123456."
+    ),
+    synonyms=(
+        "column",
+        "schema",
+        "add column",
+        "delete column",
+    ),
+    siblings=("create_entity", "update_entity"),
+)
+async def update_columns(
+    entity_id: Annotated[
+        str,
+        Field(description="Synapse ID of the table, view, or dataset, e.g. syn123456."),
+    ],
+    ctx: Context,
+    add_columns: Annotated[
+        Optional[List[ColumnSpec]],
+        Field(description="Column specs to add (name + column_type at minimum)."),
+    ] = None,
+    delete_columns: Annotated[
+        Optional[List[str]],
+        Field(description="Names of existing columns to delete."),
+    ] = None,
+    rename_columns: Annotated[
+        Optional[Dict[str, str]],
+        Field(description="Map of {old_name: new_name} for existing columns."),
+    ] = None,
+    reorder_columns: Annotated[
+        Optional[List[str]],
+        Field(
+            description=(
+                "Complete desired column order as a list of the final column "
+                "names (all of them, no duplicates)."
+            )
+        ),
+    ] = None,
+) -> Dict[str, Any]:
+    """Add, remove, rename, or reorder columns on a Synapse table/view/dataset."""
+    if not validate_synapse_id(entity_id):
+        return {
+            "error": f"Invalid Synapse ID: {entity_id}",
+            "error_type": "ValueError",
+        }
+    return await EntityService.update_columns(
+        ctx,
+        entity_id,
+        add_columns,
+        delete_columns,
+        rename_columns,
+        reorder_columns,
+    )
+
+
+@service_tool(
+    mcp,
+    service="team",
+    operation="write",
+    synapse_object="Synapse team",
+    title="Create Team",
+    description=(
+        "Use this when the user wants to create a new Synapse team — a "
+        "named group of users that can be granted access to entities "
+        "collectively. Team name example: 'NF-OSI Curators'."
+    ),
+    synonyms=_CREATE_SYNONYMS + _TEAM_SYNONYMS,
+    siblings=("delete_team", "create_team_invitation", "get_team"),
+)
+async def create_team(
+    name: Annotated[
+        str, Field(description="Team name, e.g. 'NF-OSI Curators'.")
+    ],
+    ctx: Context,
+    description: Annotated[
+        Optional[str], Field(description="Description of the team.")
+    ] = None,
+    can_public_join: Annotated[
+        bool, Field(description="Whether anyone can join without an invitation.")
+    ] = False,
+    can_request_membership: Annotated[
+        bool, Field(description="Whether users can request to join.")
+    ] = True,
+) -> Dict[str, Any]:
+    """Create a new Synapse Team."""
+    return await TeamService.create_team(
+        ctx,
+        name=name,
+        description=description,
+        can_public_join=can_public_join,
+        can_request_membership=can_request_membership,
+    )
+
+
+@service_tool(
+    mcp,
+    service="team",
+    operation="destructive",
+    synapse_object="Synapse team",
+    title="Delete Team",
+    description=(
+        "Use this when the user wants to delete a Synapse team by its "
+        "numeric ID. Team ID example: '3379097'. This is irreversible."
+    ),
+    synonyms=_DELETE_SYNONYMS + _TEAM_SYNONYMS,
+    siblings=("create_team", "get_team"),
+)
+async def delete_team(
+    team_id: Annotated[
+        int, Field(description="Numeric ID of the team to delete, e.g. 3379097.")
+    ],
+    ctx: Context,
+) -> Dict[str, Any]:
+    """Delete a Synapse Team by ID."""
+    return await TeamService.delete_team(ctx, team_id)
+
+
+@service_tool(
+    mcp,
+    service="team",
+    operation="write",
+    synapse_object="Synapse team",
+    title="Invite To Team",
+    description=(
+        "Use this when the user wants to create an invitation for a user "
+        "to join a Synapse team. Team ID example: '3379097'. User can be "
+        "a username or numeric user ID (example: '1234567')."
+    ),
+    synonyms=_TEAM_SYNONYMS + ("invite", "add member", "membership"),
+    siblings=("create_team", "get_team_open_invitations"),
+)
+async def create_team_invitation(
+    team_id: Annotated[
+        int, Field(description="Numeric ID of the team, e.g. 3379097.")
+    ],
+    user: Annotated[
+        str,
+        Field(
+            description=(
+                "Username or numeric user ID to invite, e.g. '1234567'."
+            )
+        ),
+    ],
+    ctx: Context,
+    message: Annotated[
+        Optional[str], Field(description="Optional message shown with the invitation.")
+    ] = None,
+    force: Annotated[
+        bool,
+        Field(
+            description=(
+                "Whether to send the invitation even if the user is "
+                "already a member or has a pending invitation."
+            )
+        ),
+    ] = True,
+) -> Dict[str, Any]:
+    """Invite a user to a Synapse Team."""
+    return await TeamService.invite_to_team(
+        ctx, team_id, user, message=message, force=force
+    )
+
+
+@service_tool(
+    mcp,
+    service="evaluation",
+    operation="write",
+    synapse_object="Synapse evaluation",
+    title="Create Evaluation",
+    description=(
+        "Use this when the user wants to create a new Synapse Evaluation "
+        "queue (challenge/competition queue) on a project. content_source "
+        "is the owning project ID (example: syn123456). Synapse requires "
+        "a description, submitter instructions, and a submission-receipt "
+        "message — all are mandatory."
+    ),
+    synonyms=_CREATE_SYNONYMS + _EVALUATION_SYNONYMS,
+    siblings=("update_evaluation", "delete_evaluation", "get_evaluation"),
+)
+async def create_evaluation(
+    name: Annotated[str, Field(description="Name for the new evaluation queue.")],
+    content_source: Annotated[
+        str,
+        Field(description="Owning project Synapse ID, e.g. syn123456."),
+    ],
+    description: Annotated[
+        str, Field(description="Description of the queue (required by Synapse).")
+    ],
+    submission_instructions_message: Annotated[
+        str,
+        Field(description="Instructions shown to submitters (required by Synapse)."),
+    ],
+    submission_receipt_message: Annotated[
+        str,
+        Field(description="Message shown after a submission (required by Synapse)."),
+    ],
+    ctx: Context,
+) -> Dict[str, Any]:
+    """Create a new Evaluation queue."""
+    if not validate_synapse_id(content_source):
+        return {
+            "error": f"Invalid Synapse ID: {content_source}",
+            "error_type": "ValueError",
+        }
+    return await EvaluationService.create_evaluation(
+        ctx,
+        name=name,
+        content_source=content_source,
+        description=description,
+        submission_instructions_message=submission_instructions_message,
+        submission_receipt_message=submission_receipt_message,
+    )
+
+
+@service_tool(
+    mcp,
+    service="evaluation",
+    operation="write",
+    synapse_object="Synapse evaluation",
+    title="Update Evaluation",
+    description=(
+        "Use this when the user wants to update a Synapse Evaluation "
+        "queue's metadata — its name, description, or submitter "
+        "instructions. Evaluation ID example: '9600001'."
+    ),
+    synonyms=_UPDATE_SYNONYMS + _EVALUATION_SYNONYMS,
+    siblings=("create_evaluation", "delete_evaluation", "get_evaluation"),
+)
+async def update_evaluation(
+    evaluation_id: Annotated[
+        str, Field(description="Numeric ID of the evaluation queue, e.g. '9600001'.")
+    ],
+    ctx: Context,
+    name: Annotated[
+        Optional[str], Field(description="New name for the queue.")
+    ] = UNSET,
+    description: Annotated[
+        Optional[str], Field(description="New description for the queue.")
+    ] = UNSET,
+    submission_instructions_message: Annotated[
+        Optional[str],
+        Field(description="New instructions shown to submitters."),
+    ] = UNSET,
+) -> Dict[str, Any]:
+    """Update an Evaluation queue's metadata."""
+    return await EvaluationService.update_evaluation(
+        ctx,
+        evaluation_id=evaluation_id,
+        name=name,
+        description=description,
+        submission_instructions_message=submission_instructions_message,
+    )
+
+
+@service_tool(
+    mcp,
+    service="evaluation",
+    operation="destructive",
+    synapse_object="Synapse evaluation",
+    title="Delete Evaluation",
+    description=(
+        "Use this when the user wants to delete a Synapse Evaluation "
+        "queue by ID. Evaluation ID example: '9600001'. This is "
+        "irreversible."
+    ),
+    synonyms=_DELETE_SYNONYMS + _EVALUATION_SYNONYMS,
+    siblings=("create_evaluation", "get_evaluation"),
+)
+async def delete_evaluation(
+    evaluation_id: Annotated[
+        str, Field(description="Numeric ID of the evaluation queue, e.g. '9600001'.")
+    ],
+    ctx: Context,
+) -> Dict[str, Any]:
+    """Delete an Evaluation queue by ID."""
+    return await EvaluationService.delete_evaluation(ctx, evaluation_id)
+
+
+@service_tool(
+    mcp,
+    service="evaluation",
+    operation="write",
+    synapse_object="Synapse evaluation",
+    title="Update Evaluation ACL",
+    description=(
+        "Use this when the user wants to grant or change a user's or "
+        "team's access on a Synapse Evaluation queue (challenge queue) — "
+        "e.g. who can submit or score. Valid access_type values are READ, "
+        "UPDATE, DELETE, CREATE, SUBMIT, READ_PRIVATE_SUBMISSION, "
+        "DELETE_SUBMISSION, UPDATE_SUBMISSION, and CHANGE_PERMISSIONS. "
+        "Evaluation ID example: '9600001'. Principal ID example: 3379097."
+    ),
+    synonyms=_EVALUATION_SYNONYMS + _ACL_SYNONYMS + _UPDATE_SYNONYMS,
+    siblings=("get_evaluation_acl", "get_evaluation_permissions"),
+)
+async def update_evaluation_acl(
+    evaluation_id: Annotated[
+        str, Field(description="Numeric ID of the evaluation queue, e.g. '9600001'.")
+    ],
+    principal_id: Annotated[
+        int, Field(description="User or team ID to grant access to, e.g. 3379097.")
+    ],
+    access_type: Annotated[
+        List[EvaluationAccessType],
+        Field(description="Permission strings, e.g. ['READ', 'SUBMIT']."),
+    ],
+    ctx: Context,
+) -> Dict[str, Any]:
+    """Update an Evaluation queue's ACL for one principal."""
+    return await EvaluationService.update_evaluation_acl(
+        ctx, evaluation_id, principal_id, access_type
+    )
+
+
+@service_tool(
+    mcp,
+    service="submission",
+    operation="write",
+    synapse_object="Synapse submission",
+    title="Submit To Evaluation",
+    description=(
+        "Use this when the user wants to submit an existing Synapse entity "
+        "to an Evaluation queue as a challenge submission. The entity must "
+        "already exist in Synapse (no file is uploaded here). Evaluation "
+        "ID example: '9600001'. Entity ID example: syn123456."
+    ),
+    synonyms=_SUBMISSION_SYNONYMS + _EVALUATION_SYNONYMS + ("submit",),
+    siblings=("get_submission", "update_submission_status"),
+)
+async def submit_to_evaluation(
+    evaluation_id: Annotated[
+        str, Field(description="Numeric ID of the evaluation queue, e.g. '9600001'.")
+    ],
+    entity_id: Annotated[
+        str, Field(description="Synapse ID of the entity to submit, e.g. syn123456.")
+    ],
+    ctx: Context,
+    name: Annotated[
+        Optional[str], Field(description="Optional name for the submission.")
+    ] = None,
+    submitter_alias: Annotated[
+        Optional[str],
+        Field(description="Optional display name shown for the submitter."),
+    ] = None,
+) -> Dict[str, Any]:
+    """Submit an existing entity to an Evaluation queue."""
+    if not validate_synapse_id(entity_id):
+        return {
+            "error": f"Invalid Synapse ID: {entity_id}",
+            "error_type": "ValueError",
+        }
+    return await SubmissionService.submit_to_evaluation(
+        ctx,
+        evaluation_id,
+        entity_id,
+        name=name,
+        submitter_alias=submitter_alias,
+    )
+
+
+@service_tool(
+    mcp,
+    service="submission",
+    operation="write",
+    synapse_object="Synapse submission",
+    title="Update Submission Status",
+    description=(
+        "Use this when the user wants to update the scoring status of a "
+        "Synapse submission (challenge entry). Valid status values are "
+        "OPEN, CLOSED, RECEIVED, VALIDATED, EVALUATION_IN_PROGRESS, "
+        "SCORED, INVALID, ACCEPTED, and REJECTED. You can also set status "
+        "annotations. Submission ID example: '9722233'. Pass null "
+        "annotations to clear them."
+    ),
+    synonyms=_SUBMISSION_SYNONYMS + _UPDATE_SYNONYMS + ("score", "status"),
+    siblings=("get_submission_status", "submit_to_evaluation"),
+)
+async def update_submission_status(
+    submission_id: Annotated[
+        str, Field(description="Numeric ID of the submission, e.g. '9722111'.")
+    ],
+    ctx: Context,
+    status: Annotated[
+        Optional[SubmissionStatusValue],
+        Field(description="New scoring status, e.g. 'SCORED'."),
+    ] = UNSET,
+    annotations: Annotated[
+        Optional[Dict[str, List[Any]]],
+        Field(
+            description=(
+                "Full replacement status annotations; null clears them."
+            )
+        ),
+    ] = UNSET,
+) -> Dict[str, Any]:
+    """Update a submission's scoring status."""
+    return await SubmissionService.update_submission_status(
+        ctx, submission_id, status=status, annotations=annotations
+    )
+
+
+@service_tool(
+    mcp,
+    service="organization",
+    operation="write",
+    synapse_object="Synapse Organization",
+    title="Create Organization",
+    description=(
+        "Use this when the user wants to create a new Synapse Organization "
+        "— a named namespace under which resources such as JSON schemas "
+        "are published. Organization name example: 'my.org'."
+    ),
+    synonyms=_CREATE_SYNONYMS + _SCHEMA_SYNONYMS + ("namespace",),
+    siblings=("delete_organization", "get_schema_organization"),
+)
+async def create_organization(
+    organization_name: Annotated[
+        str, Field(description="Namespace to register, e.g. 'my.org'.")
+    ],
+    ctx: Context,
+) -> Dict[str, Any]:
+    """Create a new Synapse Organization."""
+    return await SchemaOrganizationService.create_organization(
+        ctx, organization_name
+    )
+
+
+@service_tool(
+    mcp,
+    service="organization",
+    operation="destructive",
+    synapse_object="Synapse Organization",
+    title="Delete Organization",
+    description=(
+        "Use this when the user wants to delete a Synapse Organization "
+        "(a namespace) by id or by name. This is irreversible."
+    ),
+    synonyms=_DELETE_SYNONYMS + _SCHEMA_SYNONYMS + ("namespace",),
+    siblings=("create_organization", "get_schema_organization"),
+)
+async def delete_organization(
+    organization: Annotated[
+        str,
+        Field(
+            description=(
+                "Organization id or name, e.g. '1075' or 'my.org'."
+            )
+        ),
+    ],
+    ctx: Context,
+) -> Dict[str, Any]:
+    """Delete a Synapse Organization by id or by name."""
+    return await SchemaOrganizationService.delete_organization(
+        ctx, organization
+    )
+
+
+@service_tool(
+    mcp,
+    service="organization",
+    operation="write",
+    synapse_object="Synapse Organization",
+    title="Update Organization ACL",
+    description=(
+        "Use this when the user wants to grant or change who can publish "
+        "resources (such as JSON schemas) under a Synapse Organization "
+        "namespace, addressed by id or by name. Valid access_type values "
+        "are READ, CREATE, UPDATE, DELETE, and CHANGE_PERMISSIONS. "
+        "Principal ID example: 3379097. Warning: access_type replaces the "
+        "principal's existing access list wholesale rather than merging "
+        "into it, so omitting CHANGE_PERMISSIONS for your own principal is "
+        "irreversible."
+    ),
+    synonyms=_SCHEMA_SYNONYMS + _ACL_SYNONYMS + _UPDATE_SYNONYMS,
+    siblings=("get_schema_organization_acl", "get_schema_organization"),
+)
+async def update_organization_acl(
+    organization: Annotated[
+        str,
+        Field(
+            description=(
+                "Organization id or name, e.g. '1075' or 'my.org'."
+            )
+        ),
+    ],
+    principal_id: Annotated[
+        int,
+        Field(description="User or team ID to grant access to, e.g. 3379097."),
+    ],
+    access_type: Annotated[
+        List[OrganizationAccessType],
+        Field(description="Permission strings, e.g. ['READ', 'CREATE']."),
+    ],
+    ctx: Context,
+) -> Dict[str, Any]:
+    """Set a principal's access on a Synapse Organization."""
+    return await SchemaOrganizationService.update_organization_acl(
+        ctx, organization, principal_id, access_type
+    )
+
+
+@service_tool(
+    mcp,
+    service="schema",
+    operation="write",
+    synapse_object="Synapse JSON Schema",
+    title="Register JSON Schema",
+    description=(
+        "Use this when the user wants to register (publish a version of) a "
+        "Synapse JSON Schema from an inline JSON document. The owning "
+        "organization is addressed by its name (e.g. 'my.org'), not a "
+        "numeric or syn id. Schema name example: 'MySchema'. Optional "
+        "version example: '1.0.0'."
+    ),
+    synonyms=_SCHEMA_SYNONYMS + _CREATE_SYNONYMS + ("register", "publish"),
+    siblings=("delete_json_schema", "get_json_schema"),
+)
+async def register_json_schema(
+    organization_name: Annotated[
+        str, Field(description="Owning organization name, e.g. 'my.org'.")
+    ],
+    schema_name: Annotated[
+        str, Field(description="Schema name, e.g. 'MySchema'.")
+    ],
+    schema_body: Annotated[
+        Dict[str, Any], Field(description="The JSON Schema document as an inline dict.")
+    ],
+    ctx: Context,
+    version: Annotated[
+        Optional[str], Field(description="Optional semantic version, e.g. '1.0.0'.")
+    ] = None,
+) -> Dict[str, Any]:
+    """Register a JSON Schema from an inline body."""
+    return await SchemaOrganizationService.register_json_schema(
+        ctx,
+        organization_name,
+        schema_name,
+        schema_body,
+        version=version,
+    )
+
+
+@service_tool(
+    mcp,
+    service="schema",
+    operation="destructive",
+    synapse_object="Synapse JSON Schema",
+    title="Delete JSON Schema",
+    description=(
+        "Use this when the user wants to delete a Synapse JSON Schema by "
+        "organization and name. Organization name example: 'my.org'. "
+        "Schema name example: 'MySchema'. This is irreversible."
+    ),
+    synonyms=_DELETE_SYNONYMS + _SCHEMA_SYNONYMS,
+    siblings=("register_json_schema", "get_json_schema"),
+)
+async def delete_json_schema(
+    organization_name: Annotated[
+        str, Field(description="Owning organization name, e.g. 'my.org'.")
+    ],
+    schema_name: Annotated[
+        str, Field(description="Schema name to delete, e.g. 'MySchema'.")
+    ],
+    ctx: Context,
+) -> Dict[str, Any]:
+    """Delete a JSON Schema by organization and name."""
+    return await SchemaOrganizationService.delete_json_schema(
+        ctx, organization_name, schema_name
+    )
+
+
+@service_tool(
+    mcp,
+    service="curation",
+    operation="write",
+    synapse_object="Synapse curation task",
+    title="Create Curation Task",
+    description=(
+        "Use this when the user wants to create a Synapse curation task on "
+        "a project — a data-curation work item. Project ID example: "
+        "syn123456. task_properties selects the shape: a record_set_id "
+        "for record-based, or an upload_folder_id (and optional "
+        "file_view_id) for file-based."
+    ),
+    synonyms=_CREATE_SYNONYMS + ("curator", "work item", "task"),
+    siblings=("delete_curation_task", "get_curation_task"),
+)
+async def create_curation_task(
+    project_id: Annotated[
+        str, Field(description="Project Synapse ID the task belongs to, e.g. syn123456.")
+    ],
+    data_type: Annotated[
+        str, Field(description="The kind of data being curated.")
+    ],
+    task_properties: Annotated[
+        TaskProperties,
+        Field(
+            description=(
+                "Selects the task shape: record_set_id for record-based, or "
+                "upload_folder_id (+ optional file_view_id) for file-based."
+            )
+        ),
+    ],
+    ctx: Context,
+    instructions: Annotated[
+        Optional[str], Field(description="Optional free-text instructions.")
+    ] = None,
+) -> Dict[str, Any]:
+    """Create a curation task on a project."""
+    if not validate_synapse_id(project_id):
+        return {
+            "error": f"Invalid Synapse ID: {project_id}",
+            "error_type": "ValueError",
+        }
+    for key in ("record_set_id", "upload_folder_id", "file_view_id"):
+        value = task_properties.get(key)
+        if value is not None and not validate_synapse_id(value):
+            return {
+                "error": f"Invalid Synapse ID: {value}",
+                "error_type": "ValueError",
+            }
+    return await CurationTaskService.create_task(
+        ctx,
+        project_id=project_id,
+        data_type=data_type,
+        task_properties=task_properties,
+        instructions=instructions,
+    )
+
+
+@service_tool(
+    mcp,
+    service="curation",
+    operation="destructive",
+    synapse_object="Synapse curation task",
+    title="Delete Curation Task",
+    description=(
+        "Use this when the user wants to delete a Synapse curation task by "
+        "its numeric task ID. Task ID example: 42. This is irreversible."
+    ),
+    synonyms=_DELETE_SYNONYMS + ("curator", "work item", "task"),
+    siblings=("create_curation_task", "get_curation_task"),
+)
+async def delete_curation_task(
+    task_id: Annotated[
+        int, Field(description="Numeric ID of the curation task, e.g. 42.")
+    ],
+    ctx: Context,
+) -> Dict[str, Any]:
+    """Delete a curation task by ID."""
+    return await CurationTaskService.delete_task(ctx, task_id)
+
+
 # Applied after all tools are registered so the transform has the full
 # catalog to index. The LLM's default view becomes the two pinned tools
-# plus the synthetic ``search_tools`` / ``call_tool`` pair; every other
-# tool is reached by calling ``search_tools`` with a natural-language
-# query and then invoking ``call_tool``.
+# plus the synthetic ``search_tools`` / ``call_read_tool`` / ``call_write_tool``
+# trio; every other tool is reached by calling ``search_tools`` with a
+# natural-language query and then invoking ``call_read_tool`` (reads) or
+# ``call_write_tool`` (writes/deletes). The split lets clients that gate by
+# tool name allow reads while withholding writes.
 
 
 def _configure_discovery_transforms() -> None:
-    """Register the BM25 search transform on the live FastMCP server."""
+    """Register the split-proxy BM25 search transform on the live server."""
     mcp.add_transform(
-        BM25SearchTransform(
+        SplitCallTransform(
             max_results=7,
             always_visible=["search_synapse", "get_entity"],
+            call_tool_name="call_read_tool",
         )
     )
 

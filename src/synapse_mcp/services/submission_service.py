@@ -10,6 +10,7 @@ from synapseclient.models import (
     SubmissionStatus,
 )
 
+from ..tool_types import UNSET, SubmissionStatusValue
 from .tool_service import error_boundary, serialize_model, synapse_client
 
 
@@ -267,3 +268,80 @@ class SubmissionService:
                 )
                 results.append(serialize_model(bundle))
             return results
+
+    @staticmethod
+    @error_boundary(error_context_keys=("evaluation_id", "entity_id"))
+    async def submit_to_evaluation(
+        ctx: Context,
+        evaluation_id: str,
+        entity_id: str,
+        name: Optional[str] = None,
+        submitter_alias: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Submit an existing Synapse entity to an Evaluation queue.
+
+        The submission references an entity that already exists in Synapse
+        (e.g. a File or Docker entity) by ID — no file is uploaded here.
+
+        Arguments:
+            ctx: The FastMCP request context.
+            evaluation_id: Target evaluation queue ID (e.g. "9600001").
+            entity_id: Synapse ID of the entity to submit (e.g. syn123456).
+            name: Optional submission name.
+            submitter_alias: Optional alias shown on the leaderboard.
+
+        Returns:
+            Dict with the created submission metadata.
+        """
+        async with synapse_client(ctx) as client:
+            submission = Submission(
+                evaluation_id=evaluation_id,
+                entity_id=entity_id,
+                name=name,
+                submitter_alias=submitter_alias,
+            )
+            stored = await submission.store_async(synapse_client=client)
+            return serialize_model(stored)
+
+    @staticmethod
+    @error_boundary(error_context_keys=("submission_id",))
+    async def update_submission_status(
+        ctx: Context,
+        submission_id: str,
+        status: Optional[SubmissionStatusValue] = UNSET,
+        annotations: Optional[Dict[str, List[Any]]] = UNSET,
+    ) -> Dict[str, Any]:
+        """Update the scoring status of a Synapse submission.
+
+        Each field is only touched when supplied; passing an explicit
+        ``null`` for ``annotations`` clears the status annotations.
+
+        Arguments:
+            ctx: The FastMCP request context.
+            submission_id: Submission ID (e.g. "9722233").
+            status: New scoring state.
+            annotations: Status annotations (each key maps to a list of
+                values); null clears them.
+
+        Returns:
+            Dict with the updated submission status.
+        """
+        if status is not UNSET and status is None:
+            return {
+                "error": (
+                    "'status' is required and cannot be set to null; supply "
+                    "a status value or omit it to leave it unchanged."
+                ),
+                "error_type": "ValueError",
+                "submission_id": submission_id,
+            }
+        async with synapse_client(ctx) as client:
+            sub_status = await SubmissionStatus(
+                id=submission_id
+            ).get_async(synapse_client=client)
+            if status is not UNSET:
+                sub_status.status = status
+            if annotations is not UNSET:
+                sub_status.submission_annotations = annotations or {}
+            stored = await sub_status.store_async(synapse_client=client)
+            return serialize_model(stored)

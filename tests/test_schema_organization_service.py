@@ -433,3 +433,204 @@ class TestListJsonSchemaVersions:
         assert result["organization_name"] == "sage.example"
         assert result["schema_name"] == "ExampleSchema"
 
+
+class TestCreateSchemaOrganization:
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.SchemaOrganization")
+    async def test_given_name_when_created_then_returns_dict(
+        self, mock_org_cls, mock_get_client
+    ):
+        mock_get_client.return_value = MagicMock()
+        mock_org_cls.return_value.store_async = AsyncMock(
+            return_value=FakeOrg(name="new.org", id="99")
+        )
+
+        result = await SchemaOrganizationService.create_organization(
+            MagicMock(), "new.org"
+        )
+
+        assert result["name"] == "new.org"
+        assert result["id"] == "99"
+        mock_org_cls.return_value.store_async.assert_called_once()
+
+
+class TestDeleteSchemaOrganization:
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.SchemaOrganization")
+    async def test_given_id_when_deleted_then_constructs_by_id_no_get_then_deletes(
+        self, mock_org_cls, mock_get_client
+    ):
+        mock_get_client.return_value = MagicMock()
+        org = mock_org_cls.return_value
+        org.id = "1075"
+        org.name = None
+        org.get_async = AsyncMock()
+        org.delete_async = AsyncMock()
+
+        result = await SchemaOrganizationService.delete_organization(
+            MagicMock(), "1075"
+        )
+
+        mock_org_cls.assert_called_once_with(id="1075")
+        assert result == {
+            "organization_id": "1075",
+            "organization_name": None,
+            "deleted": True,
+        }
+        org.get_async.assert_not_called()
+        org.delete_async.assert_called_once()
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.SchemaOrganization")
+    async def test_given_name_when_deleted_then_constructs_by_name_then_deletes(
+        self, mock_org_cls, mock_get_client
+    ):
+        mock_get_client.return_value = MagicMock()
+        org = mock_org_cls.return_value
+        org.id = "42"
+        org.name = "sage.example"
+        org.get_async = AsyncMock()
+        org.delete_async = AsyncMock()
+
+        result = await SchemaOrganizationService.delete_organization(
+            MagicMock(), "sage.example"
+        )
+
+        mock_org_cls.assert_called_once_with(name="sage.example")
+        assert result == {
+            "organization_id": "42",
+            "organization_name": "sage.example",
+            "deleted": True,
+        }
+        org.get_async.assert_not_called()
+        org.delete_async.assert_called_once()
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    async def test_given_malformed_identifier_when_deleted_then_returns_value_error(
+        self, mock_get_client
+    ):
+        mock_get_client.return_value = MagicMock()
+
+        result = await SchemaOrganizationService.delete_organization(
+            MagicMock(), "ab"
+        )
+
+        assert result["error_type"] == "ValueError"
+        assert result["organization"] == "ab"
+        assert "error" in result
+
+
+class TestUpdateSchemaOrganizationAcl:
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.SchemaOrganization")
+    async def test_given_id_when_updated_then_constructs_by_id_no_get(
+        self, mock_org_cls, mock_get_client
+    ):
+        mock_get_client.return_value = MagicMock()
+        org = mock_org_cls.return_value
+        org.id = "1075"
+        org.name = None
+        org.get_async = AsyncMock()
+        org.update_acl_async = AsyncMock()
+
+        result = await SchemaOrganizationService.update_organization_acl(
+            MagicMock(), "1075", 12345, ["READ", "CREATE"]
+        )
+
+        mock_org_cls.assert_called_once_with(id="1075")
+        assert result["organization_id"] == "1075"
+        assert result["organization_name"] is None
+        assert result["principal_id"] == 12345
+        assert result["access_type"] == ["READ", "CREATE"]
+        assert result["updated"] is True
+        org.get_async.assert_not_called()
+        org.update_acl_async.assert_called_once()
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.SchemaOrganization")
+    async def test_given_name_when_updated_then_constructs_by_name_returns_confirmation(
+        self, mock_org_cls, mock_get_client
+    ):
+        mock_get_client.return_value = MagicMock()
+        org = mock_org_cls.return_value
+        org.id = "42"
+        org.name = "sage.example"
+        org.get_async = AsyncMock()
+        org.update_acl_async = AsyncMock()
+
+        result = await (
+            SchemaOrganizationService.update_organization_acl(
+                MagicMock(), "sage.example", 12345, ["READ", "CREATE"]
+            )
+        )
+
+        mock_org_cls.assert_called_once_with(name="sage.example")
+        assert result["organization_id"] == "42"
+        assert result["organization_name"] == "sage.example"
+        assert result["principal_id"] == 12345
+        assert result["access_type"] == ["READ", "CREATE"]
+        assert result["updated"] is True
+        org.get_async.assert_not_called()
+        org.update_acl_async.assert_called_once()
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    async def test_given_malformed_identifier_when_updated_then_returns_value_error(
+        self, mock_get_client
+    ):
+        mock_get_client.return_value = MagicMock()
+
+        result = await SchemaOrganizationService.update_organization_acl(
+            MagicMock(), "ab", 12345, ["READ"]
+        )
+
+        assert result["error_type"] == "ValueError"
+        assert result["organization"] == "ab"
+        assert "error" in result
+
+
+class TestRegisterJsonSchema:
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.JSONSchema")
+    async def test_given_body_when_registered_then_stores_with_kwargs(
+        self, mock_schema_cls, mock_get_client
+    ):
+        mock_get_client.return_value = MagicMock()
+        mock_schema_cls.return_value.store_async = AsyncMock(
+            return_value=FakeSchema(name="MySchema")
+        )
+
+        body = {"type": "object", "properties": {}}
+        result = await SchemaOrganizationService.register_json_schema(
+            MagicMock(),
+            "sage.example",
+            "MySchema",
+            body,
+            version="1.0.0",
+        )
+
+        assert result["name"] == "MySchema"
+        kwargs = mock_schema_cls.return_value.store_async.call_args.kwargs
+        assert kwargs["schema_body"] == body
+        assert kwargs["version"] == "1.0.0"
+
+
+class TestDeleteJsonSchema:
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.JSONSchema")
+    async def test_given_name_when_deleted_then_returns_confirmation(
+        self, mock_schema_cls, mock_get_client
+    ):
+        mock_get_client.return_value = MagicMock()
+        mock_schema_cls.return_value.delete_async = AsyncMock()
+
+        result = await SchemaOrganizationService.delete_json_schema(
+            MagicMock(), "sage.example", "MySchema"
+        )
+
+        assert result == {
+            "organization_name": "sage.example",
+            "schema_name": "MySchema",
+            "deleted": True,
+        }
+        mock_schema_cls.return_value.delete_async.assert_called_once()
+
