@@ -87,6 +87,7 @@ def create_oauth_proxy(env: Optional[dict[str, str]] = None):
         token_verifier=jwt_verifier,
         base_url=settings.server_url,
         client_storage=client_storage,
+        valid_scopes=["openid", "view", "modify"],
     )
 
     return auth
