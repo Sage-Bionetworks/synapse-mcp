@@ -9,6 +9,9 @@ from synapse_mcp.app import _OAuthFixupMiddleware
 
 pytestmark = pytest.mark.anyio
 
+# Expected sorted scopes_supported list
+SCOPES_SUPPORTED = ["modify", "openid", "view"]
+
 
 @pytest.fixture
 def anyio_backend():
@@ -83,7 +86,7 @@ class TestHandleMetadata:
 
         _, data = await _invoke_metadata(middleware)
 
-        assert data["scopes_supported"] == ["openid", "view"]
+        assert data["scopes_supported"] == SCOPES_SUPPORTED
 
     async def test_preserves_existing_scopes_supported(self):
         """If upstream already has scopes_supported, don't overwrite it."""
@@ -121,7 +124,7 @@ class TestHandleMetadata:
 
         _, data = await _invoke_metadata(middleware)
 
-        assert data["scopes_supported"] == ["openid", "view"]
+        assert data["scopes_supported"] == SCOPES_SUPPORTED
         assert "none" in data["token_endpoint_auth_methods_supported"]
 
     async def test_content_length_updated(self):
@@ -181,7 +184,7 @@ class TestPathScopedMetadataAlias:
         )
 
         assert data["issuer"] == "https://auth.example.com"
-        assert data["scopes_supported"] == ["openid", "view"]
+        assert data["scopes_supported"] == SCOPES_SUPPORTED
         assert "none" in data[
             "token_endpoint_auth_methods_supported"
         ]

@@ -36,7 +36,7 @@ class _OAuthFixupMiddleware:
     def __init__(self, app):
         self.app = app
 
-    SUPPORTED_SCOPES = {"openid", "view"}
+    SUPPORTED_SCOPES = {"openid", "view", "modify"}
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
