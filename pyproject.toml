@@ -23,7 +23,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Bio-Informatics",
 ]
 dependencies = [
-    "fastmcp==3.2.3",
+    "fastmcp==3.4.7",
     "mcp>=1.28.1,<2",
     "requests>=2.33.0,<3",
     "synapseclient==4.12.0",
