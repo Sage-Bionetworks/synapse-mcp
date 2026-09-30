@@ -10,6 +10,7 @@ import pytest
 
 from conftest import file_based_properties, make_task, record_based_properties
 from synapse_mcp.connection_auth import ConnectionAuthError
+from synapse_mcp.managers.curation_task_manager import RecordBasedTaskCreationError
 from synapse_mcp.services.curation_task_service import (
     CurationTaskService,
     _format_task,
@@ -354,6 +355,90 @@ class TestCreateTask:
 
         assert "not both" in result["error"]
         mock_get_client.assert_not_called()
+
+
+# -------------------------------------------------------------------
+# CurationTaskService.create_record_based_task
+# -------------------------------------------------------------------
+
+_RB_ARGS = dict(
+    folder_id="syn50",
+    record_set_name="rs",
+    data_type="Biospecimen",
+    schema_uri="org-s-1.0.0",
+    upsert_keys=["specimenID"],
+    instructions="x",
+)
+
+
+class TestCreateRecordBasedTask:
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.CurationTaskManager")
+    async def test_given_success_then_returns_record_set_and_formatted_task(
+        self, mock_mgr, mock_get_client
+    ):
+        # GIVEN the manager creates both objects
+        mock_get_client.return_value = MagicMock()
+        record_set = make_task()  # any dataclass stands in for the RecordSet
+        mock_mgr.return_value.create_record_based_task = AsyncMock(
+            return_value=(
+                record_set,
+                make_task(task_id=9, task_properties=record_based_properties("syn77")),
+            )
+        )
+
+        # WHEN we create the record-based task
+        result = await CurationTaskService.create_record_based_task(
+            MagicMock(), **_RB_ARGS
+        )
+
+        # THEN both objects are serialized and the task is tagged record-based
+        assert result["curation_task"]["task_id"] == 9
+        assert result["curation_task"]["task_properties"]["type"] == "record-based"
+        assert isinstance(result["record_set"], dict)
+        assert result["schema_bound"] is True
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.CurationTaskManager")
+    async def test_given_partial_failure_then_error_includes_record_set_id(
+        self, mock_mgr, mock_get_client
+    ):
+        # GIVEN the RecordSet was created but a later step failed
+        mock_get_client.return_value = MagicMock()
+        mock_mgr.return_value.create_record_based_task = AsyncMock(
+            side_effect=RecordBasedTaskCreationError("boom", record_set_id="syn77")
+        )
+
+        # WHEN we create the record-based task
+        result = await CurationTaskService.create_record_based_task(
+            MagicMock(), **_RB_ARGS
+        )
+
+        # THEN the standard error shape carries the orphaned RecordSet ID
+        assert result["error_type"] == "RecordBasedTaskCreationError"
+        assert result["record_set_id"] == "syn77"
+        assert result["folder_id"] == "syn50"
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.CurationTaskManager")
+    async def test_given_validation_error_then_boundary_returns_error_dict(
+        self, mock_mgr, mock_get_client
+    ):
+        # GIVEN the manager rejects the inputs before writing anything
+        mock_get_client.return_value = MagicMock()
+        mock_mgr.return_value.create_record_based_task = AsyncMock(
+            side_effect=ValueError("upsert_keys not found")
+        )
+
+        # WHEN we create the record-based task
+        result = await CurationTaskService.create_record_based_task(
+            MagicMock(), **_RB_ARGS
+        )
+
+        # THEN the error boundary returns the standard shape with context
+        assert result["error_type"] == "ValueError"
+        assert result["schema_uri"] == "org-s-1.0.0"
+        assert "record_set_id" not in result
 
 
 # -------------------------------------------------------------------

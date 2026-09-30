@@ -2,7 +2,7 @@
 
 ## Project
 
-FastMCP-based server that exposes Synapse (synapse.org) capabilities to LLMs over MCP. Tool catalog is 72 tools (48 read-only, 24 write/destructive) spanning entity, wiki, team, user, activity, evaluation, submission, schema, organization, form, curation, utility, and search domains.
+FastMCP-based server that exposes Synapse (synapse.org) capabilities to LLMs over MCP. Tool catalog is 73 tools (48 read-only, 25 write/destructive) spanning entity, wiki, team, user, activity, evaluation, submission, schema, organization, form, curation, utility, and search domains.
 
 ## Stack
 
@@ -40,7 +40,7 @@ The transform exposes `search_tools` (indexes the full catalog) plus **two** dis
 
 `always_visible = ["search_synapse", "get_entity"]` is intentional — these two cover the common first step of any Synapse workflow (lookup-by-ID, keyword-search). Expanding the list trades LLM context budget for one-shot access. Don't add entries without a justified reason.
 
-No tool uploads or downloads file bytes. A File entity is creatable only via external URL or an existing file handle (`create_entity` with `entity_type="file"`); there is no wiki-write tool because the SDK wiki store path always writes markdown to disk.
+No tool uploads or downloads file bytes. A File entity is creatable only via external URL or an existing file handle (`create_entity` with `entity_type="file"`); there is no wiki-write tool because the SDK wiki store path always writes markdown to disk. The one exception is `create_record_based_curation_task`, which uploads a header-only CSV template the server generates from a registered JSON schema (see `doc/tool-authoring.md`).
 
 ## Error response shape
 
