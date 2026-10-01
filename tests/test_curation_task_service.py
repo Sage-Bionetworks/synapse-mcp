@@ -406,7 +406,9 @@ class TestCreateRecordBasedTask:
         # GIVEN the RecordSet was created but a later step failed
         mock_get_client.return_value = MagicMock()
         mock_mgr.return_value.create_record_based_task = AsyncMock(
-            side_effect=RecordBasedTaskCreationError("boom", record_set_id="syn77")
+            side_effect=RecordBasedTaskCreationError(
+                "boom", record_set_id="syn77", status_code=409
+            )
         )
 
         # WHEN we create the record-based task
@@ -418,6 +420,8 @@ class TestCreateRecordBasedTask:
         assert result["error_type"] == "RecordBasedTaskCreationError"
         assert result["record_set_id"] == "syn77"
         assert result["folder_id"] == "syn50"
+        # AND the underlying HTTP status is preserved
+        assert result["status_code"] == 409
 
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
     @patch(f"{SVC}.CurationTaskManager")

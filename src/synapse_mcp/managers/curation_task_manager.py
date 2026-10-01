@@ -25,17 +25,38 @@ class RecordBasedTaskCreationError(Exception):
     clean up) the orphaned RecordSet.
     """
 
-    def __init__(self, message: str, record_set_id: str) -> None:
+    def __init__(
+        self,
+        message: str,
+        record_set_id: str,
+        status_code: Optional[int] = None,
+    ) -> None:
         super().__init__(message)
         self.record_set_id = record_set_id
+        self.status_code = status_code
+
+
+# Max bytes for the temp CSV's base name; filesystems cap a path component at
+# 255 bytes, and RecordSet names can be long or multibyte.
+_MAX_CSV_NAME_BYTES = 100
+
+
+def _csv_file_name(record_set_name: str) -> str:
+    """Filesystem-safe, length-bounded CSV file name for a RecordSet."""
+    safe = re.sub(r"[^\w.\-() +]", "_", record_set_name).strip() or "recordset"
+    safe = safe.encode("utf-8")[:_MAX_CSV_NAME_BYTES].decode("utf-8", errors="ignore")
+    return safe + ".csv"
 
 
 def _template_columns(schema_body: Dict[str, Any], upsert_keys: List[str]) -> List[str]:
     """Column headers for a RecordSet template: schema properties, upsert keys first.
 
-    Raises ``ValueError`` if the schema has no properties or an upsert key is
-    not one of them.
+    Raises ``ValueError`` if the schema has no properties, an upsert key is
+    repeated, or an upsert key is not one of the properties.
     """
+    repeated = sorted({key for key in upsert_keys if upsert_keys.count(key) > 1})
+    if repeated:
+        raise ValueError(f"upsert_keys contains repeated keys: {repeated}")
     properties = list((schema_body.get("properties") or {}).keys())
     if not properties:
         raise ValueError("The JSON schema defines no properties to build a template from.")
@@ -100,7 +121,8 @@ class CurationTaskManager:
         Mirrors ``synapseclient.extensions.curator.create_record_based_metadata_task``
         but runs async and skips the deprecated Grid creation. Steps:
 
-        1. Resolve the folder's project (also verifies the folder is visible).
+        1. Resolve the folder's project (also verifies the folder is visible)
+           and refuse if the project already has a task for ``data_type``.
         2. Fetch the registered JSON schema and build header-only CSV columns
            from its properties, upsert keys first.
         3. Store the template as a RecordSet under ``folder_id``.
@@ -114,14 +136,26 @@ class CurationTaskManager:
         # path[0] is the root; path[1] is the project that owns the folder.
         project_id = path["path"][1]["id"]
 
+        # CurationTask.store_async upserts on (project_id, data_type): an
+        # existing task would be updated in place, keeping its own RecordSet
+        # and orphaning the new one. Refuse instead.
+        async for existing in CurationTask.list_async(
+            project_id=project_id, synapse_client=self.synapse_client
+        ):
+            if existing.data_type == data_type:
+                raise ValueError(
+                    f"Project {project_id} already has a curation task "
+                    f"(task_id {existing.task_id}) for data_type "
+                    f"'{data_type}'. Choose a different data_type."
+                )
+
         schema = JSONSchema.from_uri(schema_uri)
         await schema.get_async(synapse_client=self.synapse_client)
         body = await schema.get_body_async(synapse_client=self.synapse_client)
         columns = _template_columns(body, upsert_keys)
 
         with tempfile.TemporaryDirectory() as tmp_dir:
-            file_name = re.sub(r"[^\w.\-() +]", "_", record_set_name) + ".csv"
-            csv_path = os.path.join(tmp_dir, file_name)
+            csv_path = os.path.join(tmp_dir, _csv_file_name(record_set_name))
             with open(csv_path, "w", encoding="utf-8", newline="") as f:
                 csv.writer(f).writerow(columns)
             record_set = await RecordSet(
@@ -149,10 +183,12 @@ class CurationTaskManager:
                 ),
             ).store_async(synapse_client=self.synapse_client)
         except Exception as exc:
+            response = getattr(exc, "response", None)
             raise RecordBasedTaskCreationError(
                 f"RecordSet {record_set.id} was created, but a later step "
                 f"failed: {exc}",
                 record_set_id=record_set.id,
+                status_code=getattr(response, "status_code", None),
             ) from exc
 
         return record_set, task

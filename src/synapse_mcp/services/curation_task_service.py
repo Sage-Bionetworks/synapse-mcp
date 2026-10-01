@@ -242,7 +242,7 @@ class CurationTaskService:
                     assignee_principal_id=assignee_principal_id,
                 )
             except RecordBasedTaskCreationError as exc:
-                return {
+                err = {
                     "error": str(exc),
                     "error_type": type(exc).__name__,
                     "record_set_id": exc.record_set_id,
@@ -250,6 +250,9 @@ class CurationTaskService:
                     "data_type": data_type,
                     "schema_uri": schema_uri,
                 }
+                if exc.status_code is not None:
+                    err["status_code"] = exc.status_code
+                return err
             record_set_dict = serialize_model(record_set)
             # ``path`` is the server's temp file, already deleted; not useful.
             record_set_dict.pop("path", None)
