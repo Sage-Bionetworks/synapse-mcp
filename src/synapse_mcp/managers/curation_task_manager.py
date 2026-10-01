@@ -45,6 +45,8 @@ def _template_columns(schema_body: Dict[str, Any], upsert_keys: List[str]) -> Li
             f"upsert_keys not found among the schema properties: {missing}. "
             f"Available properties: {properties}"
         )
+    if len(upsert_keys) != len(set(upsert_keys)):
+        raise ValueError("upsert_keys must contain distinct schema properties.")
     return list(upsert_keys) + [p for p in properties if p not in upsert_keys]
 
 
