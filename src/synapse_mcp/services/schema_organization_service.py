@@ -4,7 +4,7 @@ import json
 from typing import Any, Dict, List, Optional
 
 from fastmcp import Context
-from synapseclient.models import JSONSchema, SchemaOrganization
+from synapseclient.models import JSONSchema, Organization
 
 from ..tool_types import OrganizationAccessType
 from .tool_service import (
@@ -14,12 +14,12 @@ from .tool_service import (
 )
 
 
-def _org_ref(organization: str) -> SchemaOrganization:
+def _org_ref(organization: str) -> Organization:
     """Address an organization by id (all digits) or by name."""
     return (
-        SchemaOrganization(id=organization)
+        Organization(id=organization)
         if organization.isdigit()
-        else SchemaOrganization(name=organization)
+        else Organization(name=organization)
     )
 
 
@@ -65,7 +65,7 @@ class SchemaOrganizationService:
             Dict with organization metadata.
         """
         async with synapse_client(ctx) as client:
-            org = await SchemaOrganization(
+            org = await Organization(
                 name=organization_name,
             ).get_async(synapse_client=client)
             return serialize_model(org)
@@ -85,7 +85,7 @@ class SchemaOrganizationService:
             Dict with ACL information.
         """
         async with synapse_client(ctx) as client:
-            org = SchemaOrganization(name=organization_name)
+            org = Organization(name=organization_name)
             # get_async populates org.id, which get_acl_async needs for the API call.
             await org.get_async(synapse_client=client)
             acl = await org.get_acl_async(synapse_client=client)
@@ -250,7 +250,7 @@ class SchemaOrganizationService:
             Dict with the created organization metadata.
         """
         async with synapse_client(ctx) as client:
-            org = SchemaOrganization(name=organization_name)
+            org = Organization(name=organization_name)
             created = await org.store_async(synapse_client=client)
             return serialize_model(created)
 
