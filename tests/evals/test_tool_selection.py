@@ -160,6 +160,11 @@ QUERY_FIXTURES: List[Tuple[str, str]] = [
     ("delete the JSON schema MySchema in my.org", "delete_json_schema"),
     # curation writes
     ("create a curation task on project syn123", "create_curation_task"),
+    (
+        "set up a metadata curation task from my biospecimen schema in folder syn123",
+        "create_record_based_curation_task",
+    ),
+    ("create a record set curation task", "create_record_based_curation_task"),
     ("delete curation task 42", "delete_curation_task"),
 ]
 

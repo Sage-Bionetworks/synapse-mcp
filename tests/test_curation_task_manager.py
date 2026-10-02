@@ -10,7 +10,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from conftest import file_based_properties, make_task, record_based_properties
-from synapse_mcp.managers.curation_task_manager import CurationTaskManager
+from synapse_mcp.managers.curation_task_manager import (
+    CurationTaskManager,
+    RecordBasedTaskCreationError,
+    _csv_file_name,
+)
 
 MGR = "synapse_mcp.managers.curation_task_manager"
 
@@ -173,3 +177,264 @@ class TestTaskWithNoProperties:
 
         # THEN no resources are returned
         assert resources == {}
+
+
+# -------------------------------------------------------------------
+# CurationTaskManager.create_record_based_task
+# -------------------------------------------------------------------
+
+SCHEMA_BODY = {
+    "properties": {
+        "tissue": {"type": "string"},
+        "specimenID": {"type": "string"},
+        "assay": {"type": "string"},
+    }
+}
+
+
+def _client_with_project(project_id="syn1"):
+    client = MagicMock()
+    client.rest_get_async = AsyncMock(
+        return_value={"path": [{"id": "syn4489"}, {"id": project_id}, {"id": "syn50"}]}
+    )
+    return client
+
+
+def _no_existing_tasks(mock_ct, existing=()):
+    async def list_async(project_id, synapse_client):
+        for task in existing:
+            yield task
+
+    mock_ct.list_async = list_async
+
+
+def _mock_schema(mock_schema, body=SCHEMA_BODY):
+    schema = mock_schema.from_uri.return_value
+    schema.get_async = AsyncMock()
+    schema.get_body_async = AsyncMock(return_value=body)
+    return schema
+
+
+class TestCreateRecordBasedTask:
+    @patch(f"{MGR}.CurationTask")
+    @patch(f"{MGR}.RecordSet")
+    @patch(f"{MGR}.JSONSchema")
+    async def test_given_valid_inputs_then_creates_templated_record_set_binds_and_creates_task(
+        self, mock_schema, mock_rs, mock_ct
+    ):
+        # GIVEN a folder in project syn1 and a schema with three properties,
+        # and the project has a task only for a different data_type
+        _mock_schema(mock_schema)
+        _no_existing_tasks(mock_ct, [make_task(task_id=3, data_type="OtherType")])
+        captured = {}
+
+        async def store_rs(synapse_client):
+            with open(mock_rs.call_args.kwargs["path"], encoding="utf-8") as f:
+                captured["csv"] = f.read()
+            return stored_rs
+
+        stored_rs = MagicMock(id="syn77")
+        stored_rs.bind_schema_async = AsyncMock()
+        mock_rs.return_value.store_async = store_rs
+        created = make_task(task_id=9, task_properties=record_based_properties("syn77"))
+        mock_ct.return_value.store_async = AsyncMock(return_value=created)
+
+        # WHEN we create the record-based task
+        record_set, task = await CurationTaskManager(
+            _client_with_project("syn1")
+        ).create_record_based_task(
+            folder_id="syn50",
+            record_set_name="Biospecimen",
+            data_type="Biospecimen",
+            schema_uri="org-Biospecimen-1.0.0",
+            upsert_keys=["specimenID"],
+            instructions="Fill it in",
+            assignee_principal_id="3379097",
+        )
+
+        # THEN the CSV is a header row with upsert keys first
+        assert captured["csv"].strip() == "specimenID,tissue,assay"
+        rs_kwargs = mock_rs.call_args.kwargs
+        assert rs_kwargs["parent_id"] == "syn50"
+        assert rs_kwargs["upsert_keys"] == ["specimenID"]
+        # AND the schema is bound to the new RecordSet
+        stored_rs.bind_schema_async.assert_awaited_once()
+        assert (
+            stored_rs.bind_schema_async.call_args.kwargs["json_schema_uri"]
+            == "org-Biospecimen-1.0.0"
+        )
+        # AND the task targets the folder's project and the new RecordSet
+        ct_kwargs = mock_ct.call_args.kwargs
+        assert ct_kwargs["project_id"] == "syn1"
+        assert ct_kwargs["assignee_principal_id"] == "3379097"
+        assert ct_kwargs["task_properties"].record_set_id == "syn77"
+        assert record_set is stored_rs
+        assert task is created
+
+    @patch(f"{MGR}.CurationTask")
+    @patch(f"{MGR}.RecordSet")
+    @patch(f"{MGR}.JSONSchema")
+    async def test_given_bind_schema_false_then_skips_binding(
+        self, mock_schema, mock_rs, mock_ct
+    ):
+        # GIVEN binding is disabled
+        _mock_schema(mock_schema)
+        _no_existing_tasks(mock_ct)
+        stored_rs = MagicMock(id="syn77")
+        stored_rs.bind_schema_async = AsyncMock()
+        mock_rs.return_value.store_async = AsyncMock(return_value=stored_rs)
+        mock_ct.return_value.store_async = AsyncMock(return_value=make_task())
+
+        # WHEN we create the task
+        await CurationTaskManager(_client_with_project()).create_record_based_task(
+            folder_id="syn50",
+            record_set_name="rs",
+            data_type="dt",
+            schema_uri="org-s-1.0.0",
+            upsert_keys=["specimenID"],
+            instructions="x",
+            bind_schema=False,
+        )
+
+        # THEN no schema binding is attempted
+        stored_rs.bind_schema_async.assert_not_awaited()
+
+    @patch(f"{MGR}.CurationTask")
+    @patch(f"{MGR}.RecordSet")
+    @patch(f"{MGR}.JSONSchema")
+    async def test_given_unknown_upsert_key_then_raises_before_creating_anything(
+        self, mock_schema, mock_rs, mock_ct
+    ):
+        # GIVEN an upsert key the schema does not define
+        _mock_schema(mock_schema)
+        _no_existing_tasks(mock_ct)
+
+        # WHEN / THEN creation fails with a ValueError naming the key
+        with pytest.raises(ValueError, match="sampleID"):
+            await CurationTaskManager(_client_with_project()).create_record_based_task(
+                folder_id="syn50",
+                record_set_name="rs",
+                data_type="dt",
+                schema_uri="org-s-1.0.0",
+                upsert_keys=["sampleID"],
+                instructions="x",
+            )
+        # AND no RecordSet was created
+        mock_rs.assert_not_called()
+
+    @patch(f"{MGR}.CurationTask")
+    @patch(f"{MGR}.RecordSet")
+    @patch(f"{MGR}.JSONSchema")
+    async def test_given_schema_without_properties_then_raises(
+        self, mock_schema, mock_rs, mock_ct
+    ):
+        # GIVEN a schema with no properties
+        _mock_schema(mock_schema, body={"type": "object"})
+        _no_existing_tasks(mock_ct)
+
+        # WHEN / THEN creation fails before any write
+        with pytest.raises(ValueError, match="no properties"):
+            await CurationTaskManager(_client_with_project()).create_record_based_task(
+                folder_id="syn50",
+                record_set_name="rs",
+                data_type="dt",
+                schema_uri="org-s-1.0.0",
+                upsert_keys=["id"],
+                instructions="x",
+            )
+        mock_rs.assert_not_called()
+
+    @patch(f"{MGR}.CurationTask")
+    @patch(f"{MGR}.RecordSet")
+    @patch(f"{MGR}.JSONSchema")
+    async def test_given_task_store_fails_then_raises_with_record_set_id(
+        self, mock_schema, mock_rs, mock_ct
+    ):
+        # GIVEN the RecordSet is created but the task store fails with an HTTP error
+        _mock_schema(mock_schema)
+        _no_existing_tasks(mock_ct)
+        stored_rs = MagicMock(id="syn77")
+        stored_rs.bind_schema_async = AsyncMock()
+        mock_rs.return_value.store_async = AsyncMock(return_value=stored_rs)
+        http_error = RuntimeError("403 forbidden")
+        http_error.response = SimpleNamespace(status_code=403)
+        mock_ct.return_value.store_async = AsyncMock(side_effect=http_error)
+
+        # WHEN / THEN the error carries the orphaned RecordSet ID
+        with pytest.raises(RecordBasedTaskCreationError) as exc_info:
+            await CurationTaskManager(_client_with_project()).create_record_based_task(
+                folder_id="syn50",
+                record_set_name="rs",
+                data_type="dt",
+                schema_uri="org-s-1.0.0",
+                upsert_keys=["specimenID"],
+                instructions="x",
+            )
+        assert exc_info.value.record_set_id == "syn77"
+        assert exc_info.value.status_code == 403
+        assert "403 forbidden" in str(exc_info.value)
+
+    @patch(f"{MGR}.CurationTask")
+    @patch(f"{MGR}.RecordSet")
+    @patch(f"{MGR}.JSONSchema")
+    async def test_given_existing_task_for_data_type_then_raises_before_creating_anything(
+        self, mock_schema, mock_rs, mock_ct
+    ):
+        # GIVEN the project already has a task for this data_type
+        _mock_schema(mock_schema)
+        _no_existing_tasks(mock_ct, [make_task(task_id=42, data_type="dt")])
+
+        # WHEN / THEN creation is refused and names the existing task
+        with pytest.raises(ValueError, match="task_id 42"):
+            await CurationTaskManager(_client_with_project()).create_record_based_task(
+                folder_id="syn50",
+                record_set_name="rs",
+                data_type="dt",
+                schema_uri="org-s-1.0.0",
+                upsert_keys=["specimenID"],
+                instructions="x",
+            )
+        # AND no RecordSet or task was written
+        mock_rs.assert_not_called()
+        mock_ct.assert_not_called()
+
+    @patch(f"{MGR}.CurationTask")
+    @patch(f"{MGR}.RecordSet")
+    @patch(f"{MGR}.JSONSchema")
+    async def test_given_repeated_upsert_key_then_raises_before_creating_anything(
+        self, mock_schema, mock_rs, mock_ct
+    ):
+        # GIVEN the same upsert key twice
+        _mock_schema(mock_schema)
+        _no_existing_tasks(mock_ct)
+
+        # WHEN / THEN creation fails naming the repeated key
+        with pytest.raises(ValueError, match="repeated keys"):
+            await CurationTaskManager(_client_with_project()).create_record_based_task(
+                folder_id="syn50",
+                record_set_name="rs",
+                data_type="dt",
+                schema_uri="org-s-1.0.0",
+                upsert_keys=["specimenID", "specimenID"],
+                instructions="x",
+            )
+        mock_rs.assert_not_called()
+
+
+class TestCsvFileName:
+    def test_given_long_multibyte_name_then_base_name_is_bounded(self):
+        # GIVEN a RecordSet name far over the filesystem component limit
+        name = "\u00e9chantillon " * 60
+
+        # WHEN we build the temp file name
+        file_name = _csv_file_name(name)
+
+        # THEN it stays within the byte budget and is still a CSV
+        assert len(file_name.encode("utf-8")) <= 104
+        assert file_name.endswith(".csv")
+
+    def test_given_unsafe_characters_then_replaced(self):
+        assert _csv_file_name("a/b:c*d") == "a_b_c_d.csv"
+
+    def test_given_blank_name_then_falls_back(self):
+        assert _csv_file_name("   ") == "recordset.csv"

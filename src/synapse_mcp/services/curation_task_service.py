@@ -14,9 +14,17 @@ from synapseclient.models import (
     RecordBasedMetadataTaskProperties,
 )
 
-from ..managers.curation_task_manager import CurationTaskManager
+from ..managers.curation_task_manager import (
+    CurationTaskManager,
+    RecordBasedTaskCreationError,
+)
 from ..tool_types import TaskProperties
-from .tool_service import dataclass_to_dict, error_boundary, synapse_client
+from .tool_service import (
+    dataclass_to_dict,
+    error_boundary,
+    serialize_model,
+    synapse_client,
+)
 
 _TASK_PROPERTY_TYPE_LABELS: Dict[type, str] = {
     RecordBasedMetadataTaskProperties: "record-based",
@@ -180,6 +188,79 @@ class CurationTaskService:
             )
             stored = await task.store_async(synapse_client=client)
             return _format_task(stored)
+
+    @staticmethod
+    @error_boundary(error_context_keys=("folder_id", "data_type", "schema_uri"))
+    async def create_record_based_task(
+        ctx: Context,
+        folder_id: str,
+        record_set_name: str,
+        data_type: str,
+        schema_uri: str,
+        upsert_keys: List[str],
+        instructions: str,
+        record_set_description: Optional[str] = None,
+        bind_schema: bool = True,
+        enable_derived_annotations: bool = False,
+        assignee_principal_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Create a RecordSet templated from a JSON schema plus a task on it.
+
+        The RecordSet's CSV is a header-only template the server generates
+        from the schema's properties; no caller-supplied file content is
+        uploaded.
+
+        Arguments:
+            ctx: The FastMCP request context.
+            folder_id: Folder that will hold the RecordSet (e.g. syn123456).
+            record_set_name: Name for the new RecordSet entity.
+            data_type: The data type the task curates; unique per project.
+            schema_uri: Registered JSON schema $id to template from.
+            upsert_keys: Schema properties that uniquely identify a record.
+            instructions: Curator instructions.
+            record_set_description: Optional RecordSet description.
+            bind_schema: Bind the schema to the RecordSet for validation.
+            enable_derived_annotations: Enable derived annotations on bind.
+            assignee_principal_id: Optional user or team to assign the task to.
+
+        Returns:
+            Dict with the created ``record_set`` and ``curation_task``.
+        """
+        async with synapse_client(ctx) as client:
+            mgr = CurationTaskManager(client)
+            try:
+                record_set, task = await mgr.create_record_based_task(
+                    folder_id=folder_id,
+                    record_set_name=record_set_name,
+                    data_type=data_type,
+                    schema_uri=schema_uri,
+                    upsert_keys=upsert_keys,
+                    instructions=instructions,
+                    record_set_description=record_set_description,
+                    bind_schema=bind_schema,
+                    enable_derived_annotations=enable_derived_annotations,
+                    assignee_principal_id=assignee_principal_id,
+                )
+            except RecordBasedTaskCreationError as exc:
+                err = {
+                    "error": str(exc),
+                    "error_type": type(exc).__name__,
+                    "record_set_id": exc.record_set_id,
+                    "folder_id": folder_id,
+                    "data_type": data_type,
+                    "schema_uri": schema_uri,
+                }
+                if exc.status_code is not None:
+                    err["status_code"] = exc.status_code
+                return err
+            record_set_dict = serialize_model(record_set)
+            # ``path`` is the server's temp file, already deleted; not useful.
+            record_set_dict.pop("path", None)
+            return {
+                "record_set": record_set_dict,
+                "curation_task": _format_task(task),
+                "schema_bound": bind_schema,
+            }
 
     @staticmethod
     @error_boundary(error_context_keys=("task_id",))
