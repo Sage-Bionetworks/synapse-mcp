@@ -45,10 +45,6 @@ class RecordBasedTaskCreationError(Exception):
 # be long or multibyte.
 _MAX_CSV_NAME_BYTES = 100
 
-# Characters Synapse accepts in an entity name, and its maximum length.
-_ENTITY_NAME_PATTERN = re.compile(r"[\w .\-+'()]+")
-_MAX_ENTITY_NAME_LENGTH = 256
-
 # Upload destinations reachable by an in-memory multipart upload. SFTP and
 # client-authenticated object stores need a local file and are refused.
 _MULTIPART_UPLOAD_DESTINATIONS = (
@@ -136,10 +132,9 @@ class CurationTaskManager:
         Mirrors ``synapseclient.extensions.curator.create_record_based_metadata_task``
         but runs async and skips the deprecated Grid creation. Steps:
 
-        1. Validate ``record_set_name`` and ``assignee_principal_id``,
-           resolve the folder's project (also verifies the folder is visible)
-           and upload destination, and refuse if the project already has a
-           task for ``data_type``.
+        1. Validate ``assignee_principal_id``, resolve the folder's project
+           (also verifies the folder is visible) and upload destination, and
+           refuse if the project already has a task for ``data_type``.
         2. Fetch the registered JSON schema and build header-only CSV columns
            from its properties, upsert keys first.
         3. Upload the template from memory to the folder's storage location
@@ -151,16 +146,6 @@ class CurationTaskManager:
         Steps 1-2 fail before anything is written. A failure in step 4 or 5
         raises ``RecordBasedTaskCreationError`` carrying the RecordSet ID.
         """
-        if (
-            len(record_set_name) > _MAX_ENTITY_NAME_LENGTH
-            or not _ENTITY_NAME_PATTERN.fullmatch(record_set_name)
-        ):
-            raise ValueError(
-                f"Invalid RecordSet name: {record_set_name!r}. Names may only "
-                "contain letters, numbers, spaces, underscores, hyphens, "
-                "periods, plus signs, apostrophes, and parentheses, up to "
-                f"{_MAX_ENTITY_NAME_LENGTH} characters."
-            )
         if assignee_principal_id is not None and not assignee_principal_id.isdigit():
             raise ValueError(f"Invalid principal ID: {assignee_principal_id}")
 
