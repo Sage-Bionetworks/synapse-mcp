@@ -192,12 +192,23 @@ SCHEMA_BODY = {
 }
 
 
-def _client_with_project(project_id="syn1"):
-    client = MagicMock()
-    client.rest_get_async = AsyncMock(
-        return_value={"path": [{"id": "syn4489"}, {"id": project_id}, {"id": "syn50"}]}
-    )
-    return client
+SYNAPSE_S3 = "org.sagebionetworks.repo.model.file.S3UploadDestination"
+
+
+@pytest.fixture
+def synapse_api():
+    """Patch the folder path, upload destination, and in-memory upload calls."""
+    with patch(f"{MGR}.get_entity_path", new_callable=AsyncMock) as path, patch(
+        f"{MGR}.get_upload_destination", new_callable=AsyncMock
+    ) as destination, patch(
+        f"{MGR}.multipart_upload_string_async", new_callable=AsyncMock
+    ) as upload:
+        path.return_value = {
+            "path": [{"id": "syn4489"}, {"id": "syn1"}, {"id": "syn50"}]
+        }
+        destination.return_value = {"concreteType": SYNAPSE_S3, "storageLocationId": 1}
+        upload.return_value = "fh-123"
+        yield SimpleNamespace(path=path, destination=destination, upload=upload)
 
 
 def _no_existing_tasks(mock_ct, existing=()):
@@ -215,46 +226,47 @@ def _mock_schema(mock_schema, body=SCHEMA_BODY):
     return schema
 
 
+@pytest.mark.usefixtures("synapse_api")
 class TestCreateRecordBasedTask:
     @patch(f"{MGR}.CurationTask")
     @patch(f"{MGR}.RecordSet")
     @patch(f"{MGR}.JSONSchema")
     async def test_given_valid_inputs_then_creates_templated_record_set_binds_and_creates_task(
-        self, mock_schema, mock_rs, mock_ct
+        self, mock_schema, mock_rs, mock_ct, synapse_api
     ):
         # GIVEN a folder in project syn1 and a schema with three properties,
         # and the project has a task only for a different data_type
         _mock_schema(mock_schema)
         _no_existing_tasks(mock_ct, [make_task(task_id=3, data_type="OtherType")])
-        captured = {}
-
-        async def store_rs(synapse_client):
-            with open(mock_rs.call_args.kwargs["path"], encoding="utf-8") as f:
-                captured["csv"] = f.read()
-            return stored_rs
-
         stored_rs = MagicMock(id="syn77")
         stored_rs.bind_schema_async = AsyncMock()
-        mock_rs.return_value.store_async = store_rs
+        mock_rs.return_value.store_async = AsyncMock(return_value=stored_rs)
         created = make_task(task_id=9, task_properties=record_based_properties("syn77"))
         mock_ct.return_value.store_async = AsyncMock(return_value=created)
 
-        # WHEN we create the record-based task
-        record_set, task = await CurationTaskManager(
-            _client_with_project("syn1")
-        ).create_record_based_task(
-            folder_id="syn50",
-            record_set_name="Biospecimen",
-            data_type="Biospecimen",
-            schema_uri="org-Biospecimen-1.0.0",
-            upsert_keys=["specimenID"],
-            instructions="Fill it in",
-            assignee_principal_id="3379097",
-        )
+        # WHEN we create the record-based task, with local file access disabled
+        with patch("builtins.open", side_effect=AssertionError("disk access")):
+            record_set, task = await CurationTaskManager(
+                MagicMock()
+            ).create_record_based_task(
+                folder_id="syn50",
+                record_set_name="Biospecimen",
+                data_type="Biospecimen",
+                schema_uri="org-Biospecimen-1.0.0",
+                upsert_keys=["specimenID"],
+                instructions="Fill it in",
+                assignee_principal_id="3379097",
+            )
 
-        # THEN the CSV is a header row with upsert keys first
-        assert captured["csv"].strip() == "specimenID,tissue,assay"
+        # THEN the uploaded CSV is a header row with upsert keys first
+        upload_args = synapse_api.upload.call_args
+        assert upload_args.args[1].strip() == "specimenID,tissue,assay"
+        assert upload_args.kwargs["dest_file_name"] == "Biospecimen.csv"
+        assert upload_args.kwargs["content_type"] == "text/csv; charset=utf-8"
+        # AND the RecordSet is backed by the uploaded file handle, not a local path
         rs_kwargs = mock_rs.call_args.kwargs
+        assert rs_kwargs["data_file_handle_id"] == "fh-123"
+        assert "path" not in rs_kwargs
         assert rs_kwargs["parent_id"] == "syn50"
         assert rs_kwargs["upsert_keys"] == ["specimenID"]
         # AND the schema is bound to the new RecordSet
@@ -286,7 +298,7 @@ class TestCreateRecordBasedTask:
         mock_ct.return_value.store_async = AsyncMock(return_value=make_task())
 
         # WHEN we create the task
-        await CurationTaskManager(_client_with_project()).create_record_based_task(
+        await CurationTaskManager(MagicMock()).create_record_based_task(
             folder_id="syn50",
             record_set_name="rs",
             data_type="dt",
@@ -311,7 +323,7 @@ class TestCreateRecordBasedTask:
 
         # WHEN / THEN creation fails with a ValueError naming the key
         with pytest.raises(ValueError, match="sampleID"):
-            await CurationTaskManager(_client_with_project()).create_record_based_task(
+            await CurationTaskManager(MagicMock()).create_record_based_task(
                 folder_id="syn50",
                 record_set_name="rs",
                 data_type="dt",
@@ -334,7 +346,7 @@ class TestCreateRecordBasedTask:
 
         # WHEN / THEN creation fails before any write
         with pytest.raises(ValueError, match="no properties"):
-            await CurationTaskManager(_client_with_project()).create_record_based_task(
+            await CurationTaskManager(MagicMock()).create_record_based_task(
                 folder_id="syn50",
                 record_set_name="rs",
                 data_type="dt",
@@ -362,7 +374,7 @@ class TestCreateRecordBasedTask:
 
         # WHEN / THEN the error carries the orphaned RecordSet ID
         with pytest.raises(RecordBasedTaskCreationError) as exc_info:
-            await CurationTaskManager(_client_with_project()).create_record_based_task(
+            await CurationTaskManager(MagicMock()).create_record_based_task(
                 folder_id="syn50",
                 record_set_name="rs",
                 data_type="dt",
@@ -386,7 +398,7 @@ class TestCreateRecordBasedTask:
 
         # WHEN / THEN creation is refused and names the existing task
         with pytest.raises(ValueError, match="task_id 42"):
-            await CurationTaskManager(_client_with_project()).create_record_based_task(
+            await CurationTaskManager(MagicMock()).create_record_based_task(
                 folder_id="syn50",
                 record_set_name="rs",
                 data_type="dt",
@@ -410,7 +422,7 @@ class TestCreateRecordBasedTask:
 
         # WHEN / THEN creation fails naming the repeated key
         with pytest.raises(ValueError, match="repeated keys"):
-            await CurationTaskManager(_client_with_project()).create_record_based_task(
+            await CurationTaskManager(MagicMock()).create_record_based_task(
                 folder_id="syn50",
                 record_set_name="rs",
                 data_type="dt",
@@ -421,12 +433,81 @@ class TestCreateRecordBasedTask:
         mock_rs.assert_not_called()
 
 
+    @pytest.mark.parametrize(
+        "destination_type",
+        [
+            SYNAPSE_S3,
+            "org.sagebionetworks.repo.model.file.ExternalS3UploadDestination",
+            "org.sagebionetworks.repo.model.file.ExternalGoogleCloudUploadDestination",
+        ],
+    )
+    @patch(f"{MGR}.CurationTask")
+    @patch(f"{MGR}.RecordSet")
+    @patch(f"{MGR}.JSONSchema")
+    async def test_given_multipart_destination_then_uploads_to_folder_storage_location(
+        self, mock_schema, mock_rs, mock_ct, synapse_api, destination_type
+    ):
+        # GIVEN the folder's storage location supports multipart upload
+        _mock_schema(mock_schema)
+        _no_existing_tasks(mock_ct)
+        synapse_api.destination.return_value = {
+            "concreteType": destination_type,
+            "storageLocationId": 42,
+        }
+        mock_rs.return_value.store_async = AsyncMock(return_value=MagicMock(id="syn77"))
+        mock_ct.return_value.store_async = AsyncMock(return_value=make_task())
+
+        # WHEN we create the task
+        await CurationTaskManager(MagicMock()).create_record_based_task(
+            folder_id="syn50",
+            record_set_name="rs",
+            data_type="dt",
+            schema_uri="org-s-1.0.0",
+            upsert_keys=["specimenID"],
+            instructions="x",
+            bind_schema=False,
+        )
+
+        # THEN the template goes to the folder's storage location
+        assert synapse_api.upload.call_args.kwargs["storage_location_id"] == 42
+
+    @patch(f"{MGR}.CurationTask")
+    @patch(f"{MGR}.RecordSet")
+    @patch(f"{MGR}.JSONSchema")
+    async def test_given_sftp_destination_then_raises_before_creating_anything(
+        self, mock_schema, mock_rs, mock_ct, synapse_api
+    ):
+        # GIVEN the folder is backed by SFTP storage
+        _mock_schema(mock_schema)
+        _no_existing_tasks(mock_ct)
+        synapse_api.destination.return_value = {
+            "concreteType": "org.sagebionetworks.repo.model.file.ExternalUploadDestination",
+            "uploadType": "SFTP",
+            "storageLocationId": 7,
+        }
+
+        # WHEN / THEN creation is refused naming the storage type
+        with pytest.raises(ValueError, match="ExternalUploadDestination"):
+            await CurationTaskManager(MagicMock()).create_record_based_task(
+                folder_id="syn50",
+                record_set_name="rs",
+                data_type="dt",
+                schema_uri="org-s-1.0.0",
+                upsert_keys=["specimenID"],
+                instructions="x",
+            )
+        # AND nothing was uploaded or created
+        synapse_api.upload.assert_not_awaited()
+        mock_rs.assert_not_called()
+        mock_ct.assert_not_called()
+
+
 class TestCsvFileName:
     def test_given_long_multibyte_name_then_base_name_is_bounded(self):
         # GIVEN a RecordSet name far over the filesystem component limit
         name = "\u00e9chantillon " * 60
 
-        # WHEN we build the temp file name
+        # WHEN we build the template's file name
         file_name = _csv_file_name(name)
 
         # THEN it stays within the byte budget and is still a CSV

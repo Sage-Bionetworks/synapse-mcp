@@ -1,12 +1,16 @@
 """Manager for multi-step CurationTask API orchestration."""
 
 import csv
-import os
+import io
 import re
-import tempfile
 from typing import Any, Dict, List, Optional, Tuple
 
 import synapseclient
+from synapseclient.api import get_entity_path, get_upload_destination
+from synapseclient.core.constants import concrete_types
+from synapseclient.core.upload.multipart_upload_async import (
+    multipart_upload_string_async,
+)
 from synapseclient.models import (
     CurationTask,
     EntityView,
@@ -36,13 +40,22 @@ class RecordBasedTaskCreationError(Exception):
         self.status_code = status_code
 
 
-# Max bytes for the temp CSV's base name; filesystems cap a path component at
-# 255 bytes, and RecordSet names can be long or multibyte.
+# Max bytes for the template's base name. Curators download the CSV under this
+# name, and filesystems cap a path component at 255 bytes; RecordSet names can
+# be long or multibyte.
 _MAX_CSV_NAME_BYTES = 100
+
+# Upload destinations reachable by an in-memory multipart upload. SFTP and
+# client-authenticated object stores need a local file and are refused.
+_MULTIPART_UPLOAD_DESTINATIONS = (
+    concrete_types.SYNAPSE_S3_UPLOAD_DESTINATION,
+    concrete_types.EXTERNAL_S3_UPLOAD_DESTINATION,
+    concrete_types.EXTERNAL_GCP_UPLOAD_DESTINATION,
+)
 
 
 def _csv_file_name(record_set_name: str) -> str:
-    """Filesystem-safe, length-bounded CSV file name for a RecordSet."""
+    """Portable, length-bounded CSV file name for a RecordSet's template."""
     safe = re.sub(r"[^\w.\-() +]", "_", record_set_name).strip() or "recordset"
     safe = safe.encode("utf-8")[:_MAX_CSV_NAME_BYTES].decode("utf-8", errors="ignore")
     return safe + ".csv"
@@ -120,19 +133,34 @@ class CurationTaskManager:
         but runs async and skips the deprecated Grid creation. Steps:
 
         1. Resolve the folder's project (also verifies the folder is visible)
-           and refuse if the project already has a task for ``data_type``.
+           and upload destination, and refuse if the project already has a
+           task for ``data_type``.
         2. Fetch the registered JSON schema and build header-only CSV columns
            from its properties, upsert keys first.
-        3. Store the template as a RecordSet under ``folder_id``.
+        3. Upload the template from memory to the folder's storage location
+           and store it as a RecordSet under ``folder_id``. Nothing is
+           written to local disk.
         4. Optionally bind the schema to the RecordSet.
         5. Create the curation task pointing at the RecordSet.
 
         Steps 1-2 fail before anything is written. A failure in step 4 or 5
         raises ``RecordBasedTaskCreationError`` carrying the RecordSet ID.
         """
-        path = await self.synapse_client.rest_get_async(f"/entity/{folder_id}/path")
+        path = await get_entity_path(folder_id, synapse_client=self.synapse_client)
         # path[0] is the root; path[1] is the project that owns the folder.
         project_id = path["path"][1]["id"]
+
+        destination = await get_upload_destination(
+            entity_id=folder_id, synapse_client=self.synapse_client
+        )
+        destination_type = destination.get("concreteType")
+        if destination_type not in _MULTIPART_UPLOAD_DESTINATIONS:
+            raise ValueError(
+                f"Folder {folder_id} uses a storage location of type "
+                f"'{destination_type}', which this tool cannot upload to. "
+                "Use a folder backed by Synapse, external S3, or Google Cloud "
+                "storage."
+            )
 
         # CurationTask.store_async upserts on (project_id, data_type): an
         # existing task would be updated in place, keeping its own RecordSet
@@ -152,17 +180,22 @@ class CurationTaskManager:
         body = await schema.get_body_async(synapse_client=self.synapse_client)
         columns = _template_columns(body, upsert_keys)
 
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            csv_path = os.path.join(tmp_dir, _csv_file_name(record_set_name))
-            with open(csv_path, "w", encoding="utf-8", newline="") as f:
-                csv.writer(f).writerow(columns)
-            record_set = await RecordSet(
-                name=record_set_name,
-                parent_id=folder_id,
-                description=record_set_description,
-                path=csv_path,
-                upsert_keys=list(upsert_keys),
-            ).store_async(synapse_client=self.synapse_client)
+        template = io.StringIO()
+        csv.writer(template).writerow(columns)
+        file_handle_id = await multipart_upload_string_async(
+            self.synapse_client,
+            template.getvalue(),
+            dest_file_name=_csv_file_name(record_set_name),
+            content_type="text/csv; charset=utf-8",
+            storage_location_id=destination["storageLocationId"],
+        )
+        record_set = await RecordSet(
+            name=record_set_name,
+            parent_id=folder_id,
+            description=record_set_description,
+            data_file_handle_id=file_handle_id,
+            upsert_keys=list(upsert_keys),
+        ).store_async(synapse_client=self.synapse_client)
 
         try:
             if bind_schema:
