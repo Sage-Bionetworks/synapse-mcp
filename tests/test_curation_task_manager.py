@@ -433,6 +433,48 @@ class TestCreateRecordBasedTask:
         mock_rs.assert_not_called()
 
 
+    @pytest.mark.parametrize("name", ["a/b", "", "x" * 257])
+    @patch(f"{MGR}.CurationTask")
+    @patch(f"{MGR}.RecordSet")
+    async def test_given_invalid_record_set_name_then_raises_before_any_call(
+        self, mock_rs, mock_ct, synapse_api, name
+    ):
+        # WHEN / THEN a name Synapse would reject is refused up front
+        with pytest.raises(ValueError, match="Invalid RecordSet name"):
+            await CurationTaskManager(MagicMock()).create_record_based_task(
+                folder_id="syn50",
+                record_set_name=name,
+                data_type="dt",
+                schema_uri="org-s-1.0.0",
+                upsert_keys=["specimenID"],
+                instructions="x",
+            )
+        # AND Synapse was never contacted
+        synapse_api.path.assert_not_awaited()
+        synapse_api.upload.assert_not_awaited()
+        mock_rs.assert_not_called()
+
+    @patch(f"{MGR}.CurationTask")
+    @patch(f"{MGR}.RecordSet")
+    async def test_given_non_numeric_assignee_then_raises_before_any_call(
+        self, mock_rs, mock_ct, synapse_api
+    ):
+        # WHEN / THEN a non-numeric principal ID is refused up front
+        with pytest.raises(ValueError, match="Invalid principal ID"):
+            await CurationTaskManager(MagicMock()).create_record_based_task(
+                folder_id="syn50",
+                record_set_name="rs",
+                data_type="dt",
+                schema_uri="org-s-1.0.0",
+                upsert_keys=["specimenID"],
+                instructions="x",
+                assignee_principal_id="jsmith",
+            )
+        # AND nothing was uploaded or created
+        synapse_api.path.assert_not_awaited()
+        synapse_api.upload.assert_not_awaited()
+        mock_rs.assert_not_called()
+
     @pytest.mark.parametrize(
         "destination_type",
         [

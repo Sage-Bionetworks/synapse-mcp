@@ -2646,7 +2646,11 @@ async def delete_json_schema(
         "file_view_id) for file-based."
     ),
     synonyms=_CREATE_SYNONYMS + ("curator", "work item", "task"),
-    siblings=("delete_curation_task", "get_curation_task"),
+    siblings=(
+        "create_record_based_curation_task",
+        "delete_curation_task",
+        "get_curation_task",
+    ),
 )
 async def create_curation_task(
     project_id: Annotated[
@@ -2730,7 +2734,7 @@ async def create_record_based_curation_task(
         Field(
             description=(
                 "$id of a JSON schema already registered in Synapse, e.g. "
-                "'sage.schemas.v2571-amp.Biospecimen.schema-0.0.1'."
+                "'my.org-MySchema-1.0.0'."
             )
         ),
     ],
@@ -2773,11 +2777,6 @@ async def create_record_based_curation_task(
     if not validate_synapse_id(folder_id):
         return {
             "error": f"Invalid Synapse ID: {folder_id}",
-            "error_type": "ValueError",
-        }
-    if assignee_principal_id is not None and not assignee_principal_id.isdigit():
-        return {
-            "error": f"Invalid principal ID: {assignee_principal_id}",
             "error_type": "ValueError",
         }
     return await CurationTaskService.create_record_based_task(
