@@ -425,6 +425,28 @@ class TestCreateRecordBasedTask:
 
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
     @patch(f"{SVC}.CurationTaskManager")
+    async def test_given_orphaned_file_handle_then_error_includes_file_handle_id(
+        self, mock_mgr, mock_get_client
+    ):
+        # GIVEN the RecordSet itself failed to store and its file handle leaked
+        mock_get_client.return_value = MagicMock()
+        mock_mgr.return_value.create_record_based_task = AsyncMock(
+            side_effect=RecordBasedTaskCreationError(
+                "boom", record_set_id=None, file_handle_id="fh-123"
+            )
+        )
+
+        # WHEN we create the record-based task
+        result = await CurationTaskService.create_record_based_task(
+            MagicMock(), **_RB_ARGS
+        )
+
+        # THEN the standard error shape carries the orphaned file handle ID
+        assert result["record_set_id"] is None
+        assert result["file_handle_id"] == "fh-123"
+
+    @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
+    @patch(f"{SVC}.CurationTaskManager")
     async def test_given_validation_error_then_boundary_returns_error_dict(
         self, mock_mgr, mock_get_client
     ):

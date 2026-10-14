@@ -164,7 +164,10 @@ QUERY_FIXTURES: List[Tuple[str, str]] = [
         "set up a metadata curation task from my biospecimen schema in folder syn123",
         "create_record_based_curation_task",
     ),
-    ("create a record set curation task", "create_record_based_curation_task"),
+    (
+        "make a blank spreadsheet template from my schema and assign it to a curator",
+        "create_record_based_curation_task",
+    ),
     ("delete curation task 42", "delete_curation_task"),
 ]
 

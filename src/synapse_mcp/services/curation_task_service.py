@@ -252,12 +252,11 @@ class CurationTaskService:
                 }
                 if exc.status_code is not None:
                     err["status_code"] = exc.status_code
+                if exc.file_handle_id is not None:
+                    err["file_handle_id"] = exc.file_handle_id
                 return err
-            record_set_dict = serialize_model(record_set)
-            # ``path`` is the server's temp file, already deleted; not useful.
-            record_set_dict.pop("path", None)
             return {
-                "record_set": record_set_dict,
+                "record_set": serialize_model(record_set),
                 "curation_task": _format_task(task),
                 "schema_bound": bind_schema,
             }
