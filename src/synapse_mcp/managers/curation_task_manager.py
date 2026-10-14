@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import synapseclient
 from synapseclient.api import get_entity_path, get_upload_destination
+from synapseclient.api.curation_services import create_curation_task
 from synapseclient.core.constants import concrete_types
 from synapseclient.core.upload.multipart_upload_async import (
     multipart_upload_string_async,
@@ -143,7 +144,9 @@ class CurationTaskManager:
            and store it as a RecordSet under ``folder_id``. Nothing is
            written to local disk.
         4. Optionally bind the schema to the RecordSet.
-        5. Create the curation task pointing at the RecordSet.
+        5. Create the curation task pointing at the RecordSet, via the
+           create-only endpoint so a race on step 1's check is caught by the
+           server's uniqueness constraint rather than silently upserted.
 
         Steps 1-2 fail before anything is written. A failure storing the
         RecordSet (step 3) deletes the uploaded file handle when possible and
@@ -226,7 +229,7 @@ class CurationTaskManager:
                     enable_derived_annotations=enable_derived_annotations,
                     synapse_client=self.synapse_client,
                 )
-            task = await CurationTask(
+            task = CurationTask(
                 project_id=project_id,
                 data_type=data_type,
                 instructions=instructions,
@@ -234,7 +237,17 @@ class CurationTaskManager:
                 task_properties=RecordBasedMetadataTaskProperties(
                     record_set_id=record_set.id,
                 ),
-            ).store_async(synapse_client=self.synapse_client)
+            )
+            # CurationTask.store_async() looks up (project_id, data_type) itself
+            # and silently upserts onto a match, which races with the preflight
+            # check above. Call the create-only endpoint directly instead; the
+            # server enforces (project_id, data_type) uniqueness atomically and
+            # raises rather than overwriting a concurrently created task.
+            task_result = await create_curation_task(
+                curation_task=task.to_synapse_request(),
+                synapse_client=self.synapse_client,
+            )
+            task.fill_from_dict(synapse_response=task_result)
         except Exception as exc:
             response = getattr(exc, "response", None)
             raise RecordBasedTaskCreationError(

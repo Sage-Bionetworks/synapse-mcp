@@ -228,11 +228,12 @@ def _mock_schema(mock_schema, body=SCHEMA_BODY):
 
 @pytest.mark.usefixtures("synapse_api")
 class TestCreateRecordBasedTask:
+    @patch(f"{MGR}.create_curation_task", new_callable=AsyncMock)
     @patch(f"{MGR}.CurationTask")
     @patch(f"{MGR}.RecordSet")
     @patch(f"{MGR}.JSONSchema")
     async def test_given_valid_inputs_then_creates_templated_record_set_binds_and_creates_task(
-        self, mock_schema, mock_rs, mock_ct, synapse_api
+        self, mock_schema, mock_rs, mock_ct, mock_create_task, synapse_api
     ):
         # GIVEN a folder in project syn1 and a schema with three properties,
         # and the project has a task only for a different data_type
@@ -242,7 +243,7 @@ class TestCreateRecordBasedTask:
         stored_rs.bind_schema_async = AsyncMock()
         mock_rs.return_value.store_async = AsyncMock(return_value=stored_rs)
         created = make_task(task_id=9, task_properties=record_based_properties("syn77"))
-        mock_ct.return_value.store_async = AsyncMock(return_value=created)
+        mock_create_task.return_value = created
 
         # WHEN we create the record-based task, with local file access disabled
         with patch("builtins.open", side_effect=AssertionError("disk access")):
@@ -281,13 +282,22 @@ class TestCreateRecordBasedTask:
         assert ct_kwargs["assignee_principal_id"] == "3379097"
         assert ct_kwargs["task_properties"].record_set_id == "syn77"
         assert record_set is stored_rs
-        assert task is created
+        # AND the task is created via the create-only endpoint, not store_async
+        assert (
+            mock_create_task.call_args.kwargs["curation_task"]
+            is mock_ct.return_value.to_synapse_request.return_value
+        )
+        mock_ct.return_value.fill_from_dict.assert_called_once_with(
+            synapse_response=created
+        )
+        assert task is mock_ct.return_value
 
+    @patch(f"{MGR}.create_curation_task", new_callable=AsyncMock)
     @patch(f"{MGR}.CurationTask")
     @patch(f"{MGR}.RecordSet")
     @patch(f"{MGR}.JSONSchema")
     async def test_given_bind_schema_false_then_skips_binding(
-        self, mock_schema, mock_rs, mock_ct
+        self, mock_schema, mock_rs, mock_ct, mock_create_task
     ):
         # GIVEN binding is disabled
         _mock_schema(mock_schema)
@@ -295,7 +305,7 @@ class TestCreateRecordBasedTask:
         stored_rs = MagicMock(id="syn77")
         stored_rs.bind_schema_async = AsyncMock()
         mock_rs.return_value.store_async = AsyncMock(return_value=stored_rs)
-        mock_ct.return_value.store_async = AsyncMock(return_value=make_task())
+        mock_create_task.return_value = make_task()
 
         # WHEN we create the task
         await CurationTaskManager(MagicMock()).create_record_based_task(
@@ -356,11 +366,12 @@ class TestCreateRecordBasedTask:
             )
         mock_rs.assert_not_called()
 
+    @patch(f"{MGR}.create_curation_task", new_callable=AsyncMock)
     @patch(f"{MGR}.CurationTask")
     @patch(f"{MGR}.RecordSet")
     @patch(f"{MGR}.JSONSchema")
     async def test_given_task_store_fails_then_raises_with_record_set_id(
-        self, mock_schema, mock_rs, mock_ct
+        self, mock_schema, mock_rs, mock_ct, mock_create_task
     ):
         # GIVEN the RecordSet is created but the task store fails with an HTTP error
         _mock_schema(mock_schema)
@@ -370,7 +381,7 @@ class TestCreateRecordBasedTask:
         mock_rs.return_value.store_async = AsyncMock(return_value=stored_rs)
         http_error = RuntimeError("403 forbidden")
         http_error.response = SimpleNamespace(status_code=403)
-        mock_ct.return_value.store_async = AsyncMock(side_effect=http_error)
+        mock_create_task.side_effect = http_error
 
         # WHEN / THEN the error carries the orphaned RecordSet ID
         with pytest.raises(RecordBasedTaskCreationError) as exc_info:
@@ -521,11 +532,12 @@ class TestCreateRecordBasedTask:
             "org.sagebionetworks.repo.model.file.ExternalGoogleCloudUploadDestination",
         ],
     )
+    @patch(f"{MGR}.create_curation_task", new_callable=AsyncMock)
     @patch(f"{MGR}.CurationTask")
     @patch(f"{MGR}.RecordSet")
     @patch(f"{MGR}.JSONSchema")
     async def test_given_multipart_destination_then_uploads_to_folder_storage_location(
-        self, mock_schema, mock_rs, mock_ct, synapse_api, destination_type
+        self, mock_schema, mock_rs, mock_ct, mock_create_task, synapse_api, destination_type
     ):
         # GIVEN the folder's storage location supports multipart upload
         _mock_schema(mock_schema)
@@ -535,7 +547,7 @@ class TestCreateRecordBasedTask:
             "storageLocationId": 42,
         }
         mock_rs.return_value.store_async = AsyncMock(return_value=MagicMock(id="syn77"))
-        mock_ct.return_value.store_async = AsyncMock(return_value=make_task())
+        mock_create_task.return_value = make_task()
 
         # WHEN we create the task
         await CurationTaskManager(MagicMock()).create_record_based_task(
