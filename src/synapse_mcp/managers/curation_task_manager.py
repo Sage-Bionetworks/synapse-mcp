@@ -23,21 +23,23 @@ from synapseclient.models import (
 
 
 class RecordBasedTaskCreationError(Exception):
-    """A step failed after the RecordSet was already created.
+    """A step failed after the file handle and/or RecordSet was already created.
 
-    Carries ``record_set_id`` so the caller can report (and the user can
-    clean up) the orphaned RecordSet.
+    Carries ``record_set_id`` and ``file_handle_id`` so the caller can report
+    (and the user can clean up) whichever resource is orphaned.
     """
 
     def __init__(
         self,
         message: str,
-        record_set_id: str,
+        record_set_id: Optional[str],
         status_code: Optional[int] = None,
+        file_handle_id: Optional[str] = None,
     ) -> None:
         super().__init__(message)
         self.record_set_id = record_set_id
         self.status_code = status_code
+        self.file_handle_id = file_handle_id
 
 
 # Max bytes for the template's base name. Curators download the CSV under this
@@ -143,8 +145,10 @@ class CurationTaskManager:
         4. Optionally bind the schema to the RecordSet.
         5. Create the curation task pointing at the RecordSet.
 
-        Steps 1-2 fail before anything is written. A failure in step 4 or 5
-        raises ``RecordBasedTaskCreationError`` carrying the RecordSet ID.
+        Steps 1-2 fail before anything is written. A failure storing the
+        RecordSet (step 3) deletes the uploaded file handle when possible and
+        raises ``RecordBasedTaskCreationError``; a failure in step 4 or 5
+        raises the same error carrying the RecordSet ID instead.
         """
         if assignee_principal_id is not None and not assignee_principal_id.isdigit():
             raise ValueError(f"Invalid principal ID: {assignee_principal_id}")
@@ -192,13 +196,28 @@ class CurationTaskManager:
             content_type="text/csv; charset=utf-8",
             storage_location_id=destination["storageLocationId"],
         )
-        record_set = await RecordSet(
-            name=record_set_name,
-            parent_id=folder_id,
-            description=record_set_description,
-            data_file_handle_id=file_handle_id,
-            upsert_keys=list(upsert_keys),
-        ).store_async(synapse_client=self.synapse_client)
+        try:
+            record_set = await RecordSet(
+                name=record_set_name,
+                parent_id=folder_id,
+                description=record_set_description,
+                data_file_handle_id=file_handle_id,
+                upsert_keys=list(upsert_keys),
+            ).store_async(synapse_client=self.synapse_client)
+        except Exception as exc:
+            deleted = await self._delete_file_handle(file_handle_id)
+            cleanup = (
+                f"file handle {file_handle_id} was deleted"
+                if deleted
+                else f"file handle {file_handle_id} could not be cleaned up"
+            )
+            response = getattr(exc, "response", None)
+            raise RecordBasedTaskCreationError(
+                f"RecordSet creation failed; {cleanup}: {exc}",
+                record_set_id=None,
+                status_code=getattr(response, "status_code", None),
+                file_handle_id=None if deleted else file_handle_id,
+            ) from exc
 
         try:
             if bind_schema:
@@ -226,6 +245,17 @@ class CurationTaskManager:
             ) from exc
 
         return record_set, task
+
+    async def _delete_file_handle(self, file_handle_id: str) -> bool:
+        """Best-effort delete; Synapse refuses it once a FileHandle is tied to an entity."""
+        try:
+            await self.synapse_client.rest_delete_async(
+                f"/fileHandle/{file_handle_id}",
+                endpoint=self.synapse_client.fileHandleEndpoint,
+            )
+            return True
+        except Exception:
+            return False
 
     async def _fetch_file_based_resources(
         self, task: CurationTask, resources: Dict[str, Any]

@@ -252,6 +252,8 @@ class CurationTaskService:
                 }
                 if exc.status_code is not None:
                     err["status_code"] = exc.status_code
+                if exc.file_handle_id is not None:
+                    err["file_handle_id"] = exc.file_handle_id
                 return err
             return {
                 "record_set": serialize_model(record_set),

@@ -389,6 +389,65 @@ class TestCreateRecordBasedTask:
     @patch(f"{MGR}.CurationTask")
     @patch(f"{MGR}.RecordSet")
     @patch(f"{MGR}.JSONSchema")
+    async def test_given_record_set_store_fails_then_deletes_file_handle_and_omits_it(
+        self, mock_schema, mock_rs, mock_ct
+    ):
+        # GIVEN the RecordSet store fails after the file handle was uploaded
+        _mock_schema(mock_schema)
+        _no_existing_tasks(mock_ct)
+        store_error = RuntimeError("400 duplicate name")
+        store_error.response = SimpleNamespace(status_code=400)
+        mock_rs.return_value.store_async = AsyncMock(side_effect=store_error)
+        client = MagicMock()
+        client.rest_delete_async = AsyncMock()
+
+        # WHEN / THEN the file handle is deleted and not reported as orphaned
+        with pytest.raises(RecordBasedTaskCreationError) as exc_info:
+            await CurationTaskManager(client).create_record_based_task(
+                folder_id="syn50",
+                record_set_name="rs",
+                data_type="dt",
+                schema_uri="org-s-1.0.0",
+                upsert_keys=["specimenID"],
+                instructions="x",
+            )
+        client.rest_delete_async.assert_awaited_once_with(
+            "/fileHandle/fh-123", endpoint=client.fileHandleEndpoint
+        )
+        assert exc_info.value.record_set_id is None
+        assert exc_info.value.file_handle_id is None
+        assert exc_info.value.status_code == 400
+        assert "was deleted" in str(exc_info.value)
+
+    @patch(f"{MGR}.CurationTask")
+    @patch(f"{MGR}.RecordSet")
+    @patch(f"{MGR}.JSONSchema")
+    async def test_given_record_set_store_fails_and_cleanup_fails_then_reports_file_handle_id(
+        self, mock_schema, mock_rs, mock_ct
+    ):
+        # GIVEN the RecordSet store fails and the file handle can't be cleaned up either
+        _mock_schema(mock_schema)
+        _no_existing_tasks(mock_ct)
+        mock_rs.return_value.store_async = AsyncMock(side_effect=RuntimeError("500 error"))
+        client = MagicMock()
+        client.rest_delete_async = AsyncMock(side_effect=RuntimeError("already associated"))
+
+        # WHEN / THEN the orphaned file handle ID is reported for manual cleanup
+        with pytest.raises(RecordBasedTaskCreationError) as exc_info:
+            await CurationTaskManager(client).create_record_based_task(
+                folder_id="syn50",
+                record_set_name="rs",
+                data_type="dt",
+                schema_uri="org-s-1.0.0",
+                upsert_keys=["specimenID"],
+                instructions="x",
+            )
+        assert exc_info.value.file_handle_id == "fh-123"
+        assert "could not be cleaned up" in str(exc_info.value)
+
+    @patch(f"{MGR}.CurationTask")
+    @patch(f"{MGR}.RecordSet")
+    @patch(f"{MGR}.JSONSchema")
     async def test_given_existing_task_for_data_type_then_raises_before_creating_anything(
         self, mock_schema, mock_rs, mock_ct
     ):
