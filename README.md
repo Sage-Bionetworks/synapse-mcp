@@ -12,13 +12,13 @@ You (your AI agent) can:
 - Look up teams (members, invitations, membership status) and user profiles
 - Explore challenges: evaluation queues, submissions, and scoring statuses
 - Browse JSON schemas and their validation results, plus schema organizations
-- List curation tasks and their linked resources, and read form submissions
+- List curation tasks and their linked resources, set up record-based curation tasks from a JSON schema, and read form submissions
 - Resolve entities by exact name or MD5 hash and validate Synapse IDs
 - Create, update, and delete Synapse objects — entities, ACLs, table columns, teams, evaluations, submissions, organizations, and JSON schemas (metadata only, no file content)
 
 ## Available Tools
 
-The catalog includes both read tools and write/destructive tools (create/update/delete) across the entity, schema, team, evaluation, submission, organization, and curation domains. The server **never uploads or downloads file content** — File entities are created only via an external URL or an existing file handle, never from local file bytes.
+The catalog includes both read tools and write/destructive tools (create/update/delete) across the entity, schema, team, evaluation, submission, organization, and curation domains. The server **never uploads or downloads file content** — File entities are created only via an external URL or an existing file handle, never from local file bytes. The single exception is `create_record_based_curation_task`, which uploads a header-only CSV template that the server generates from a registered JSON schema's property names, since a RecordSet must be backed by a CSV.
 
 Read and write tools are dispatched through separate proxies — `call_read_tool` and `call_write_tool` — so a client that gates permissions by tool name can allow reads while withholding writes to run the server read-only.
 
@@ -85,6 +85,7 @@ Read and write tools are dispatched through separate proxies — `call_read_tool
 | `submit_to_evaluation(evaluation_id, entity_id)` | submission | Use this when the user wants to submit an existing Synapse entity to an Evaluation queue as a challenge submission. |
 | `update_submission_status(submission_id)` | submission | Use this when the user wants to update the scoring status of a Synapse submission (challenge entry). |
 | `create_curation_task(project_id, data_type, task_properties)` | curation | Use this when the user wants to create a Synapse curation task on a project — a data-curation work item. |
+| `create_record_based_curation_task(folder_id, record_set_name, data_type, schema_uri, upsert_keys, instructions)` | curation | Use this when the user wants to create a record-based Synapse curation task from a registered JSON schema, and no RecordSet exists yet. |
 | `delete_curation_task(task_id)` | curation | Use this when the user wants to delete a Synapse curation task by its numeric task ID. |
 | `get_curation_task(task_id)` | curation | Use this when the user wants the details of a single Synapse curation task by its numeric task ID. |
 | `get_curation_task_resources(task_id)` | curation | Use this when the user wants the Synapse resources (RecordSets, Folders, EntityViews) linked to a curation task — the data the curator will act on. |

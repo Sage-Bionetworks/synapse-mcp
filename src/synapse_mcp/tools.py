@@ -2646,7 +2646,11 @@ async def delete_json_schema(
         "file_view_id) for file-based."
     ),
     synonyms=_CREATE_SYNONYMS + ("curator", "work item", "task"),
-    siblings=("delete_curation_task", "get_curation_task"),
+    siblings=(
+        "create_record_based_curation_task",
+        "delete_curation_task",
+        "get_curation_task",
+    ),
 )
 async def create_curation_task(
     project_id: Annotated[
@@ -2688,6 +2692,105 @@ async def create_curation_task(
         data_type=data_type,
         task_properties=task_properties,
         instructions=instructions,
+    )
+
+
+@service_tool(
+    mcp,
+    service="curation",
+    operation="write",
+    synapse_object="Synapse curation task",
+    title="Create Record-Based Curation Task",
+    description=(
+        "Use this when the user wants to create a record-based Synapse "
+        "curation task from a registered JSON schema, and no RecordSet "
+        "exists yet. In one step it builds a RecordSet holding a "
+        "header-only CSV template of the schema's properties, binds the "
+        "schema to it, and opens the curation task on it."
+    ),
+    synonyms=_CREATE_SYNONYMS
+    + ("curator", "record set", "recordset", "metadata template"),
+    siblings=("create_curation_task", "get_curation_task_resources"),
+)
+async def create_record_based_curation_task(
+    folder_id: Annotated[
+        str,
+        Field(description="Folder Synapse ID that will hold the RecordSet, e.g. syn123456."),
+    ],
+    record_set_name: Annotated[
+        str, Field(description="Name for the new RecordSet entity.")
+    ],
+    data_type: Annotated[
+        str,
+        Field(
+            description=(
+                "The kind of data being curated, e.g. 'Biospecimen'. Must be "
+                "unique within the project."
+            )
+        ),
+    ],
+    schema_uri: Annotated[
+        str,
+        Field(
+            description=(
+                "$id of a JSON schema already registered in Synapse, e.g. "
+                "'my.org-MySchema-1.0.0'."
+            )
+        ),
+    ],
+    upsert_keys: Annotated[
+        List[str],
+        Field(
+            min_length=1,
+            description=(
+                "Schema property names that uniquely identify a record, "
+                "e.g. ['specimenID']."
+            ),
+        ),
+    ],
+    instructions: Annotated[
+        str, Field(description="Instructions shown to the curator.")
+    ],
+    ctx: Context,
+    record_set_description: Annotated[
+        Optional[str], Field(description="Optional RecordSet description.")
+    ] = None,
+    bind_schema: Annotated[
+        bool,
+        Field(description="Bind the schema to the RecordSet so records are validated."),
+    ] = True,
+    enable_derived_annotations: Annotated[
+        bool,
+        Field(description="Let the bound schema fill in derived values on records."),
+    ] = False,
+    assignee_principal_id: Annotated[
+        Optional[str],
+        Field(
+            description=(
+                "Optional numeric user or team ID to assign the task to, "
+                "e.g. '3379097'."
+            )
+        ),
+    ] = None,
+) -> Dict[str, Any]:
+    """Create a schema-templated RecordSet and a record-based curation task."""
+    if not validate_synapse_id(folder_id):
+        return {
+            "error": f"Invalid Synapse ID: {folder_id}",
+            "error_type": "ValueError",
+        }
+    return await CurationTaskService.create_record_based_task(
+        ctx,
+        folder_id=folder_id,
+        record_set_name=record_set_name,
+        data_type=data_type,
+        schema_uri=schema_uri,
+        upsert_keys=upsert_keys,
+        instructions=instructions,
+        record_set_description=record_set_description,
+        bind_schema=bind_schema,
+        enable_derived_annotations=enable_derived_annotations,
+        assignee_principal_id=assignee_principal_id,
     )
 
 
