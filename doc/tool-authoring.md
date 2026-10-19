@@ -185,6 +185,13 @@ content is never sent. There is deliberately no wiki-write tool: the SDK
 wiki store path always writes the markdown to a temp file on disk, which
 this server does not do.
 
+The one exception is `create_record_based_curation_task`: a RecordSet
+must be backed by a CSV, so the server builds a header-only template
+(the column names of a registered JSON schema's properties) in memory
+and uploads it to the folder's storage location; nothing touches local
+disk. The content is generated server-side from the schema; no
+caller-supplied bytes are ever uploaded.
+
 The four MCP-spec annotation hints `@service_tool` knows how to set
 are:
 

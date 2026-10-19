@@ -1,16 +1,88 @@
 """Manager for multi-step CurationTask API orchestration."""
 
-from typing import Any, Dict, Tuple
+import csv
+import io
+import re
+from typing import Any, Dict, List, Optional, Tuple
 
 import synapseclient
+from synapseclient.api import get_entity_path, get_upload_destination
+from synapseclient.api.curation_services import create_curation_task
+from synapseclient.core.constants import concrete_types
+from synapseclient.core.upload.multipart_upload_async import (
+    multipart_upload_string_async,
+)
 from synapseclient.models import (
     CurationTask,
     EntityView,
     FileBasedMetadataTaskProperties,
     Folder,
+    JSONSchema,
     RecordBasedMetadataTaskProperties,
     RecordSet,
 )
+
+
+class RecordBasedTaskCreationError(Exception):
+    """A step failed after the file handle and/or RecordSet was already created.
+
+    Carries ``record_set_id`` and ``file_handle_id`` so the caller can report
+    (and the user can clean up) whichever resource is orphaned.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        record_set_id: Optional[str],
+        status_code: Optional[int] = None,
+        file_handle_id: Optional[str] = None,
+    ) -> None:
+        super().__init__(message)
+        self.record_set_id = record_set_id
+        self.status_code = status_code
+        self.file_handle_id = file_handle_id
+
+
+# Max bytes for the template's base name. Curators download the CSV under this
+# name, and filesystems cap a path component at 255 bytes; RecordSet names can
+# be long or multibyte.
+_MAX_CSV_NAME_BYTES = 100
+
+# Upload destinations reachable by an in-memory multipart upload. SFTP and
+# client-authenticated object stores need a local file and are refused.
+_MULTIPART_UPLOAD_DESTINATIONS = (
+    concrete_types.SYNAPSE_S3_UPLOAD_DESTINATION,
+    concrete_types.EXTERNAL_S3_UPLOAD_DESTINATION,
+    concrete_types.EXTERNAL_GCP_UPLOAD_DESTINATION,
+)
+
+
+def _csv_file_name(record_set_name: str) -> str:
+    """Portable, length-bounded CSV file name for a RecordSet's template."""
+    safe = re.sub(r"[^\w.\-() +]", "_", record_set_name).strip() or "recordset"
+    safe = safe.encode("utf-8")[:_MAX_CSV_NAME_BYTES].decode("utf-8", errors="ignore")
+    return safe + ".csv"
+
+
+def _template_columns(schema_body: Dict[str, Any], upsert_keys: List[str]) -> List[str]:
+    """Column headers for a RecordSet template: schema properties, upsert keys first.
+
+    Raises ``ValueError`` if the schema has no properties, an upsert key is
+    repeated, or an upsert key is not one of the properties.
+    """
+    repeated = sorted({key for key in upsert_keys if upsert_keys.count(key) > 1})
+    if repeated:
+        raise ValueError(f"upsert_keys contains repeated keys: {repeated}")
+    properties = list((schema_body.get("properties") or {}).keys())
+    if not properties:
+        raise ValueError("The JSON schema defines no properties to build a template from.")
+    missing = [key for key in upsert_keys if key not in properties]
+    if missing:
+        raise ValueError(
+            f"upsert_keys not found among the schema properties: {missing}. "
+            f"Available properties: {properties}"
+        )
+    return list(upsert_keys) + [p for p in properties if p not in upsert_keys]
 
 
 class CurationTaskManager:
@@ -44,6 +116,159 @@ class CurationTaskManager:
             await self._fetch_file_based_resources(task, resources)
 
         return task, resources
+
+    async def create_record_based_task(
+        self,
+        folder_id: str,
+        record_set_name: str,
+        data_type: str,
+        schema_uri: str,
+        upsert_keys: List[str],
+        instructions: str,
+        record_set_description: Optional[str] = None,
+        bind_schema: bool = True,
+        enable_derived_annotations: bool = False,
+        assignee_principal_id: Optional[str] = None,
+    ) -> Tuple[RecordSet, CurationTask]:
+        """Create a schema-templated RecordSet and a record-based task on it.
+
+        Mirrors ``synapseclient.extensions.curator.create_record_based_metadata_task``
+        but runs async and skips the deprecated Grid creation. Steps:
+
+        1. Validate ``assignee_principal_id``, resolve the folder's project
+           (also verifies the folder is visible) and upload destination, and
+           refuse if the project already has a task for ``data_type``.
+        2. Fetch the registered JSON schema and build header-only CSV columns
+           from its properties, upsert keys first.
+        3. Upload the template from memory to the folder's storage location
+           and store it as a RecordSet under ``folder_id``. Nothing is
+           written to local disk.
+        4. Optionally bind the schema to the RecordSet.
+        5. Create the curation task pointing at the RecordSet, via the
+           create-only endpoint so a race on step 1's check is caught by the
+           server's uniqueness constraint rather than silently upserted.
+
+        Steps 1-2 fail before anything is written. A failure storing the
+        RecordSet (step 3) deletes the uploaded file handle when possible and
+        raises ``RecordBasedTaskCreationError``; a failure in step 4 or 5
+        raises the same error carrying the RecordSet ID instead.
+        """
+        if assignee_principal_id is not None and not assignee_principal_id.isdigit():
+            raise ValueError(f"Invalid principal ID: {assignee_principal_id}")
+
+        path = await get_entity_path(folder_id, synapse_client=self.synapse_client)
+        # path[0] is the root; path[1] is the project that owns the folder.
+        project_id = path["path"][1]["id"]
+
+        destination = await get_upload_destination(
+            entity_id=folder_id, synapse_client=self.synapse_client
+        )
+        destination_type = destination.get("concreteType")
+        if destination_type not in _MULTIPART_UPLOAD_DESTINATIONS:
+            raise ValueError(
+                f"Folder {folder_id} uses a storage location of type "
+                f"'{destination_type}', which this tool cannot upload to. "
+                "Use a folder backed by Synapse, external S3, or Google Cloud "
+                "storage."
+            )
+
+        # CurationTask.store_async upserts on (project_id, data_type): an
+        # existing task would be updated in place, keeping its own RecordSet
+        # and orphaning the new one. Refuse instead.
+        async for existing in CurationTask.list_async(
+            project_id=project_id, synapse_client=self.synapse_client
+        ):
+            if existing.data_type == data_type:
+                raise ValueError(
+                    f"Project {project_id} already has a curation task "
+                    f"(task_id {existing.task_id}) for data_type "
+                    f"'{data_type}'. Choose a different data_type."
+                )
+
+        schema = JSONSchema.from_uri(schema_uri)
+        await schema.get_async(synapse_client=self.synapse_client)
+        body = await schema.get_body_async(synapse_client=self.synapse_client)
+        columns = _template_columns(body, upsert_keys)
+
+        template = io.StringIO()
+        csv.writer(template).writerow(columns)
+        file_handle_id = await multipart_upload_string_async(
+            self.synapse_client,
+            template.getvalue(),
+            dest_file_name=_csv_file_name(record_set_name),
+            content_type="text/csv; charset=utf-8",
+            storage_location_id=destination["storageLocationId"],
+        )
+        try:
+            record_set = await RecordSet(
+                name=record_set_name,
+                parent_id=folder_id,
+                description=record_set_description,
+                data_file_handle_id=file_handle_id,
+                upsert_keys=list(upsert_keys),
+            ).store_async(synapse_client=self.synapse_client)
+        except Exception as exc:
+            deleted = await self._delete_file_handle(file_handle_id)
+            cleanup = (
+                f"file handle {file_handle_id} was deleted"
+                if deleted
+                else f"file handle {file_handle_id} could not be cleaned up"
+            )
+            response = getattr(exc, "response", None)
+            raise RecordBasedTaskCreationError(
+                f"RecordSet creation failed; {cleanup}: {exc}",
+                record_set_id=None,
+                status_code=getattr(response, "status_code", None),
+                file_handle_id=None if deleted else file_handle_id,
+            ) from exc
+
+        try:
+            if bind_schema:
+                await record_set.bind_schema_async(
+                    json_schema_uri=schema_uri,
+                    enable_derived_annotations=enable_derived_annotations,
+                    synapse_client=self.synapse_client,
+                )
+            task = CurationTask(
+                project_id=project_id,
+                data_type=data_type,
+                instructions=instructions,
+                assignee_principal_id=assignee_principal_id,
+                task_properties=RecordBasedMetadataTaskProperties(
+                    record_set_id=record_set.id,
+                ),
+            )
+            # CurationTask.store_async() looks up (project_id, data_type) itself
+            # and silently upserts onto a match, which races with the preflight
+            # check above. Call the create-only endpoint directly instead; the
+            # server enforces (project_id, data_type) uniqueness atomically and
+            # raises rather than overwriting a concurrently created task.
+            task_result = await create_curation_task(
+                curation_task=task.to_synapse_request(),
+                synapse_client=self.synapse_client,
+            )
+            task.fill_from_dict(synapse_response=task_result)
+        except Exception as exc:
+            response = getattr(exc, "response", None)
+            raise RecordBasedTaskCreationError(
+                f"RecordSet {record_set.id} was created, but a later step "
+                f"failed: {exc}",
+                record_set_id=record_set.id,
+                status_code=getattr(response, "status_code", None),
+            ) from exc
+
+        return record_set, task
+
+    async def _delete_file_handle(self, file_handle_id: str) -> bool:
+        """Best-effort delete; Synapse refuses it once a FileHandle is tied to an entity."""
+        try:
+            await self.synapse_client.rest_delete_async(
+                f"/fileHandle/{file_handle_id}",
+                endpoint=self.synapse_client.fileHandleEndpoint,
+            )
+            return True
+        except Exception:
+            return False
 
     async def _fetch_file_based_resources(
         self, task: CurationTask, resources: Dict[str, Any]
