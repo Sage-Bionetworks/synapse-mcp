@@ -50,11 +50,11 @@ class FakeVersion:
 
 class TestGetSchemaOrganization:
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
-    @patch(f"{SVC}.SchemaOrganization")
+    @patch(f"{SVC}.Organization")
     async def test_given_organization_name_when_get_then_returns_serialized_org(
         self, mock_org_cls: MagicMock, mock_get_client: AsyncMock
     ):
-        """Fetching by organization_name returns the serialized org and constructs SchemaOrganization with name=."""
+        """Fetching by organization_name returns the serialized org and constructs Organization with name=."""
         # GIVEN an organization fetched by name
         mock_get_client.return_value = MagicMock()
         mock_org_cls.return_value.get_async = AsyncMock(
@@ -93,7 +93,7 @@ class TestGetSchemaOrganization:
 
 class TestGetSchemaOrganizationAcl:
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
-    @patch(f"{SVC}.SchemaOrganization")
+    @patch(f"{SVC}.Organization")
     async def test_given_organization_when_get_acl_then_returns_serialized_acl(
         self, mock_org_cls: MagicMock, mock_get_client: AsyncMock
     ):
@@ -436,7 +436,7 @@ class TestListJsonSchemaVersions:
 
 class TestCreateSchemaOrganization:
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
-    @patch(f"{SVC}.SchemaOrganization")
+    @patch(f"{SVC}.Organization")
     async def test_given_name_when_created_then_returns_dict(
         self, mock_org_cls, mock_get_client
     ):
@@ -456,7 +456,7 @@ class TestCreateSchemaOrganization:
 
 class TestDeleteSchemaOrganization:
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
-    @patch(f"{SVC}.SchemaOrganization")
+    @patch(f"{SVC}.Organization")
     async def test_given_id_when_deleted_then_constructs_by_id_no_get_then_deletes(
         self, mock_org_cls, mock_get_client
     ):
@@ -481,7 +481,7 @@ class TestDeleteSchemaOrganization:
         org.delete_async.assert_called_once()
 
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
-    @patch(f"{SVC}.SchemaOrganization")
+    @patch(f"{SVC}.Organization")
     async def test_given_name_when_deleted_then_constructs_by_name_then_deletes(
         self, mock_org_cls, mock_get_client
     ):
@@ -522,7 +522,7 @@ class TestDeleteSchemaOrganization:
 
 class TestUpdateSchemaOrganizationAcl:
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
-    @patch(f"{SVC}.SchemaOrganization")
+    @patch(f"{SVC}.Organization")
     async def test_given_id_when_updated_then_constructs_by_id_no_get(
         self, mock_org_cls, mock_get_client
     ):
@@ -547,7 +547,7 @@ class TestUpdateSchemaOrganizationAcl:
         org.update_acl_async.assert_called_once()
 
     @patch(f"{TS}.get_synapse_client", new_callable=AsyncMock)
-    @patch(f"{SVC}.SchemaOrganization")
+    @patch(f"{SVC}.Organization")
     async def test_given_name_when_updated_then_constructs_by_name_returns_confirmation(
         self, mock_org_cls, mock_get_client
     ):

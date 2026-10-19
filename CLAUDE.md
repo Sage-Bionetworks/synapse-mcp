@@ -8,7 +8,7 @@ FastMCP-based server that exposes Synapse (synapse.org) capabilities to LLMs ove
 
 - Python 3.11 (CI runs on 3.10)
 - FastMCP 3.2.3 (`fastmcp`)
-- synapseclient 4.12.0
+- synapseclient 4.14.0
 - pytest with `anyio` (asyncio backend) — see `tests/CLAUDE.md`
 - astral/uv for local dev
 
