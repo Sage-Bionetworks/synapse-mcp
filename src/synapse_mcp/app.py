@@ -362,29 +362,32 @@ async def health_check(request: Request) -> JSONResponse:
     )
 
 
-@mcp.custom_route("/.well-known/oauth-protected-resource", methods=["GET"])
-async def oauth_protected_resource_root(request: Request) -> JSONResponse:
-    """Serve RFC 9728 protected resource metadata at the root path.
+if auth:
+    @mcp.custom_route("/.well-known/oauth-protected-resource", methods=["GET"])
+    async def oauth_protected_resource_root(request: Request) -> JSONResponse:
+        """Serve RFC 9728 protected resource metadata at the root path.
 
-    FastMCP serves this at ``/.well-known/oauth-protected-resource/mcp``
-    (path-suffixed per the spec), but the ``WWW-Authenticate`` header in 401
-    responses advertises the root path without the ``/mcp`` suffix.  This
-    route ensures both URLs resolve so that all MCP clients — including
-    Claude Code and claude.ai — can complete OAuth discovery.
-    """
-    raw_server_url = os.environ.get("MCP_SERVER_URL", "http://127.0.0.1:9000")
-    parsed = urlparse(raw_server_url)
-    base_url = f"{parsed.scheme}://{parsed.netloc}"
-    resource_url = raw_server_url.rstrip("/")
+        FastMCP serves this at ``/.well-known/oauth-protected-resource/mcp``
+        (path-suffixed per the spec), but the ``WWW-Authenticate`` header in 401
+        responses advertises the root path without the ``/mcp`` suffix.  This
+        route ensures both URLs resolve so that all MCP clients — including
+        Claude Code and claude.ai — can complete OAuth discovery.
 
-    return JSONResponse(
-        {
+        Only registered in OAuth mode. In PAT mode this endpoint must not exist:
+        its presence signals to MCP clients that OAuth is required, which
+        causes them to attempt OAuth discovery and fail.
+        """
+        raw_server_url = os.environ.get("MCP_SERVER_URL", "http://127.0.0.1:9000")
+        parsed = urlparse(raw_server_url)
+        base_url = f"{parsed.scheme}://{parsed.netloc}"
+        resource_url = raw_server_url.rstrip("/")
+
+        return JSONResponse({
             "resource": resource_url,
             "authorization_servers": [f"{base_url}/"],
             "scopes_supported": sorted(_OAuthFixupMiddleware.SUPPORTED_SCOPES),
             "bearer_methods_supported": ["header"],
-        }
-    )
+        })
 
 
 @mcp.custom_route("/.well-known/openai-apps-challenge", methods=["GET"])
