@@ -3,7 +3,7 @@ name = "synapse-mcp"
 version = "0.2.0"
 description = "A Model Context Protocol (MCP) server that exposes Synapse entities and utilities"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [
     {name = "Sage Bionetworks", email = "synapseinfo@sagebase.org"},
@@ -18,23 +18,25 @@ classifiers = [
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering :: Bio-Informatics",
 ]
 dependencies = [
-    "fastmcp==3.4.7",
-    "mcp>=1.28.1,<2",
+    "fastmcp==3.4.10",
+    "mcp>=1.30.0,<2",
     "requests>=2.33.0,<3",
     "synapseclient==4.14.0",
     "pandas>=1.5.0",
     "PyJWT>=2.15.0,<3",
     "cryptography>=50.0.0,<51",
-    "setuptools>=83.0.0,<85",
+    "setuptools>=84.1.0,<85",
     "redis>=5.1.0,<6",
     "starlette>=1.3.1,<2",
     "python-multipart>=0.0.31,<1",
-    "authlib>=1.6.12,<2",
+    "authlib>=1.9.1,<2",
     "urllib3>=2.8.0,<3",
     "idna>=3.15,<4",
     "protobuf>=5.29.6,<7",
